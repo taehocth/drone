@@ -82,13 +82,13 @@ function SignUp() {
           />
           <FormControl id="full_name" isInvalid={!!errors.full_name}>
             <FormLabel htmlFor="full_name" srOnly>
-              Full Name
+              이름
             </FormLabel>
             <Input
               id="full_name"
               minLength={3}
               {...register("full_name", { required: "Full Name is required" })}
-              placeholder="Full Name"
+              placeholder="이름"
               type="text"
             />
             {errors.full_name && (
@@ -97,7 +97,7 @@ function SignUp() {
           </FormControl>
           <FormControl id="email" isInvalid={!!errors.email}>
             <FormLabel htmlFor="username" srOnly>
-              Email
+              이메일
             </FormLabel>
             <Input
               id="email"
@@ -105,7 +105,7 @@ function SignUp() {
                 required: "Email is required",
                 pattern: emailPattern,
               })}
-              placeholder="Email"
+              placeholder="이메일"
               type="email"
             />
             {errors.email && (
@@ -114,12 +114,12 @@ function SignUp() {
           </FormControl>
           <FormControl id="password" isInvalid={!!errors.password}>
             <FormLabel htmlFor="password" srOnly>
-              Password
+              비밀번호
             </FormLabel>
             <Input
               id="password"
               {...register("password", passwordRules())}
-              placeholder="Password"
+              placeholder="8자리 이상 입력"
               type="password"
             />
             {errors.password && (
@@ -131,13 +131,13 @@ function SignUp() {
             isInvalid={!!errors.confirm_password}
           >
             <FormLabel htmlFor="confirm_password" srOnly>
-              Confirm Password
+              비밀번호 확인
             </FormLabel>
 
             <Input
               id="confirm_password"
               {...register("confirm_password", confirmPasswordRules(getValues))}
-              placeholder="Repeat Password"
+              placeholder="비밀번호 확인"
               type="password"
             />
             {errors.confirm_password && (
@@ -147,12 +147,12 @@ function SignUp() {
             )}
           </FormControl>
           <Button variant="primary" type="submit" isLoading={isSubmitting}>
-            Sign Up
+            회원가입 하기
           </Button>
           <Text>
-            Already have an account?{" "}
+            이미 계정이 있으신가요?{" "}
             <Link as={RouterLink} to="/login" color="blue.500">
-              Log In
+              로그인 화면으로
             </Link>
           </Text>
         </Container>

@@ -91,7 +91,7 @@ function Login() {
               required: "Username is required",
               pattern: emailPattern,
             })}
-            placeholder="Email"
+            placeholder="이메일"
             type="email"
             required
           />
@@ -106,7 +106,7 @@ function Login() {
                 required: "Password is required",
               })}
               type={show ? "text" : "password"}
-              placeholder="Password"
+              placeholder="비밀번호"
               required
             />
             <InputRightElement
@@ -118,7 +118,7 @@ function Login() {
               <Icon
                 as={show ? ViewOffIcon : ViewIcon}
                 onClick={setShow.toggle}
-                aria-label={show ? "Hide password" : "Show password"}
+                aria-label={show ? "비밀번호 숨기기" : "비밀번호 표시"}
               >
                 {show ? <ViewOffIcon /> : <ViewIcon />}
               </Icon>
@@ -127,15 +127,14 @@ function Login() {
           {error && <FormErrorMessage>{error}</FormErrorMessage>}
         </FormControl>
         <Link as={RouterLink} to="/recover-password" color="blue.500">
-          Forgot password?
+          비밀번호 찾기
         </Link>
         <Button variant="primary" type="submit" isLoading={isSubmitting}>
-          Log In
+          로그인
         </Button>
         <Text>
-          Don't have an account?{" "}
           <Link as={RouterLink} to="/signup" color="blue.500">
-            Sign up
+            회원 가입
           </Link>
         </Text>
       </Container>

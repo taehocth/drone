@@ -39,7 +39,7 @@ const UserMenu = () => {
           />
           <MenuList>
             <MenuItem icon={<FiUser fontSize="18px" />} as={Link} to="settings">
-              My profile
+              내 정보
             </MenuItem>
             <MenuItem
               icon={<FiLogOut fontSize="18px" />}
@@ -47,7 +47,7 @@ const UserMenu = () => {
               color="ui.danger"
               fontWeight="bold"
             >
-              Log out
+              로그아웃
             </MenuItem>
           </MenuList>
         </Menu>
