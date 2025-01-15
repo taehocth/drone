@@ -35,5 +35,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: "Create env file"
+        run: |
+          touch .env
+          echo ENVIRONMENT=$ENVIRONMENT >> .env
+          echo DOMAIN=$DOMAIN >> .env
+          echo FRONTEND_HOST=$FRONTEND_HOST >> .env
+          echo STACK_NAME=$STACK_NAME >> .env
+          echo SECRET_KEY=$SECRET_KEY >> .env
+          echo FIRST_SUPERUSER=$FIRST_SUPERUSER >> .env
+          echo FIRST_SUPERUSER_PASSWORD=$FIRST_SUPERUSER_PASSWORD >> .env
+          echo SMTP_HOST=$SMTP_HOST >> .env
+          echo SMTP_USER=$SMTP_USER >> .env
+          echo SMTP_PASSWORD=$SMTP_PASSWORD >> .env
+          echo EMAILS_FROM_EMAIL=$EMAILS_FROM_EMAIL >> .env
+          echo POSTGRES_SERVER=$POSTGRES_SERVER >> .env
+          echo POSTGRES_PORT=$POSTGRES_PORT >> .env
+          echo POSTGRES_DB=$POSTGRES_DB >> .env
+          echo POSTGRES_USER=$POSTGRES_USER >> .env
+          echo POSTGRES_PASSWORD=$POSTGRES_PASSWORD >> .env
+          echo DOCKER_IMAGE_BACKEND=$DOCKER_IMAGE_BACKEND >> .env
+          echo DOCKER_IMAGE_FRONTEND=$DOCKER_IMAGE_FRONTEND >> .env
+          echo SENTRY_DSN=$SENTRY_DSN >> .env
+          cat .env
       - run: docker compose -f docker-compose.yml --project-name ${{ secrets.STACK_NAME_PRODUCTION }} build
       - run: docker compose -f docker-compose.yml --project-name ${{ secrets.STACK_NAME_PRODUCTION }} up -d
