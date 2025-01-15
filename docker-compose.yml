@@ -53,7 +53,7 @@ services:
       db:
         condition: service_healthy
         restart: true
-    command: bash scripts/prestart.sh
+    command: bash -c "bash scripts/prestart.sh 2>&1 | tee /var/log/prestart.log"
     env_file:
       - .env
     environment:
