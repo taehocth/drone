@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
 import ReactDOM from "react-dom/client"
 import { routeTree } from "./routeTree.gen"
+import { APIProvider } from "@vis.gl/react-google-maps"
 
-import { StrictMode } from "react"
+import React, { StrictMode } from "react"
 import { OpenAPI } from "./client"
 import theme from "./theme"
 
@@ -12,6 +13,9 @@ OpenAPI.BASE = import.meta.env.VITE_API_URL
 OpenAPI.TOKEN = async () => {
   return localStorage.getItem("access_token") || ""
 }
+
+const GOOGLE_MAP_API_KEY = import.meta.env.VITE_GOOGLE_MAP_API_KEY
+console.log("🚀 ~ GOOGLE_MAP_API_KEY:", GOOGLE_MAP_API_KEY)
 
 const queryClient = new QueryClient()
 
@@ -26,7 +30,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ChakraProvider theme={theme}>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <APIProvider apiKey={GOOGLE_MAP_API_KEY}>
+          <RouterProvider router={router} />
+        </APIProvider>
       </QueryClientProvider>
     </ChakraProvider>
   </StrictMode>,
