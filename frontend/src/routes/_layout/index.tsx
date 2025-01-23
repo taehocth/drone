@@ -1,16 +1,17 @@
 import { Box, Container, Flex, Text } from "@chakra-ui/react"
 import { createFileRoute } from "@tanstack/react-router"
-import { Map, useMap } from "@vis.gl/react-google-maps"
+import { Map } from "@vis.gl/react-google-maps"
+// import { Map, useMap } from "@vis.gl/react-google-maps"
 
-import useAuth from "../../hooks/useAuth"
-import { useEffect } from "react"
+// import useAuth from "../../hooks/useAuth"
+// import { useEffect } from "react"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
 })
 
 function Dashboard() {
-  const { user: currentUser } = useAuth()
+  // const { user: currentUser } = useAuth()
   // const map = useMap("one-of-my-maps")
 
   // useEffect(() => {
