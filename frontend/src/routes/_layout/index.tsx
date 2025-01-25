@@ -1,6 +1,9 @@
-import { Box, Container, Flex, Text } from "@chakra-ui/react"
+import { Box, Container, Flex, Stack, Text } from "@chakra-ui/react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Map } from "@vis.gl/react-google-maps"
+
+import { ConnectionStatusBadge } from "../../components/ui/ConnectionStatusBadge"
+import { ConnectionStatus } from "../../enum"
 // import { Map, useMap } from "@vis.gl/react-google-maps"
 
 // import useAuth from "../../hooks/useAuth"
@@ -30,6 +33,11 @@ function Dashboard() {
             {/* Hi, {currentUser?.full_name || currentUser?.email} 👋🏼 */}
             실시간 비행 상태 표시
           </Text>
+          <Stack direction="row" spacing={4}>
+            {Object.values(ConnectionStatus).map((status) => {
+              return <ConnectionStatusBadge key={status} status={status} />
+            })}
+          </Stack>
           <Text>
             드론 위치(GPS 좌표). 고도, 속도, 배터리 잔량(볼트), 통신 상태.
           </Text>
