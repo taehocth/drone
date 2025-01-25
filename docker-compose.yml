@@ -58,6 +58,7 @@ services:
       - .env
     environment:
       - DOMAIN=${DOMAIN}
+      - PROJECT_NAME=${PROJECT_NAME?Variable not set}
       - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
       - ENVIRONMENT=${ENVIRONMENT}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
@@ -91,6 +92,7 @@ services:
       - .env
     environment:
       - DOMAIN=${DOMAIN}
+      - PROJECT_NAME=${PROJECT_NAME?Variable not set}
       - FRONTEND_HOST=${FRONTEND_HOST?Variable not set}
       - ENVIRONMENT=${ENVIRONMENT}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
