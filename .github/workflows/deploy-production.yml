@@ -33,6 +33,7 @@ jobs:
       DOCKER_IMAGE_BACKEND: ${{ secrets.DOCKER_IMAGE_BACKEND }}
       DOCKER_IMAGE_FRONTEND: ${{ secrets.DOCKER_IMAGE_FRONTEND }}
       SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      VITE_GOOGLE_MAP_API_KEY: ${{ secrets.VITE_GOOGLE_MAP_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
