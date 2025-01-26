@@ -1,4 +1,5 @@
 import { extendTheme } from "@chakra-ui/react"
+import "@fontsource/pretendard"
 
 const disabledStyles = {
   _disabled: {
@@ -7,6 +8,10 @@ const disabledStyles = {
 }
 
 const theme = extendTheme({
+  fonts: {
+    heading: "Pretendard",
+    body: "Pretendard",
+  },
   colors: {
     ui: {
       main: "#009688",
