@@ -9,8 +9,22 @@ const disabledStyles = {
 
 const theme = extendTheme({
   fonts: {
-    heading: "Pretendard",
-    body: "Pretendard",
+    heading: "pretendard",
+    body: "pretendard",
+  },
+  textStyles: {
+    h1: {
+      fontSize: ["24px", "30px"],
+      fontWeight: "bold",
+      lineHeight: "1.3",
+      letterSpacing: "-2%",
+    },
+    h2: {
+      fontSize: ["18px", "20px"],
+      fontWeight: "bold",
+      lineHeight: "1.3",
+      letterSpacing: "-1%",
+    },
   },
   colors: {
     ui: {
