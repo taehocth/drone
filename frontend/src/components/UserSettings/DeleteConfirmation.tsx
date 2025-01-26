@@ -8,13 +8,13 @@ import {
   Button,
 } from "@chakra-ui/react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import React from "react"
 import { useForm } from "react-hook-form"
 
 import { type ApiError, UsersService } from "../../client"
 import useAuth from "../../hooks/useAuth"
 import useCustomToast from "../../hooks/useCustomToast"
 import { handleError } from "../../utils"
+import { useRef } from "react"
 
 interface DeleteProps {
   isOpen: boolean
@@ -24,7 +24,7 @@ interface DeleteProps {
 const DeleteConfirmation = ({ isOpen, onClose }: DeleteProps) => {
   const queryClient = useQueryClient()
   const showToast = useCustomToast()
-  const cancelRef = React.useRef<HTMLButtonElement | null>(null)
+  const cancelRef = useRef<HTMLButtonElement | null>(null)
   const {
     handleSubmit,
     formState: { isSubmitting },

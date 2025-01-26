@@ -5,7 +5,7 @@ import ReactDOM from "react-dom/client"
 import { routeTree } from "./routeTree.gen"
 import { APIProvider } from "@vis.gl/react-google-maps"
 
-import React, { StrictMode } from "react"
+import { StrictMode } from "react"
 import { OpenAPI } from "./client"
 import theme from "./theme"
 
@@ -15,7 +15,6 @@ OpenAPI.TOKEN = async () => {
 }
 
 const GOOGLE_MAP_API_KEY = import.meta.env.VITE_GOOGLE_MAP_API_KEY
-console.log("🚀 ~ GOOGLE_MAP_API_KEY:", GOOGLE_MAP_API_KEY)
 
 const queryClient = new QueryClient()
 
