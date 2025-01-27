@@ -1,4 +1,4 @@
-import { Box, Container, Flex, Stack, Text } from "@chakra-ui/react"
+import { Box, Container, Flex, Stack, Divider, Text } from "@chakra-ui/react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Map, useMap } from "@vis.gl/react-google-maps"
 
@@ -8,6 +8,7 @@ import { PageTitle } from "../../components/layout/PageTitle"
 
 // import useAuth from "../../hooks/useAuth"
 import { useEffect } from "react"
+import { UAVCard } from "../../components/Dashboard/UAVCard"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -53,15 +54,27 @@ function Dashboard() {
             Hi, {currentUser?.full_name || currentUser?.email} 👋🏼
             실시간 비행 상태 표시
           </Text> */}
-          <Stack direction="row" spacing={4}>
-            {Object.values(ConnectionStatus).map((status) => {
-              return <ConnectionStatusBadge key={status} status={status} />
-            })}
-          </Stack>
-          <Text>
-            드론 위치(GPS 좌표). 고도, 속도, 배터리 잔량(볼트), 통신 상태.
-          </Text>
+          <Box
+            p={2}
+            my={4}
+            border="1px"
+            borderColor="gray.200"
+            borderRadius={8}
+          >
+            <Text>통신 상태 표시 UI 3 종류</Text>
+            <Stack direction="row" spacing={4}>
+              {Object.values(ConnectionStatus).map((status) => {
+                return <ConnectionStatusBadge key={status} status={status} />
+              })}
+            </Stack>
+          </Box>
         </Box>
+        <Divider />
+        <Flex>
+          <UAVCard uav={{}} />
+          <UAVCard uav={{}} />
+          <UAVCard uav={{}} />
+        </Flex>
       </Container>
     </>
   )

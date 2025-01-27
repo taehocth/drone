@@ -9,5 +9,9 @@ export const ConnectionStatusBadge = ({
   status,
 }: ConnectionStatusBadgeProps) => {
   const { text, color } = ConnectionStatusConfig[status]
-  return <Badge colorScheme={color}>{text}</Badge>
+  return (
+    <Badge h={18} colorScheme={color}>
+      {text}
+    </Badge>
+  )
 }

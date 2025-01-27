@@ -25,6 +25,12 @@ const theme = extendTheme({
       lineHeight: "1.3",
       letterSpacing: "-1%",
     },
+    h3: {
+      fontSize: ["16px", "18px"],
+      fontWeight: "semibold",
+      lineHeight: "1.3",
+      letterSpacing: "-1%",
+    },
   },
   colors: {
     ui: {
