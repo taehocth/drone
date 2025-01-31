@@ -41,10 +41,6 @@ export const UAVCard = ({ uav }: UAVCardProps) => {
       <Divider mt={2} />
       <VStack spacing={4} align="stretch">
         <Flex justify="space-between" alignItems="center" h="40px">
-          <Text fontSize="md">GPS 좌표:</Text>
-          <Text fontSize="sm">Lat: 37.1234, Lng: 127.1234</Text>
-        </Flex>
-        <Flex justify="space-between" alignItems="center" h="40px">
           <Text fontSize="md">고도:</Text>
           <Progress colorScheme="green" w="80%" size="lg" value={40} />
         </Flex>
