@@ -1,14 +1,15 @@
 import { Box, Container, Flex, Stack, Divider, Text } from "@chakra-ui/react"
 import { createFileRoute } from "@tanstack/react-router"
+
 import { Map, useMap } from "@vis.gl/react-google-maps"
 
-import { ConnectionStatusBadge } from "../../components/ui/ConnectionStatusBadge"
-import { ConnectionStatus } from "../../enum"
-import { PageTitle } from "../../components/layout/PageTitle"
+import { ConnectionStatusBadge } from "../components/ui/ConnectionStatusBadge"
+import { ConnectionStatus } from "../enum"
+import { PageTitle } from "../components/layout/PageTitle"
 
-// import useAuth from "../../hooks/useAuth"
+// import useAuth from "../hooks/useAuth"
 import { useEffect } from "react"
-import { UAVCard } from "../../components/Dashboard/UAVCard"
+import { UAVCard } from "../components/Dashboard/UAVCard"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -71,9 +72,9 @@ function Dashboard() {
         </Box>
         <Divider />
         <Flex>
-          <UAVCard uav={{}} />
-          <UAVCard uav={{}} />
-          <UAVCard uav={{}} />
+          <UAVCard id={123} />
+          <UAVCard id={456} />
+          <UAVCard id={789} />
         </Flex>
       </Container>
     </>

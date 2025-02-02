@@ -6,18 +6,20 @@ import {
   Text,
   VStack,
   Progress,
+  Link,
 } from "@chakra-ui/react"
-
 import { ConnectionStatusBadge } from "../ui/ConnectionStatusBadge"
+
+import { Link as RouterLink } from "@tanstack/react-router"
 
 import { ConnectionStatus } from "../../enum"
 
 interface UAVCardProps {
-  uav: any
+  id: number
 }
 
-export const UAVCard = ({ uav }: UAVCardProps) => {
-  console.log("zzuav", uav)
+export const UAVCard = ({ id }: UAVCardProps) => {
+  console.log("zzuav", id)
 
   return (
     <Box
@@ -53,6 +55,19 @@ export const UAVCard = ({ uav }: UAVCardProps) => {
           <Progress value={20} size="lg" w="80%" colorScheme="pink" />
         </Flex>
       </VStack>
+
+      <Link
+        as={RouterLink}
+        to="/uav/$uavId"
+        params={{
+          uavId: id,
+        }}
+        color="blue.500"
+      >
+        상세 보기 {"->"}
+      </Link>
+
+      {/* <Link to={UavRoute.path({ params: { uav: "123" } })}>Go to UAV 123</Link> */}
     </Box>
   )
 }
