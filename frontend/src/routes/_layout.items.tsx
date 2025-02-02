@@ -15,11 +15,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { z } from "zod"
 
-import { ItemsService } from "../../client"
-import ActionsMenu from "../../components/Common/ActionsMenu"
-import Navbar from "../../components/Common/Navbar"
-import AddItem from "../../components/Items/AddItem"
-import { PaginationFooter } from "../../components/Common/PaginationFooter.tsx"
+import { ItemsService } from "../client"
+import ActionsMenu from "../components/Common/ActionsMenu"
+import Navbar from "../components/Common/Navbar"
+import AddItem from "../components/Items/AddItem"
+import { PaginationFooter } from "../components/Common/PaginationFooter.tsx"
 
 const itemsSearchSchema = z.object({
   page: z.number().catch(1),
