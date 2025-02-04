@@ -8,10 +8,12 @@ import {
   Flex,
   IconButton,
   Image,
+  Link,
   Text,
   useColorModeValue,
   useDisclosure,
 } from "@chakra-ui/react"
+import { Link as RouterLink } from "@tanstack/react-router"
 import { useQueryClient } from "@tanstack/react-query"
 import { FiLogOut, FiMenu } from "react-icons/fi"
 
@@ -50,27 +52,35 @@ const Sidebar = () => {
         <DrawerContent maxW="250px">
           <DrawerCloseButton />
           <DrawerBody py={8}>
-            <Flex flexDir="column" justify="space-between">
+            <Flex flexDir="column" justify="space-between" h="100%">
               <Box>
-                <Image src={Logo} alt="logo" p={6} />
+                <Link as={RouterLink} to="/">
+                  <Image src={Logo} alt="logo" p={6} pl={2} />
+                </Link>
                 <SidebarItems onClose={onClose} />
+              </Box>
+              <Box>
                 <Flex
                   as="button"
-                  onClick={handleLogout}
+                  w="100%"
+                  borderRadius={12}
                   p={2}
-                  color="ui.danger"
+                  bgColor="ui.danger"
+                  color={textColor}
                   fontWeight="bold"
                   alignItems="center"
+                  onClick={handleLogout}
                 >
                   <FiLogOut />
-                  <Text ml={2}>Log out</Text>
+                  <Text ml={2}>로그아웃</Text>
                 </Flex>
+
+                {currentUser?.email && (
+                  <Text color={textColor} noOfLines={2} fontSize="sm" p={2}>
+                    현재 로그인 계정: {currentUser.email}
+                  </Text>
+                )}
               </Box>
-              {currentUser?.email && (
-                <Text color={textColor} noOfLines={2} fontSize="sm" p={2}>
-                  현재 로그인 계정: {currentUser.email}
-                </Text>
-              )}
             </Flex>
           </DrawerBody>
         </DrawerContent>
@@ -92,10 +102,12 @@ const Sidebar = () => {
           p={4}
           borderRadius={12}
         >
-          <Box>
-            <Image src={Logo} alt="Logo" w="180px" maxW="2xs" p={6} />
+          <Flex flexDir="column" gap={4}>
+            <Link as={RouterLink} to="/" my={2}>
+              <Image src={Logo} alt="Logo" w="180px" maxW="2xs" p={4} pl={2} />
+            </Link>
             <SidebarItems />
-          </Box>
+          </Flex>
           {currentUser?.email && (
             <Text
               color={textColor}
