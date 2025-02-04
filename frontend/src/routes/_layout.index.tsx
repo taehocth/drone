@@ -10,6 +10,7 @@ import { PageTitle } from "../components/layout/PageTitle"
 // import useAuth from "../hooks/useAuth"
 import { useEffect } from "react"
 import { UAVCard } from "../components/Dashboard/UAVCard"
+import HalfCircularProgress from "../components/Common/HalfCircularProgress"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -69,6 +70,7 @@ function Dashboard() {
               })}
             </Stack>
           </Box>
+          <HalfCircularProgress value={25} label={"test"} />
         </Box>
         <Divider />
         <Flex>
