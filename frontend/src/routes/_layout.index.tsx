@@ -11,6 +11,7 @@ import { PageTitle } from "../components/layout/PageTitle"
 import { useEffect } from "react"
 import { UAVCard } from "../components/Dashboard/UAVCard"
 import HalfCircularProgress from "../components/Common/HalfCircularProgress"
+import { useGeomagnaticData } from "../hooks/useGeomagnaticData"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -26,6 +27,9 @@ const DEFAULT_MAP_OPTIONS = {
 function Dashboard() {
   // const { user: currentUser } = useAuth()
   const map = useMap("main-drone-map")
+
+  const { data, isLoading, error } = useGeomagnaticData()
+  console.log("🚀 ~ Dashboard ~ a:", data, isLoading, error)
 
   useEffect(() => {
     if (!map) return

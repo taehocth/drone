@@ -19,8 +19,6 @@ interface UAVCardProps {
 }
 
 export const UAVCard = ({ id }: UAVCardProps) => {
-  console.log("zzuav", id)
-
   return (
     <Box
       p={4}
