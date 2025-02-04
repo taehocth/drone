@@ -51,3 +51,10 @@ export const handleError = (err: ApiError, showToast: any) => {
   }
   showToast("Error", errorMessage, "error")
 }
+
+export const getStageColor = (value: number): string => {
+  if (value <= 10) return "stage.stable"
+  if (value <= 20) return "stage.moderate"
+  if (value <= 35) return "stage.severe"
+  return "stage.danger"
+}

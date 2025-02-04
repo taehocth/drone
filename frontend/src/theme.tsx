@@ -43,6 +43,12 @@ const theme = extendTheme({
       darkSlate: "#252D3D",
       dim: "#A0AEC0",
     },
+    stage: {
+      stable: "#92E53E",
+      moderate: "#E5E53E",
+      severe: "#E5923E",
+      danger: "#E53E3E",
+    },
   },
   components: {
     Button: {
