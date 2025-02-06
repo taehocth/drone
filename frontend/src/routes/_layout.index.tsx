@@ -1,3 +1,12 @@
+import { useEffect } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { createFileRoute } from "@tanstack/react-router"
+import { Map, useMap } from "@vis.gl/react-google-maps"
+
+import { UtilsService } from "../client"
+
+// import useAuth from "../hooks/useAuth"
+
 import {
   Box,
   Container,
@@ -5,24 +14,13 @@ import {
   Stack,
   Divider,
   Text,
-  Icon,
+  Spinner,
 } from "@chakra-ui/react"
-import { createFileRoute } from "@tanstack/react-router"
-
-import { Map, useMap } from "@vis.gl/react-google-maps"
-
-import { ConnectionStatusBadge } from "../components/ui/ConnectionStatusBadge"
 import { ConnectionStatus } from "../enum"
+import { ConnectionStatusBadge } from "../components/ui/ConnectionStatusBadge"
 import { PageTitle } from "../components/layout/PageTitle"
-
-// import useAuth from "../hooks/useAuth"
-import { useEffect } from "react"
 import { UAVCard } from "../components/Dashboard/UAVCard"
-import HalfCircularProgress from "../components/Common/HalfCircularProgress"
-import { UtilsService } from "../client"
-import { useQuery } from "@tanstack/react-query"
-import { FaRegQuestionCircle } from "react-icons/fa"
-import { FiClock } from "react-icons/fi"
+import { GeomagneticCard } from "../components/Dashboard/GeomagneticCard"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -47,11 +45,7 @@ function Dashboard() {
   // const { user: currentUser } = useAuth()
   const map = useMap("main-drone-map")
 
-  const {
-    data: kindex,
-    isPending,
-    isPlaceholderData,
-  } = useQuery({
+  const { data: kindex, isPending } = useQuery({
     ...getGeomagneticKindex(),
   })
 
@@ -60,13 +54,6 @@ function Dashboard() {
     currentP = 0,
     time: measuredTime = new Date(),
   } = kindex ?? {}
-
-  console.log(
-    "zzkindex, isPending, isPlaceholderData",
-    kindex,
-    isPending,
-    isPlaceholderData,
-  )
 
   useEffect(() => {
     if (!map) return
@@ -111,47 +98,23 @@ function Dashboard() {
               })}
             </Stack>
           </Box>
-          <Text ml={2}>지구자기장 지수 UI (실제 API 연동 완료)</Text>
-          <Box
-            p={4}
-            pb={2}
-            m={2}
-            w={"fit-content"}
-            border="1px"
-            borderColor="gray.200"
-            borderRadius={8}
-            shadow="md"
-          >
-            <Flex justify="space-between" gap={4}>
-              <Box>
-                <Flex align="center" gap={1}>
-                  <Text as="h3" textStyle="h3">
-                    Kp 지수
-                  </Text>
-                  <Icon as={FaRegQuestionCircle} boxSize={3} cursor="pointer" />
-                </Flex>
-                <Text fontSize="xs" color="gray.500">
-                  미국 관측소 데이터
-                </Text>
-                <HalfCircularProgress value={currentK * 10} label={currentK} />
-              </Box>
-              <Box>
-                <Flex align="center" gap={1}>
-                  <Text as="h3" textStyle="h3">
-                    Kk 지수
-                  </Text>
-                  <Icon as={FaRegQuestionCircle} boxSize={3} cursor="pointer" />
-                </Flex>
-                <Text fontSize="xs" color="gray.500">
-                  국내 3개 관측소의 데이터
-                </Text>
-                <HalfCircularProgress value={currentP * 10} label={currentP} />
-              </Box>
-            </Flex>
-            <Flex mt={4} justify={"end"} align={"center"} gap={1}>
-              <Icon as={FiClock} boxSize={3} />
-              <Text fontSize={"x-small"}>{measuredTime.toLocaleString()}</Text>
-            </Flex>
+          <Text ml={2}>지구자기장 지수 UI</Text>
+          <Box display="flex" justifyContent={"center"} alignItems={"center"}>
+            {isPending ? (
+              <Spinner
+                thickness="4px"
+                speed="0.65s"
+                emptyColor="gray.200"
+                color="blue.500"
+                size="xl"
+              />
+            ) : (
+              <GeomagneticCard
+                currentK={currentK}
+                currentP={currentP}
+                measuredTime={measuredTime}
+              />
+            )}
           </Box>
         </Box>
         <Divider />
