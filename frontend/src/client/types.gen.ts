@@ -35,6 +35,27 @@ export type ItemUpdate = {
     description?: (string | null);
 };
 
+export type Kindex = {
+    time: string;
+    currentP: number;
+    currentK: number;
+    max24P: number;
+    max24K: number;
+    recent: Array<KindexRecent>;
+};
+
+export type KindexRecent = {
+    time: string;
+    kp: number;
+    kk: number;
+};
+
+export type KindexResponse = {
+    error: boolean;
+    errorCode: string;
+    kindex: Kindex;
+};
+
 export type Message = {
     message: string;
 };
@@ -230,5 +251,7 @@ export type UtilsTestEmailData = {
 };
 
 export type UtilsTestEmailResponse = (Message);
+
+export type UtilsGeomagneticKindexResponse = (KindexResponse);
 
 export type UtilsHealthCheckResponse = (boolean);

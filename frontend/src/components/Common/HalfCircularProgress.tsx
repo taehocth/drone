@@ -6,7 +6,7 @@ function HalfCircularProgress({
   label,
 }: {
   value: number
-  label: string
+  label: string | number
 }) {
   const clampedValue = Math.min(Math.max(value, 0), 100) / 2
   const stageColor = getStageColor(clampedValue)
