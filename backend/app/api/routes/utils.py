@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends
 from pydantic.networks import EmailStr
 
 from app.api.deps import get_current_active_superuser
-from app.models import Message
+from app.models import Message, KindexResponse
 from app.utils import generate_test_email, send_email
+import requests
 
 router = APIRouter(prefix="/utils", tags=["utils"])
 
@@ -24,6 +25,22 @@ def test_email(email_to: EmailStr) -> Message:
         html_content=email_data.html_content,
     )
     return Message(message="Test email sent")
+
+@router.get("/geomagnetic-kindex/", response_model=KindexResponse)
+def geomagnetic_kindex() -> KindexResponse:
+    """
+    지구 자기장 지수 가져오기
+    """
+    response = requests.get("https://spaceweather.kasa.go.kr/api/kindex", verify=False)
+    data = response.json()
+    print("Response:", response)
+    print("Data:", data)
+
+    return KindexResponse(
+        error=data["error"],
+        errorCode=data["errorCode"],
+        kindex=data["kindex"]
+    )
 
 
 @router.get("/health-check/")
