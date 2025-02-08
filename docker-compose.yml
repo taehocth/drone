@@ -146,10 +146,11 @@ services:
       context: ./frontend
       args:
         - VITE_API_URL=https://api.${DOMAIN?Variable not set}
-        - VITE_GOOGLE_MAP_API_KEY=${VITE_GOOGLE_MAP_API_KEY?Variable not set}
         - NODE_ENV=production
     env_file:
       - .env
+    environment:
+      - VITE_GOOGLE_MAP_API_KEY=${VITE_GOOGLE_MAP_API_KEY?Variable not set}
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
