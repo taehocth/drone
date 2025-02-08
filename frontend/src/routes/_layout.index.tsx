@@ -21,6 +21,7 @@ import { ConnectionStatusBadge } from "../components/ui/ConnectionStatusBadge"
 import { PageTitle } from "../components/layout/PageTitle"
 import { UAVCard } from "../components/Dashboard/UAVCard"
 import { GeomagneticCard } from "../components/Dashboard/GeomagneticCard"
+import { CustomAdvancedMarker } from "../components/GoogleMap/CustomAdvancedMarker"
 
 export const Route = createFileRoute("/_layout/")({
   component: Dashboard,
@@ -73,11 +74,17 @@ function Dashboard() {
           <Flex justify="center" align="center" height="40vh" width="full">
             <Map
               id={"one-of-my-maps"}
+              mapId={"e781c578f46f824c"}
               defaultZoom={DEFAULT_MAP_OPTIONS.zoom}
               defaultCenter={DEFAULT_MAP_OPTIONS.center}
               gestureHandling={DEFAULT_MAP_OPTIONS.gestureHandling}
               disableDefaultUI={DEFAULT_MAP_OPTIONS.disableDefaultUI}
-            />
+            >
+              <CustomAdvancedMarker
+                uuid="82e41887-0605-48b2-bb54-458eda8b7726"
+                position={{ lat: 36.7881, lng: 126.4664 }}
+              />
+            </Map>
           </Flex>
 
           {/* <Text>

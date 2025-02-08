@@ -29,7 +29,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ChakraProvider theme={theme}>
       <QueryClientProvider client={queryClient}>
-        <APIProvider apiKey={GOOGLE_MAP_API_KEY}>
+        <APIProvider apiKey={GOOGLE_MAP_API_KEY} libraries={["marker"]}>
           {/* <APIProvider apiKey=""> */}
           <RouterProvider router={router} />
         </APIProvider>
