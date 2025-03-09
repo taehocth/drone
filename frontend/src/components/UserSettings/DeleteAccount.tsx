@@ -6,7 +6,7 @@
 //   useDisclosure,
 // } from "@chakra-ui/react"
 
-import DeleteConfirmation from "./DeleteConfirmation"
+// import DeleteConfirmation from "./DeleteConfirmation"
 
 const DeleteAccount = () => {
   // const confirmationModal = useDisclosure()
