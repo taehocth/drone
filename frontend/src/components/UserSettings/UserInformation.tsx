@@ -11,67 +11,68 @@
 //   Text,
 //   useColorModeValue,
 // } from "@chakra-ui/react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useState } from "react"
-import { type SubmitHandler, useForm } from "react-hook-form"
 
-import {
-  type ApiError,
-  type UserPublic,
-  type UserUpdateMe,
-  UsersService,
-} from "../../client"
-import useAuth from "../../hooks/useAuth"
-import useCustomToast from "../../hooks/useCustomToast"
-import { emailPattern, handleError } from "@/lib/formUtils"
+// import { useMutation, useQueryClient } from "@tanstack/react-query"
+// import { useState } from "react"
+// import { type SubmitHandler, useForm } from "react-hook-form"
+
+// import {
+//   type ApiError,
+//   type UserPublic,
+//   type UserUpdateMe,
+//   UsersService,
+// } from "../../client"
+// import useAuth from "../../hooks/useAuth"
+// import useCustomToast from "../../hooks/useCustomToast"
+// import { emailPattern, handleError } from "@/lib/formUtils"
 
 const UserInformation = () => {
-  const queryClient = useQueryClient()
-  // const color = useColorModeValue("inherit", "ui.light")
-  const showToast = useCustomToast()
-  const [editMode, setEditMode] = useState(false)
-  const { user: currentUser } = useAuth()
-  const {
-    register,
-    handleSubmit,
-    reset,
-    getValues,
-    formState: { isSubmitting, errors, isDirty },
-  } = useForm<UserPublic>({
-    mode: "onBlur",
-    criteriaMode: "all",
-    defaultValues: {
-      full_name: currentUser?.full_name,
-      email: currentUser?.email,
-    },
-  })
+  //   const queryClient = useQueryClient()
+  //   // const color = useColorModeValue("inherit", "ui.light")
+  //   const showToast = useCustomToast()
+  //   const [editMode, setEditMode] = useState(false)
+  //   const { user: currentUser } = useAuth()
+  //   const {
+  //     register,
+  //     handleSubmit,
+  //     reset,
+  //     getValues,
+  //     formState: { isSubmitting, errors, isDirty },
+  //   } = useForm<UserPublic>({
+  //     mode: "onBlur",
+  //     criteriaMode: "all",
+  //     defaultValues: {
+  //       full_name: currentUser?.full_name,
+  //       email: currentUser?.email,
+  //     },
+  //   })
 
-  const toggleEditMode = () => {
-    setEditMode(!editMode)
-  }
+  //   const toggleEditMode = () => {
+  //     setEditMode(!editMode)
+  //   }
 
-  const mutation = useMutation({
-    mutationFn: (data: UserUpdateMe) =>
-      UsersService.updateUserMe({ requestBody: data }),
-    onSuccess: () => {
-      showToast("Success! User updated successfully.")
-    },
-    onError: (err: ApiError) => {
-      handleError(err, showToast)
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries()
-    },
-  })
+  //   const mutation = useMutation({
+  //     mutationFn: (data: UserUpdateMe) =>
+  //       UsersService.updateUserMe({ requestBody: data }),
+  //     onSuccess: () => {
+  //       showToast("Success! User updated successfully.")
+  //     },
+  //     onError: (err: ApiError) => {
+  //       handleError(err, showToast)
+  //     },
+  //     onSettled: () => {
+  //       queryClient.invalidateQueries()
+  //     },
+  //   })
 
-  const onSubmit: SubmitHandler<UserUpdateMe> = async (data) => {
-    mutation.mutate(data)
-  }
+  //   const onSubmit: SubmitHandler<UserUpdateMe> = async (data) => {
+  //     mutation.mutate(data)
+  //   }
 
-  const onCancel = () => {
-    reset()
-    toggleEditMode()
-  }
+  //   const onCancel = () => {
+  //     reset()
+  //     toggleEditMode()
+  //   }
 
   return (
     <>
