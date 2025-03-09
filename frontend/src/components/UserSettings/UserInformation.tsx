@@ -1,16 +1,16 @@
-import {
-  Box,
-  Button,
-  Container,
-  Flex,
-  FormControl,
-  FormErrorMessage,
-  FormLabel,
-  Heading,
-  Input,
-  Text,
-  useColorModeValue,
-} from "@chakra-ui/react"
+// import {
+//   Box,
+//   Button,
+//   Container,
+//   Flex,
+//   FormControl,
+//   FormErrorMessage,
+//   FormLabel,
+//   Heading,
+//   Input,
+//   Text,
+//   useColorModeValue,
+// } from "@chakra-ui/react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { type SubmitHandler, useForm } from "react-hook-form"
@@ -23,11 +23,11 @@ import {
 } from "../../client"
 import useAuth from "../../hooks/useAuth"
 import useCustomToast from "../../hooks/useCustomToast"
-import { emailPattern, handleError } from "../../utils"
+import { emailPattern, handleError } from "@/lib/formUtils"
 
 const UserInformation = () => {
   const queryClient = useQueryClient()
-  const color = useColorModeValue("inherit", "ui.light")
+  // const color = useColorModeValue("inherit", "ui.light")
   const showToast = useCustomToast()
   const [editMode, setEditMode] = useState(false)
   const { user: currentUser } = useAuth()
@@ -54,7 +54,7 @@ const UserInformation = () => {
     mutationFn: (data: UserUpdateMe) =>
       UsersService.updateUserMe({ requestBody: data }),
     onSuccess: () => {
-      showToast("Success!", "User updated successfully.", "success")
+      showToast("Success! User updated successfully.")
     },
     onError: (err: ApiError) => {
       handleError(err, showToast)
@@ -75,11 +75,13 @@ const UserInformation = () => {
 
   return (
     <>
-      <Container maxW="full">
-        <Heading size="sm" py={4}>
+      <div className="m-20">user info</div>
+
+      {/* <div maxW="full">
+        <h2 size="sm" py={4}>
           User Information
-        </Heading>
-        <Box
+        </h2>
+        <div
           w={{ sm: "full", md: "50%" }}
           as="form"
           onSubmit={handleSubmit(onSubmit)}
@@ -132,7 +134,7 @@ const UserInformation = () => {
               <FormErrorMessage>{errors.email.message}</FormErrorMessage>
             )}
           </FormControl>
-          <Flex mt={4} gap={3}>
+          <div mt={4} gap={3}>
             <Button
               variant="primary"
               onClick={toggleEditMode}
@@ -147,9 +149,9 @@ const UserInformation = () => {
                 Cancel
               </Button>
             )}
-          </Flex>
-        </Box>
-      </Container>
+          </div>
+        </div>
+      </div> */}
     </>
   )
 }

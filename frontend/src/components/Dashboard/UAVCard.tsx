@@ -1,18 +1,10 @@
-import {
-  Box,
-  Flex,
-  Image,
-  Divider,
-  Text,
-  VStack,
-  Progress,
-  Link,
-} from "@chakra-ui/react"
 import { ConnectionStatusBadge } from "../ui/ConnectionStatusBadge"
 
-import { Link as RouterLink } from "@tanstack/react-router"
+import { Link } from "@tanstack/react-router"
 
 import { ConnectionStatus } from "../../enum"
+import { Typography } from "../Common/Typography"
+import { Separator } from "@radix-ui/react-separator"
 
 interface UAVCardProps {
   id: number
@@ -20,53 +12,27 @@ interface UAVCardProps {
 
 export const UAVCard = ({ id }: UAVCardProps) => {
   return (
-    <Box
-      p={4}
-      m={2}
-      w={{ sm: "full", md: "50%", lg: "33%" }}
-      border="1px"
-      borderColor="gray.200"
-      borderRadius={8}
-      shadow="md"
-    >
-      <Flex justify="space-between">
-        <Box display="flex" gap={2}>
+    <div className="p-4 m-2 w-full md:w-1/2 lg:w-1/3 border-1 border-gray-200 rounded-md shadow-md">
+      <div className="flex justify-between">
+        <div className="flex gap-2">
           <CardThumbnail />
-          <Text as="h3" textStyle="h3">
-            UAV1
-          </Text>
-        </Box>
+          <Typography variant="h3">UAV1</Typography>
+        </div>
         <ConnectionStatusBadge status={ConnectionStatus.Connected} />
-      </Flex>
-      <Divider mt={2} />
-      <VStack spacing={4} align="stretch">
-        <Flex justify="space-between" alignItems="center" h="40px">
-          <Text fontSize="md">고도:</Text>
-          <Progress colorScheme="green" w="80%" size="lg" value={40} />
-        </Flex>
-        <Flex justify="space-between" alignItems="center" h="40px">
-          <Text fontSize="md">속도:</Text>
-          <Progress colorScheme="green" w="80%" size="lg" value={30} />
-        </Flex>
-        <Flex justify="space-between" alignItems="center" h="40px">
-          <Text fontSize="md">배터리:</Text>
-          <Progress value={20} size="lg" w="80%" colorScheme="pink" />
-        </Flex>
-      </VStack>
+      </div>
+      <Separator />
 
       <Link
-        as={RouterLink}
-        to="/uav/$uavId"
+        to="/uav/$uav"
         params={{
-          uavId: id,
+          uav: id.toString(),
         }}
-        color="blue.500"
       >
         상세 보기 {"->"}
       </Link>
 
       {/* <Link to={UavRoute.path({ params: { uav: "123" } })}>Go to UAV 123</Link> */}
-    </Box>
+    </div>
   )
 }
 
@@ -82,15 +48,18 @@ export const CardThumbnail = ({
   height = "40px",
 }: CardThumbnailProps) => {
   return imageUrl ? (
-    <Image
-      src={imageUrl}
-      alt="Card thumbnail"
-      objectFit="cover"
-      w={width}
-      h={height}
-      borderRadius="md"
-    />
+    <div className="rounded-md overflow-hidden">
+      <img src={imageUrl} alt="Card thumbnail" width={width} height={height} />
+    </div>
   ) : (
+    // <Image
+    //   src={imageUrl}
+    //   alt="Card thumbnail"
+    //   objectFit="cover"
+    //   w={width}
+    //   h={height}
+    //   borderRadius="md"
+    // />
     <svg
       width={width}
       height={height}

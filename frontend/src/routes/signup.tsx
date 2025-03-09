@@ -1,26 +1,27 @@
 import {
-  Button,
-  Container,
-  Flex,
+  Form,
   FormControl,
-  FormErrorMessage,
+  FormField,
+  FormItem,
   FormLabel,
-  Image,
-  Input,
-  Link,
-  Text,
-} from "@chakra-ui/react"
-import {
-  Link as RouterLink,
-  createFileRoute,
-  redirect,
-} from "@tanstack/react-router"
-import { type SubmitHandler, useForm } from "react-hook-form"
-
+  FormMessage,
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import Logo from "/assets/images/company-logo.svg"
+
+import { Link, createFileRoute, redirect } from "@tanstack/react-router"
+import { type SubmitHandler, useForm } from "react-hook-form"
 import type { UserRegister } from "../client"
 import useAuth, { isLoggedIn } from "../hooks/useAuth"
-import { confirmPasswordRules, emailPattern, passwordRules } from "../utils"
+import {
+  confirmPasswordRules,
+  emailPattern,
+  ERROR_MESSAGES,
+  namePattern,
+  passwordRules,
+} from "@/lib/formUtils"
+import { cn } from "@/lib/commonUtils"
 
 export const Route = createFileRoute("/signup")({
   component: SignUp,
@@ -39,12 +40,8 @@ interface UserRegisterForm extends UserRegister {
 
 function SignUp() {
   const { signUpMutation } = useAuth()
-  const {
-    register,
-    handleSubmit,
-    getValues,
-    formState: { errors, isSubmitting },
-  } = useForm<UserRegisterForm>({
+
+  const form = useForm<UserRegisterForm>({
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
@@ -60,104 +57,126 @@ function SignUp() {
   }
 
   return (
-    <>
-      <Flex flexDir={{ base: "column", md: "row" }} justify="center" h="100vh">
-        <Container
-          as="form"
-          onSubmit={handleSubmit(onSubmit)}
-          h="100vh"
-          maxW="sm"
-          alignItems="stretch"
-          justifyContent="center"
-          gap={4}
-          centerContent
-        >
-          <Image
+    <main className="flex h-screen items-center justify-center">
+      <div className="mx-auto w-full max-w-sm px-4">
+        <Link to="/login">
+          <img
             src={Logo}
-            alt="FastAPI logo"
-            height="auto"
-            maxW="2xs"
-            alignSelf="center"
-            mb={4}
+            alt="HanulDrone logo"
+            className="mx-auto mt-[100px] h-auto w-auto max-w-64"
           />
-          <FormControl id="full_name" isInvalid={!!errors.full_name}>
-            <FormLabel htmlFor="full_name" srOnly>
-              이름
-            </FormLabel>
-            <Input
-              id="full_name"
-              minLength={3}
-              {...register("full_name", { required: "Full Name is required" })}
-              placeholder="이름"
-              type="text"
+        </Link>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <FormField
+              control={form.control}
+              name="full_name"
+              rules={{
+                required: ERROR_MESSAGES.common.required,
+                pattern: namePattern,
+              }}
+              render={({ field }) => (
+                <FormItem className="mt-2">
+                  <div className="flex items-center">
+                    <FormLabel className="text-xl">이름</FormLabel>
+                    <FormMessage className="m-1" />
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="username"
+                      id="username"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
             />
-            {errors.full_name && (
-              <FormErrorMessage>{errors.full_name.message}</FormErrorMessage>
-            )}
-          </FormControl>
-          <FormControl id="email" isInvalid={!!errors.email}>
-            <FormLabel htmlFor="username" srOnly>
-              이메일
-            </FormLabel>
-            <Input
-              id="email"
-              {...register("email", {
-                required: "Email is required",
+            <FormField
+              control={form.control}
+              name="email"
+              rules={{
+                required: ERROR_MESSAGES.common.required,
                 pattern: emailPattern,
-              })}
-              placeholder="이메일"
-              type="email"
+              }}
+              render={({ field }) => (
+                <FormItem className="mt-2">
+                  <div className="flex items-center">
+                    <FormLabel className="text-xl">아이디</FormLabel>
+                    <FormMessage className="m-1" />
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="username"
+                      id="username"
+                      placeholder="Email 입력"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
             />
-            {errors.email && (
-              <FormErrorMessage>{errors.email.message}</FormErrorMessage>
-            )}
-          </FormControl>
-          <FormControl id="password" isInvalid={!!errors.password}>
-            <FormLabel htmlFor="password" srOnly>
-              비밀번호
-            </FormLabel>
-            <Input
-              id="password"
-              {...register("password", passwordRules())}
-              placeholder="8자리 이상 입력"
-              type="password"
+            <FormField
+              control={form.control}
+              name="password"
+              rules={passwordRules()}
+              render={({ field }) => (
+                <FormItem className="mt-2">
+                  <div className="flex items-center">
+                    <FormLabel className="text-xl">비밀번호</FormLabel>
+                    <FormMessage className="m-1" />
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      id="password"
+                      placeholder="8자리 이상 입력"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
             />
-            {errors.password && (
-              <FormErrorMessage>{errors.password.message}</FormErrorMessage>
-            )}
-          </FormControl>
-          <FormControl
-            id="confirm_password"
-            isInvalid={!!errors.confirm_password}
-          >
-            <FormLabel htmlFor="confirm_password" srOnly>
-              비밀번호 확인
-            </FormLabel>
-
-            <Input
-              id="confirm_password"
-              {...register("confirm_password", confirmPasswordRules(getValues))}
-              placeholder="비밀번호 확인"
-              type="password"
+            <FormField
+              control={form.control}
+              name="confirm_password"
+              rules={confirmPasswordRules(form.getValues)}
+              render={({ field }) => (
+                <FormItem className="mt-2">
+                  <div className="flex items-center">
+                    <FormLabel className="text-xl">비밀번호 확인</FormLabel>
+                    <FormMessage className="m-1" />
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      id="password"
+                      placeholder="비밀번호 입력 확인"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
             />
-            {errors.confirm_password && (
-              <FormErrorMessage>
-                {errors.confirm_password.message}
-              </FormErrorMessage>
-            )}
-          </FormControl>
-          <Button variant="primary" type="submit" isLoading={isSubmitting}>
-            회원가입 하기
-          </Button>
-          <Text>
-            이미 계정이 있으신가요?{" "}
-            <Link as={RouterLink} to="/login" color="blue.500">
-              로그인 화면으로
-            </Link>
-          </Text>
-        </Container>
-      </Flex>
-    </>
+            <Button
+              type="submit"
+              className={cn(
+                "mt-6 w-full cursor-pointer",
+                form.formState.isSubmitting
+                  ? "pointer-events-none opacity-50"
+                  : "",
+              )}
+              disabled={form.formState.isSubmitting}
+            >
+              회원 가입 하기
+            </Button>
+          </form>
+        </Form>
+      </div>
+    </main>
   )
 }
 
