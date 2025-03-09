@@ -1,29 +1,21 @@
-import { ViewIcon, ViewOffIcon } from "@chakra-ui/icons"
 import {
-  Button,
-  Container,
+  Form,
   FormControl,
-  FormErrorMessage,
-  Icon,
-  Image,
-  Input,
-  InputGroup,
-  InputRightElement,
-  Link,
-  Text,
-  useBoolean,
-} from "@chakra-ui/react"
-import {
-  Link as RouterLink,
-  createFileRoute,
-  redirect,
-} from "@tanstack/react-router"
-import { type SubmitHandler, useForm } from "react-hook-form"
-
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import Logo from "/assets/images/company-logo.svg"
+
+import { Link, createFileRoute, redirect } from "@tanstack/react-router"
 import type { Body_login_login_access_token as AccessToken } from "../client"
 import useAuth, { isLoggedIn } from "../hooks/useAuth"
-import { emailPattern } from "../utils"
+import { type SubmitHandler, useForm } from "react-hook-form"
+import { ERROR_MESSAGES, emailPattern, passwordRules } from "@/lib/formUtils"
+import { cn } from "@/lib/commonUtils"
 
 export const Route = createFileRoute("/login")({
   component: Login,
@@ -37,13 +29,9 @@ export const Route = createFileRoute("/login")({
 })
 
 function Login() {
-  const [show, setShow] = useBoolean()
   const { loginMutation, error, resetError } = useAuth()
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<AccessToken>({
+
+  const form = useForm<AccessToken>({
     mode: "onBlur",
     criteriaMode: "all",
     defaultValues: {
@@ -53,91 +41,100 @@ function Login() {
   })
 
   const onSubmit: SubmitHandler<AccessToken> = async (data) => {
-    if (isSubmitting) return
-
+    // TODO: isSubmitting return 추가 (Shadcn Form 호환되게)
     resetError()
 
     try {
       await loginMutation.mutateAsync(data)
+      if (error) {
+        throw new Error("Login failed")
+      }
     } catch {
-      // error is handled by useAuth hook
+      form.setError("username", { message: "" })
+      form.setError("password", {
+        message: ERROR_MESSAGES.common.loginFailed,
+      })
     }
   }
 
   return (
-    <>
-      <Container
-        as="form"
-        onSubmit={handleSubmit(onSubmit)}
-        h="100vh"
-        maxW="sm"
-        alignItems="stretch"
-        justifyContent="center"
-        gap={4}
-        centerContent
-      >
-        <Image
+    <main className="flex h-screen items-center justify-center">
+      <div className="mx-auto w-full max-w-sm px-4">
+        <img
           src={Logo}
           alt="HanulDrone logo"
-          height="auto"
-          maxW="2xs"
-          alignSelf="center"
-          mb={4}
+          className="mx-auto h-auto w-auto max-w-64"
         />
-        <FormControl id="username" isInvalid={!!errors.username || !!error}>
-          <Input
-            id="username"
-            {...register("username", {
-              required: "Username is required",
-              pattern: emailPattern,
-            })}
-            placeholder="이메일"
-            type="email"
-            required
-          />
-          {errors.username && (
-            <FormErrorMessage>{errors.username.message}</FormErrorMessage>
-          )}
-        </FormControl>
-        <FormControl id="password" isInvalid={!!error}>
-          <InputGroup>
-            <Input
-              {...register("password", {
-                required: "Password is required",
-              })}
-              type={show ? "text" : "password"}
-              placeholder="비밀번호"
-              required
-            />
-            <InputRightElement
-              color="ui.dim"
-              _hover={{
-                cursor: "pointer",
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <FormField
+              control={form.control}
+              name="username"
+              rules={{
+                required: ERROR_MESSAGES.common.required,
+                pattern: emailPattern,
               }}
+              render={({ field }) => (
+                <FormItem className="mt-2">
+                  <div className="flex items-center">
+                    <FormLabel className="text-xl">아이디</FormLabel>
+                    <FormMessage className="m-1" />
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="username"
+                      id="username"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="password"
+              rules={passwordRules()}
+              render={({ field }) => (
+                <FormItem className="mt-2">
+                  <div className="flex items-center">
+                    <FormLabel className="text-xl">비밀번호</FormLabel>
+                    <FormMessage className="m-1" />
+                  </div>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      id="password"
+                      {...field}
+                      value={field.value ?? ""}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <Button
+              type="submit"
+              className={cn(
+                "mt-6 w-full cursor-pointer",
+                form.formState.isSubmitting
+                  ? "pointer-events-none opacity-50"
+                  : "",
+              )}
+              disabled={form.formState.isSubmitting}
             >
-              <Icon
-                as={show ? ViewOffIcon : ViewIcon}
-                onClick={setShow.toggle}
-                aria-label={show ? "비밀번호 숨기기" : "비밀번호 표시"}
-              >
-                {show ? <ViewOffIcon /> : <ViewIcon />}
-              </Icon>
-            </InputRightElement>
-          </InputGroup>
-          {error && <FormErrorMessage>{error}</FormErrorMessage>}
-        </FormControl>
-        <Link as={RouterLink} to="/recover-password" color="blue.500">
-          비밀번호 찾기
-        </Link>
-        <Button variant="primary" type="submit" isLoading={isSubmitting}>
-          로그인
-        </Button>
-        <Text>
-          <Link as={RouterLink} to="/signup" color="blue.500">
-            회원 가입
-          </Link>
-        </Text>
-      </Container>
-    </>
+              로그인 하기
+            </Button>
+          </form>
+        </Form>
+        <div className="mt-4 flex justify-center gap-2">
+          <Button variant="link">
+            <Link to="/recover-password">비밀번호 찾기</Link>
+          </Button>
+          <Button variant="link">
+            <Link to="/signup">회원 가입</Link>
+          </Button>
+        </div>
+      </div>
+    </main>
   )
 }

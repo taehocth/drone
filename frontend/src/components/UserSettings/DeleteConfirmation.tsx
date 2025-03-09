@@ -13,7 +13,7 @@ import { useForm } from "react-hook-form"
 import { type ApiError, UsersService } from "../../client"
 import useAuth from "../../hooks/useAuth"
 import useCustomToast from "../../hooks/useCustomToast"
-import { handleError } from "../../utils"
+import { handleError } from "@/lib/formUtils"
 import { useRef } from "react"
 
 interface DeleteProps {
@@ -34,11 +34,7 @@ const DeleteConfirmation = ({ isOpen, onClose }: DeleteProps) => {
   const mutation = useMutation({
     mutationFn: () => UsersService.deleteUserMe(),
     onSuccess: () => {
-      showToast(
-        "Success",
-        "Your account has been successfully deleted.",
-        "success",
-      )
+      showToast("Success Your account has been successfully deleted.")
       logout()
       onClose()
     },

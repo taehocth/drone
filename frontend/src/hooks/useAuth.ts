@@ -35,9 +35,7 @@ const useAuth = () => {
     onSuccess: () => {
       navigate({ to: "/login" })
       showToast(
-        "Account created.",
-        "Your account has been created successfully.",
-        "success",
+        "Account created. Your account has been created successfully.",
       )
     },
     onError: (err: ApiError) => {
@@ -47,7 +45,7 @@ const useAuth = () => {
         errDetail = err.message
       }
 
-      showToast("Something went wrong.", errDetail, "error")
+      showToast(`Something went wrong. ${errDetail}`)
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] })

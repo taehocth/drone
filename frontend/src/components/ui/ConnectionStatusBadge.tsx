@@ -1,5 +1,5 @@
-import { Badge } from "@chakra-ui/react"
 import { ConnectionStatus, ConnectionStatusConfig } from "../../enum"
+import { Badge } from "./badge"
 
 interface ConnectionStatusBadgeProps {
   status: ConnectionStatus
@@ -9,9 +9,5 @@ export const ConnectionStatusBadge = ({
   status,
 }: ConnectionStatusBadgeProps) => {
   const { text, color } = ConnectionStatusConfig[status]
-  return (
-    <Badge h={18} colorScheme={color}>
-      {text}
-    </Badge>
-  )
+  return <Badge className={`${color} h-6`}>{text}</Badge>
 }

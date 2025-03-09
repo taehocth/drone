@@ -1,21 +1,16 @@
 import { ComponentProps } from "react"
-import { Text } from "@chakra-ui/react"
+
+import { Separator } from "@/components/ui/separator"
+import { Typography } from "@/components/Common/Typography"
 
 export const PageTitle = ({
   children,
   ...props
-}: ComponentProps<typeof Text>) => {
+}: ComponentProps<typeof Typography>) => {
   return (
-    <Text
-      as="h1"
-      textStyle="h1"
-      mb={4}
-      borderBottomWidth="1px"
-      borderBottomStyle="solid"
-      borderBottomColor="gray.200"
-      {...props}
-    >
+    <Typography variant="h2" {...props} className="pb-0">
       {children}
-    </Text>
+      <Separator />
+    </Typography>
   )
 }
