@@ -1,12 +1,15 @@
-import {
-  Container,
-  Heading,
-  Tab,
-  TabList,
-  TabPanel,
-  TabPanels,
-  Tabs,
-} from "@chakra-ui/react"
+// import {
+//   Container,
+//   Heading,
+//   Tab,
+//   TabList,
+//   TabPanel,
+//   TabPanels,
+//   Tabs,
+// } from "@chakra-ui/react"
+
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+
 import { useQueryClient } from "@tanstack/react-query"
 import { createFileRoute } from "@tanstack/react-router"
 
@@ -15,6 +18,7 @@ import Appearance from "../components/UserSettings/Appearance"
 import ChangePassword from "../components/UserSettings/ChangePassword"
 import DeleteAccount from "../components/UserSettings/DeleteAccount"
 import UserInformation from "../components/UserSettings/UserInformation"
+import { Typography } from "@/components/Common/Typography"
 
 const tabsConfig = [
   { title: "My profile", component: UserInformation },
@@ -35,24 +39,42 @@ function UserSettings() {
     : tabsConfig
 
   return (
-    <Container maxW="full">
-      <Heading size="lg" textAlign={{ base: "center", md: "left" }} py={12}>
-        User Settings
-      </Heading>
-      <Tabs variant="enclosed">
-        <TabList>
+    <>
+      <Typography variant="h2">사용자 설정</Typography>
+      <Tabs defaultValue="account" className="w-[400px]">
+        <TabsList>
           {finalTabs.map((tab, index) => (
-            <Tab key={index}>{tab.title}</Tab>
+            <TabsTrigger key={`${tab.title}${index}`} value={tab.title}>
+              {tab.title}
+            </TabsTrigger>
           ))}
-        </TabList>
-        <TabPanels>
-          {finalTabs.map((tab, index) => (
-            <TabPanel key={index}>
-              <tab.component />
-            </TabPanel>
-          ))}
-        </TabPanels>
+        </TabsList>
+        {finalTabs.map((tab, index) => (
+          <TabsContent key={index} value={tab.title}>
+            <tab.component />
+          </TabsContent>
+        ))}
       </Tabs>
-    </Container>
+    </>
+
+    // <div maxW="full">
+    //   <h2 size="lg" textAlign={{ base: "center", md: "left" }} py={12}>
+    //     User Settings
+    //   </h2>
+    //   <Tabs variant="enclosed">
+    //     <TabList>
+    //       {finalTabs.map((tab, index) => (
+    //         <Tab key={index}>{tab.title}</Tab>
+    //       ))}
+    //     </TabList>
+    //     <TabPanels>
+    //       {finalTabs.map((tab, index) => (
+    //         <TabPanel key={index}>
+    //           <tab.component />
+    //         </TabPanel>
+    //       ))}
+    //     </TabPanels>
+    //   </Tabs>
+    // </div>
   )
 }

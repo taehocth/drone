@@ -1,25 +1,16 @@
-import {
-  Container,
-  Heading,
-  SkeletonText,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Th,
-  Thead,
-  Tr,
-} from "@chakra-ui/react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { z } from "zod"
 
+import { Skeleton } from "@/components/ui/skeleton"
 import { ItemsService } from "../client"
-import ActionsMenu from "../components/Common/ActionsMenu"
-import Navbar from "../components/Common/Navbar"
-import AddItem from "../components/Items/AddItem"
-import { PaginationFooter } from "../components/Common/PaginationFooter.tsx"
+import Navbar from "@/components/Common/Navbar"
+import AddItemDialog from "@/components/Items/AddItemDialog"
+import { PaginationFooter } from "@/components/Common/PaginationFooter.tsx"
+import { Typography } from "@/components/Common/Typography.tsx"
+import { DataTable } from "@/components/ui/data-table.tsx"
+import { itemColumns } from "@/components/Items/ItemColumns.tsx"
 
 const itemsSearchSchema = z.object({
   page: z.number().catch(1),
@@ -38,6 +29,21 @@ function getItemsQueryOptions({ page }: { page: number }) {
       ItemsService.readItems({ skip: (page - 1) * PER_PAGE, limit: PER_PAGE }),
     queryKey: ["items", { page }],
   }
+}
+
+function Items() {
+  return (
+    <>
+      <Navbar>
+        <Typography variant="h2" className="mt-4">
+          기체 관리
+        </Typography>
+      </Navbar>
+
+      <AddItemDialog />
+      <ItemsTable />
+    </>
+  )
 }
 
 function ItemsTable() {
@@ -66,8 +72,13 @@ function ItemsTable() {
   }, [page, queryClient, hasNextPage])
 
   return (
-    <>
-      <TableContainer>
+    <section className="m-4">
+      {isPending ? (
+        <Skeleton className="h-32 w-full rounded-xl" />
+      ) : (
+        <DataTable columns={itemColumns} data={items?.data ?? []} />
+      )}
+      {/* <TableContainer>
         <Table size={{ base: "sm", md: "md" }}>
           <Thead>
             <Tr>
@@ -103,33 +114,20 @@ function ItemsTable() {
                     {item.description || "N/A"}
                   </Td>
                   <Td>
-                    <ActionsMenu type={"Item"} value={item} />
+                    <RowActionsMenu type={"Item"} value={item} />
                   </Td>
                 </Tr>
               ))}
             </Tbody>
           )}
         </Table>
-      </TableContainer>
+      </TableContainer> */}
       <PaginationFooter
         page={page}
         onChangePage={setPage}
         hasNextPage={hasNextPage}
         hasPreviousPage={hasPreviousPage}
       />
-    </>
-  )
-}
-
-function Items() {
-  return (
-    <Container maxW="full">
-      <Heading size="lg" textAlign={{ base: "center", md: "left" }} pt={12}>
-        Items Management
-      </Heading>
-
-      <Navbar type={"Item"} addModalAs={AddItem} />
-      <ItemsTable />
-    </Container>
+    </section>
   )
 }

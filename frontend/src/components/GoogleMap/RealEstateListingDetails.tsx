@@ -1,7 +1,7 @@
 import { FunctionComponent } from "react"
 
 import "./advancedMarker.css"
-import { Flex, Progress, Text } from "@chakra-ui/react"
+import { Typography } from "../Common/Typography"
 
 interface Props {
   property_type?: string
@@ -32,34 +32,16 @@ interface Props {
   img_prompt_bedroom?: string
 }
 
-export const RealEstateListingDetails: FunctionComponent<Props> = (
-  {
-    // property_address,
-    // property_price,
-    // listing_title,
-    // property_bedrooms,
-    // property_bathrooms,
-    // property_square_feet,
-    // listing_description,
-  },
-) => {
+export const RealEstateListingDetails: FunctionComponent<Props> = () => {
   return (
     <div className="details-container">
-      <Flex direction={"column"} gap={1} m={2}>
-        <Text as="h3" textStyle="h3">
-          테스트 드론 A
-        </Text>
-        <Text as="h4" textStyle="h4">
-          - 위도(latitude): 36.7881
-        </Text>
-        <Text as="h4" textStyle="h4">
-          - 경도(longitude): 126.4664
-        </Text>
-        <Text as="h4" textStyle="h4">
-          - 배터리
-        </Text>
-        <Progress value={20} size="lg" w="80%" colorScheme="pink" />
-      </Flex>
+      <div className="m-2 flex flex-col gap-1">
+        <Typography variant="h3">테스트 드론 A</Typography>
+        <Typography variant="h4">- 위도(latitude): 36.7881</Typography>
+        <Typography variant="h4">- 경도(longitude): 126.4664</Typography>
+        <Typography variant="h4">- 배터리</Typography>
+        {/* <Progress value={20} size="lg" w="80%" colorScheme="pink" /> */}
+      </div>
       {/* <div className="listing-content">
         <p>{property_address}</p>
         <div className="details">

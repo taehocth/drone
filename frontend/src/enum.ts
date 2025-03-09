@@ -7,14 +7,14 @@ export enum ConnectionStatus {
 export const ConnectionStatusConfig = {
   [ConnectionStatus.Connecting]: {
     text: "연결 중",
-    color: "gray",
+    color: "bg-gray-400",
   },
   [ConnectionStatus.Connected]: {
     text: "연결 성공",
-    color: "green",
+    color: "bg-green-400",
   },
   [ConnectionStatus.Disconnected]: {
     text: "연결 끊김",
-    color: "red",
+    color: "bg-red-400",
   },
 } as const

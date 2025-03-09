@@ -1,10 +1,11 @@
-import { Button, Container, Text } from "@chakra-ui/react"
+// import { Button, Container, Text } from "@chakra-ui/react"
 import { Link } from "@tanstack/react-router"
 
 const NotFound = () => {
   return (
     <>
-      <Container
+      <div className="m-20">Not found</div>
+      {/* <div
         h="100vh"
         alignItems="stretch"
         justifyContent="center"
@@ -33,7 +34,7 @@ const NotFound = () => {
         >
           Go back
         </Button>
-      </Container>
+      </div> */}
     </>
   )
 }
