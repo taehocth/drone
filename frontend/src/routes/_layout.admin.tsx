@@ -1,28 +1,18 @@
-import {
-  Badge,
-  Box,
-  Container,
-  Flex,
-  Heading,
-  SkeletonText,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Th,
-  Thead,
-  Tr,
-} from "@chakra-ui/react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { z } from "zod"
 
 import { type UserPublic, UsersService } from "../client"
-import AddUser from "../components/Admin/AddUser"
-import ActionsMenu from "../components/Common/ActionsMenu"
+
+// import RowActionsMenu from "@/components/Common/RowActionsMenu"
 import Navbar from "../components/Common/Navbar"
 import { PaginationFooter } from "../components/Common/PaginationFooter.tsx"
+import { Typography } from "@/components/Common/Typography.tsx"
+import { Skeleton } from "@/components/ui/skeleton.tsx"
+import { DataTable } from "@/components/ui/data-table.tsx"
+import { userColumns } from "@/components/Admin/UserColumns.tsx"
+import AddUserDialog from "@/components/Admin/AddUserDialog.tsx"
 
 const usersSearchSchema = z.object({
   page: z.number().catch(1),
@@ -41,6 +31,21 @@ function getUsersQueryOptions({ page }: { page: number }) {
       UsersService.readUsers({ skip: (page - 1) * PER_PAGE, limit: PER_PAGE }),
     queryKey: ["users", { page }],
   }
+}
+
+function Admin() {
+  return (
+    <>
+      <Navbar>
+        <Typography variant="h2" className="mt-4">
+          사용자 관리
+        </Typography>
+      </Navbar>
+
+      <AddUserDialog />
+      <UsersTable />
+    </>
+  )
 }
 
 function UsersTable() {
@@ -70,8 +75,14 @@ function UsersTable() {
   }, [page, queryClient, hasNextPage])
 
   return (
-    <>
-      <TableContainer>
+    <section className="m-4">
+      로그인된 사용자: {currentUser?.full_name ?? "N/A"}
+      {isPending ? (
+        <Skeleton className="h-32 w-full rounded-xl" />
+      ) : (
+        <DataTable columns={userColumns} data={users?.data ?? []} />
+      )}
+      {/* <TableContainer>
         <Table size={{ base: "sm", md: "md" }}>
           <Thead>
             <Tr>
@@ -113,8 +124,8 @@ function UsersTable() {
                   </Td>
                   <Td>{user.is_superuser ? "Superuser" : "User"}</Td>
                   <Td>
-                    <Flex gap={2}>
-                      <Box
+                    <div gap={2}>
+                      <div
                         w="2"
                         h="2"
                         borderRadius="50%"
@@ -122,10 +133,10 @@ function UsersTable() {
                         alignSelf="center"
                       />
                       {user.is_active ? "Active" : "Inactive"}
-                    </Flex>
+                    </div>
                   </Td>
                   <Td>
-                    <ActionsMenu
+                    <RowActionsMenu
                       type="User"
                       value={user}
                       disabled={currentUser?.id === user.id}
@@ -136,26 +147,13 @@ function UsersTable() {
             </Tbody>
           )}
         </Table>
-      </TableContainer>
+      </TableContainer> */}
       <PaginationFooter
         onChangePage={setPage}
         page={page}
         hasNextPage={hasNextPage}
         hasPreviousPage={hasPreviousPage}
       />
-    </>
-  )
-}
-
-function Admin() {
-  return (
-    <Container maxW="full">
-      <Heading size="lg" textAlign={{ base: "center", md: "left" }} pt={12}>
-        Users Management
-      </Heading>
-
-      <Navbar type={"User"} addModalAs={AddUser} />
-      <UsersTable />
-    </Container>
+    </section>
   )
 }
