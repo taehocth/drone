@@ -1,82 +1,153 @@
-import { ConnectionStatusBadge } from "../ui/ConnectionStatusBadge"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Typography } from "@/components/Common/Typography"
+import {
+  Battery,
+  Calendar,
+  Clock,
+  TrendingUp as Altitude,
+  Gauge,
+  ArrowRight as LinkIcon,
+} from "lucide-react"
 
+import { ConnectionsType } from "@/enum"
 import { Link } from "@tanstack/react-router"
 
-import { ConnectionStatus } from "../../enum"
-import { Typography } from "../Common/Typography"
-import { Separator } from "@radix-ui/react-separator"
-
-interface UAVCardProps {
-  id: number
+interface UavCardProps {
+  uav: {
+    id: string
+    name: string
+    status: ConnectionsType
+    battery: number
+    altitude: number
+    speed: number
+    lastUpdate: string
+  }
+  // onClick?: () => void
 }
 
-export const UAVCard = ({ id }: UAVCardProps) => {
+function getBatteryColorClass(batteryLevel: number): string {
+  if (batteryLevel > 60) return "bg-green-500"
+  if (batteryLevel > 20) return "bg-yellow-500"
+  return "bg-red-500"
+}
+
+export function UavCard({ uav }: UavCardProps) {
   return (
-    <div className="p-4 m-2 w-full md:w-1/2 lg:w-1/3 border-1 border-gray-200 rounded-md shadow-md">
-      <div className="flex justify-between">
-        <div className="flex gap-2">
-          <CardThumbnail />
-          <Typography variant="h3">UAV1</Typography>
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle>기체 정보</CardTitle>
+            <CardDescription>{uav.name}</CardDescription>
+          </div>
+          <Link
+            className="flex items-center gap-2"
+            to="/uav/$uav"
+            params={{
+              uav: uav.id.toString(),
+            }}
+          >
+            <Typography variant="bold" className="text-primary">
+              상세 보기
+            </Typography>
+            <LinkIcon className="stroke-primary size-6" />
+          </Link>
         </div>
-        <ConnectionStatusBadge status={ConnectionStatus.Connected} />
-      </div>
-      <Separator />
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4">
+          <div className="flex items-center gap-4 rounded-lg border p-4">
+            <Battery className="text-muted-foreground h-5 w-5" />
+            <div>
+              <Typography variant="span" className="block leading-none">
+                배터리
+              </Typography>
+              <Typography
+                variant="span"
+                className="text-muted-foreground block"
+              >
+                {uav.battery}%
+              </Typography>
+            </div>
+            <div
+              className={`h-2 w-16 max-w-80 rounded-full ${getBatteryColorClass(uav.battery)}`}
+              style={{ width: `${uav.battery}%` }}
+            >
+              <div
+                className={`h-full rounded-full ${getBatteryColorClass(uav.battery)}`}
+              />
+            </div>
+          </div>
 
-      <Link
-        to="/uav/$uav"
-        params={{
-          uav: id.toString(),
-        }}
-      >
-        상세 보기 {"->"}
-      </Link>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-4 rounded-lg border p-4">
+              <Altitude className="text-muted-foreground h-5 w-5" />
+              <div>
+                <Typography variant="span" className="block leading-none">
+                  고도
+                </Typography>
+                <Typography
+                  variant="span"
+                  className="text-muted-foreground block"
+                >
+                  {uav.altitude} m
+                </Typography>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 rounded-lg border p-4">
+              <Gauge className="text-muted-foreground h-5 w-5" />
+              <div>
+                <Typography variant="span" className="block leading-none">
+                  속도
+                </Typography>
+                <Typography
+                  variant="span"
+                  className="text-muted-foreground block"
+                >
+                  {uav.speed} m/s
+                </Typography>
+              </div>
+            </div>
+          </div>
 
-      {/* <Link to={UavRoute.path({ params: { uav: "123" } })}>Go to UAV 123</Link> */}
-    </div>
-  )
-}
-
-interface CardThumbnailProps {
-  imageUrl?: string
-  width?: string
-  height?: string
-}
-
-export const CardThumbnail = ({
-  imageUrl,
-  width = "40px",
-  height = "40px",
-}: CardThumbnailProps) => {
-  return imageUrl ? (
-    <div className="rounded-md overflow-hidden">
-      <img src={imageUrl} alt="Card thumbnail" width={width} height={height} />
-    </div>
-  ) : (
-    // <Image
-    //   src={imageUrl}
-    //   alt="Card thumbnail"
-    //   objectFit="cover"
-    //   w={width}
-    //   h={height}
-    //   borderRadius="md"
-    // />
-    <svg
-      width={width}
-      height={height}
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ borderRadius: "0.375rem" }}
-    >
-      <rect width="100%" height="100%" fill={"gray.200"} />
-      <text
-        x="50%"
-        y="50%"
-        dy=".35em"
-        textAnchor="middle"
-        fontSize={32}
-        fill="white"
-      >
-        {"u".toUpperCase() || "-"}
-      </text>
-    </svg>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-4 rounded-lg border p-4">
+              <Calendar className="text-muted-foreground h-5 w-5" />
+              <div>
+                <Typography variant="span" className="block leading-none">
+                  날짜
+                </Typography>
+                <Typography
+                  variant="span"
+                  className="text-muted-foreground block"
+                >
+                  {new Date().toLocaleDateString("ko-KR")}
+                </Typography>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 rounded-lg border p-4">
+              <Clock className="text-muted-foreground h-5 w-5" />
+              <div>
+                <Typography variant="span" className="block leading-none">
+                  마지막 업데이트
+                </Typography>
+                <Typography
+                  variant="span"
+                  className="text-muted-foreground block"
+                >
+                  {uav.lastUpdate}
+                </Typography>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

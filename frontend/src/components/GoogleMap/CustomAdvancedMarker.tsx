@@ -9,7 +9,6 @@ import { TbDrone } from "react-icons/tb"
 import "./advancedMarker.css"
 
 export interface CustomAdvancedMarkerProps {
-  uuid: string
   position: MarkerDetails
   thumbnails?: string[]
 }
@@ -19,19 +18,11 @@ interface MarkerDetails {
   lng: number
 }
 
-const IMAGES = [
-  "https://images.unsplash.com/photo-1611878583599-5a1ba474063b?w=1200&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTF8fGRyb25lc3xlbnwwfHwwfHx8MA%3D%3D",
-  "https://plus.unsplash.com/premium_photo-1664475382326-3dc5510e4ff9?w=1000&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MXx8ZHJvbmVzfGVufDB8fDB8fHww",
-]
-
 export const CustomAdvancedMarker = ({
-  uuid,
   position,
-  thumbnails,
 }: CustomAdvancedMarkerProps) => {
   const [clicked, setClicked] = useState(false)
   const [hovered, setHovered] = useState(false)
-  console.log("zzuuid", uuid)
 
   const renderCustomPin = () => {
     return (
@@ -42,10 +33,7 @@ export const CustomAdvancedMarker = ({
           </button>
 
           <div className="image-container">
-            <RealEstateGallery
-              images={thumbnails ?? IMAGES}
-              isExtended={clicked}
-            />
+            <RealEstateGallery isExtended={clicked} />
             <span className="icon">
               <TbDrone size={20} />
             </span>

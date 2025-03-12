@@ -2,7 +2,7 @@
   /* real estate */
   --estate-yellow: #b88b2e;
   --estate-yellow-light: #ffe29c;
-  --estate-green-dark: #82bda3;
+  --estate-green-dark: #4ADF72;
   --estate-green-light: #18342a;
   --estate-01-grey-mid: #f4f4f4;
   --estate-grey-main: #404040;
@@ -42,6 +42,7 @@
   padding: 4px;
   background-color: var(--estate-green-dark);
   border-radius: 50%;
+  border: 1px solid var(--estate-green-light);
 
   display: flex;
   justify-content: center;
@@ -80,7 +81,7 @@
   justify-content: center;
   align-items: center;
   transition: opacity 0.2s ease-in-out;
-  background-color: aqua;
+  background-color: var(--estate-green-dark);
 }
 
 .custom-pin .image-container .icon {
@@ -464,7 +465,7 @@
   bottom: 0;
   width: 0;
   height: 0;
-  border: 8px solid var(--estate-green-dark);
+  border: 8px solid var(--estate-green-light);
   border-radius: 0;
   border-bottom-right-radius: 5px;
   z-index: -1;
