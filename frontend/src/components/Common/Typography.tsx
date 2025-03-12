@@ -13,6 +13,7 @@ type TypographyVariant =
   | "bold"
   | "small"
   | "error"
+  | "span"
 
 interface TypographyProps extends React.HTMLAttributes<HTMLElement> {
   variant?: TypographyVariant
@@ -68,7 +69,11 @@ const variantMapping: Record<
   },
   error: {
     element: "span",
-    className: "text-sm text-rose-400  font-medium leading-none",
+    className: "text-sm text-rose-400 font-medium leading-none",
+  },
+  span: {
+    element: "span",
+    className: "text-base",
   },
 }
 

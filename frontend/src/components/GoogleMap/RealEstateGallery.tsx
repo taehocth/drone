@@ -4,12 +4,10 @@ import { FunctionComponent } from "react"
 import "./advancedMarker.css"
 
 interface Props {
-  images: string[]
   isExtended: boolean
 }
 
 export const RealEstateGallery: FunctionComponent<Props> = ({
-  images,
   isExtended = false,
 }) => {
   // const [currentImageIndex, setCurrentImageIndex] = useState(0)
@@ -29,11 +27,34 @@ export const RealEstateGallery: FunctionComponent<Props> = ({
   // }
 
   return (
-    <div className={`photo-gallery ${isExtended ? "extended" : ""}`}>
+    <div
+      className={`photo-gallery border-black ${isExtended ? "extended" : ""}`}
+    >
       {/* <svg width="100%" height="100%" style={{ position: "absolute" }}>
         <rect width="100%" height="100%" fill="white" />
       </svg> */}
-      <img src={images[0]} alt="Real estate listing photo" />
+      {/* <img src={images[0]} alt="Real estate listing photo" /> */}
+      <svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 140 140"
+        style={{
+          width: "100%",
+          height: "100%",
+          // maxWidth: "140px",
+          // backgroundPosition: "50% 50%",
+          // backgroundSize: "cover",
+          // borderRadius: "inherit",
+          // position: "relative",
+          // overflow: "hidden",
+          // display: "flex",
+          // justifyContent: "center",
+          // alignItems: "center",
+          // transition: "opacity 0.2s ease-in-out",
+        }}
+      >
+        <circle cx="70" cy="70" r="50" fill="#4ADF72" />
+      </svg>
 
       <div className="gallery-navigation">
         {/* <div className="nav-buttons">

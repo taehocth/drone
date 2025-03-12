@@ -1,20 +1,20 @@
-export enum ConnectionStatus {
+export enum ConnectionsType {
   Connecting = "CONNECTING",
   Connected = "CONNECTED",
   Disconnected = "DISCONNECTED",
 }
 
-export const ConnectionStatusConfig = {
-  [ConnectionStatus.Connecting]: {
-    text: "연결 중",
+export const ConnectionConfig = {
+  [ConnectionsType.Connecting]: {
+    label: "대기",
     color: "bg-gray-400",
   },
-  [ConnectionStatus.Connected]: {
-    text: "연결 성공",
+  [ConnectionsType.Connected]: {
+    label: "활성",
     color: "bg-green-400",
   },
-  [ConnectionStatus.Disconnected]: {
-    text: "연결 끊김",
+  [ConnectionsType.Disconnected]: {
+    label: "끊김",
     color: "bg-red-400",
   },
 } as const
