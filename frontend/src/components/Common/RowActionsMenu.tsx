@@ -1,20 +1,18 @@
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
-import { EllipsisVertical } from "lucide-react"
-import { Edit, Trash } from "lucide-react"
+import { MoreVertical, Pencil, Trash2 } from "lucide-react"
+import { useState } from "react"
 
 import type { ItemPublic, UserPublic } from "../../client"
 import EditUserDialog from "../Admin/EditUserDialog"
 import EditItemDialog from "../Items/EditItemDialog"
-// import Delete from "./DeleteAlert"
-import { Button } from "../ui/button"
+import DeleteAlert from "./DeleteAlert"
 
 interface RowActionsMenuProps {
   type: string
@@ -23,86 +21,53 @@ interface RowActionsMenuProps {
 }
 
 const RowActionsMenu = ({ type, value, disabled }: RowActionsMenuProps) => {
-  // const editUserModal = useDisclosure()
-  // const deleteModal = useDisclosure()
+  const [editOpen, setEditOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger disabled={disabled}>
-          <Button>
-            <EllipsisVertical />
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <Button variant="ghost" size="icon">
+            <MoreVertical className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuLabel>{type} 수정</DropdownMenuLabel>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            {type === "User" ? "사용자" : "아이템"} 수정
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>Profile</DropdownMenuItem>
-          <DropdownMenuItem>Billing</DropdownMenuItem>
-          <DropdownMenuItem>
-            <Edit />
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Trash />
-          </DropdownMenuItem>
-          {type === "User" ? (
-            <EditUserDialog user={value as UserPublic} />
-          ) : (
-            <EditItemDialog item={value as ItemPublic} />
-          )}
-          <DropdownMenuItem>
-            {/* <Delete
-              type={type}
-              id={value.id}
-              isOpen={deleteModal.isOpen}
-              onClose={deleteModal.onClose}
-            /> */}
+          <DropdownMenuItem
+            onClick={() => setDeleteOpen(true)}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {type === "User" ? "사용자" : "아이템"} 삭제
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* <Menu>
-        <MenuButton
-          isDisabled={disabled}
-          as={Button}
-          rightIcon={<BsThreeDotsVertical />}
-          variant="unstyled"
+      {type === "User" ? (
+        <EditUserDialog
+          user={value as UserPublic}
+          open={editOpen}
+          onOpenChange={setEditOpen}
         />
-        <MenuList>
-          <MenuItem
-            onClick={editUserModal.onOpen}
-            icon={<FiEdit fontSize="16px" />}
-          >
-            Edit {type}
-          </MenuItem>
-          <MenuItem
-            onClick={deleteModal.onOpen}
-            icon={<FiTrash fontSize="16px" />}
-            color="ui.danger"
-          >
-            Delete {type}
-          </MenuItem>
-        </MenuList>
-        {type === "User" ? (
-          <EditUser
-            user={value as UserPublic}
-            isOpen={editUserModal.isOpen}
-            onClose={editUserModal.onClose}
-          />
-        ) : (
-          <EditItemDialog
-            item={value as ItemPublic}
-            isOpen={editUserModal.isOpen}
-            onClose={editUserModal.onClose}
-          />
-        )}
-        <Delete
-          type={type}
-          id={value.id}
-          isOpen={deleteModal.isOpen}
-          onClose={deleteModal.onClose}
+      ) : (
+        <EditItemDialog
+          item={value as ItemPublic}
+          open={editOpen}
+          onOpenChange={setEditOpen}
         />
-      </Menu> */}
+      )}
+
+      <DeleteAlert
+        type={type}
+        id={value.id}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+      />
     </>
   )
 }

@@ -3,6 +3,8 @@ import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { type SubmitHandler, useForm } from "react-hook-form"
 
+import { Typography } from "@/components/Common/Typography"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -21,9 +23,8 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Typography } from "@/components/Common/Typography"
 
+import { handleError } from "@/lib/formUtils"
 import {
   type ApiError,
   type ItemPublic,
@@ -31,14 +32,22 @@ import {
   ItemsService,
 } from "../../client"
 import useCustomToast from "../../hooks/useCustomToast"
-import { handleError } from "@/lib/formUtils"
 
 interface EditItemDialogProps {
   item: ItemPublic
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-const EditItemDialog = ({ item }: EditItemDialogProps) => {
-  const [open, setOpen] = useState(false)
+const EditItemDialog = ({
+  item,
+  open: controlledOpen,
+  onOpenChange,
+}: EditItemDialogProps) => {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : uncontrolledOpen
+  const setOpen = isControlled ? onOpenChange! : setUncontrolledOpen
 
   const queryClient = useQueryClient()
   const showToast = useCustomToast()
@@ -77,16 +86,15 @@ const EditItemDialog = ({ item }: EditItemDialogProps) => {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>수정</Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button>수정</Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>'{item.title}' 기체 정보 수정</DialogTitle>
-          <DialogDescription>
-            email input full name input set password confirm password is
-            superuser? is active? save
-          </DialogDescription>
+          <DialogDescription>기체 정보를 수정합니다.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
@@ -96,7 +104,7 @@ const EditItemDialog = ({ item }: EditItemDialogProps) => {
               rules={{ required: "Title is required." }}
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>기체 타이틀</FormLabel>
+                  <FormLabel>제목</FormLabel>
                   <FormControl>
                     <Input
                       type="text"
@@ -106,7 +114,7 @@ const EditItemDialog = ({ item }: EditItemDialogProps) => {
                       value={field.value ?? ""}
                     />
                   </FormControl>
-                  <FormMessage className="text-destructive ml-2" />
+                  <FormMessage className="ml-2 text-destructive" />
                 </FormItem>
               )}
             />
@@ -115,7 +123,7 @@ const EditItemDialog = ({ item }: EditItemDialogProps) => {
               name="description"
               render={({ field, fieldState: { error } }) => (
                 <FormItem>
-                  <FormLabel>기체 타이틀</FormLabel>
+                  <FormLabel>설명</FormLabel>
                   <FormControl>
                     <Input
                       type="text"
@@ -132,63 +140,23 @@ const EditItemDialog = ({ item }: EditItemDialogProps) => {
                 </FormItem>
               )}
             />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                취소
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  !form.formState.isDirty || form.formState.isSubmitting
+                }
+              >
+                {form.formState.isSubmitting ? "저장 중..." : "저장"}
+              </Button>
+            </DialogFooter>
           </form>
-          <DialogFooter>
-            <Button type="submit" disabled={!form.formState.isDirty}>
-              저장 하기
-            </Button>
-            <Button onClick={onCancel}>취소</Button>
-          </DialogFooter>
         </Form>
       </DialogContent>
     </Dialog>
-    // <Modal
-    //   isOpen={isOpen}
-    //   onClose={onClose}
-    //   size={{ base: "sm", md: "md" }}
-    //   isCentered
-    // >
-    //   <ModalOverlay />
-    //   <ModalContent as="form" onSubmit={handleSubmit(onSubmit)}>
-    //     <ModalHeader>Edit Item</ModalHeader>
-    //     <ModalCloseButton />
-    //     <ModalBody pb={6}>
-    //       <FormControl isInvalid={!!errors.title}>
-    //         <FormLabel htmlFor="title">Title</FormLabel>
-    //         <Input
-    //           id="title"
-    //           {...register("title", {
-    //             required: "Title is required",
-    //           })}
-    //           type="text"
-    //         />
-    //         {errors.title && (
-    //           <FormErrorMessage>{errors.title.message}</FormErrorMessage>
-    //         )}
-    //       </FormControl>
-    //       <FormControl mt={4}>
-    //         <FormLabel htmlFor="description">Description</FormLabel>
-    //         <Input
-    //           id="description"
-    //           {...register("description")}
-    //           placeholder="Description"
-    //           type="text"
-    //         />
-    //       </FormControl>
-    //     </ModalBody>
-    //     <ModalFooter gap={3}>
-    //       <Button
-    //         variant="primary"
-    //         type="submit"
-    //         isLoading={isSubmitting}
-    //         isDisabled={!isDirty}
-    //       >
-    //         Save
-    //       </Button>
-    //       <Button onClick={onCancel}>Cancel</Button>
-    //     </ModalFooter>
-    //   </ModalContent>
-    // </Modal>
   )
 }
 

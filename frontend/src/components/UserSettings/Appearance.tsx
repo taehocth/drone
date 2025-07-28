@@ -1,40 +1,53 @@
-// import {
-//   Badge,
-//   Container,
-//   Heading,
-//   Radio,
-//   RadioGroup,
-//   Stack,
-//   useColorMode,
-// } from "@chakra-ui/react"
+import { Badge } from "@/components/ui/badge"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { useTheme } from "next-themes"
 
 const Appearance = () => {
-  // const { colorMode, toggleColorMode } = useColorMode()
+  const { theme, setTheme } = useTheme()
 
   return (
-    <>
-      <div className="m-20">appearance</div>
-
-      {/* <div maxW="full">
-        <h2 size="sm" py={4}>
-          Appearance
-        </h2>
-        <RadioGroup onChange={toggleColorMode} value={colorMode}>
-          <Stack>
-
-            <Radio value="light" colorScheme="teal">
-              Light Mode
-              <Badge ml="1" colorScheme="teal">
-                Default
-              </Badge>
-            </Radio>
-            <Radio value="dark" colorScheme="teal">
-              Dark Mode
-            </Radio>
-          </Stack>
+    <Card>
+      <CardHeader>
+        <CardTitle>테마 설정</CardTitle>
+        <CardDescription>
+          애플리케이션의 테마를 선택할 수 있습니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <RadioGroup value={theme} onValueChange={setTheme}>
+          <div className="mb-3 flex items-center space-x-2">
+            <RadioGroupItem value="light" id="light" />
+            <Label
+              htmlFor="light"
+              className="flex cursor-pointer items-center gap-2"
+            >
+              라이트 모드
+              <Badge variant="secondary">기본값</Badge>
+            </Label>
+          </div>
+          <div className="mb-3 flex items-center space-x-2">
+            <RadioGroupItem value="dark" id="dark" />
+            <Label htmlFor="dark" className="cursor-pointer">
+              다크 모드
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <RadioGroupItem value="system" id="system" />
+            <Label htmlFor="system" className="cursor-pointer">
+              시스템 설정 따르기
+            </Label>
+          </div>
         </RadioGroup>
-      </div> */}
-    </>
+      </CardContent>
+    </Card>
   )
 }
 export default Appearance

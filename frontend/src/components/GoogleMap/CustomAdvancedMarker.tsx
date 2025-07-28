@@ -1,8 +1,8 @@
-import { useState } from "react"
 import { AdvancedMarker } from "@vis.gl/react-google-maps"
+import { useState } from "react"
 
-import { RealEstateListingDetails } from "./RealEstateListingDetails"
 import { RealEstateGallery } from "./RealEstateGallery"
+import { RealEstateListingDetails } from "./RealEstateListingDetails"
 
 import { TbDrone } from "react-icons/tb"
 
@@ -28,7 +28,7 @@ export const CustomAdvancedMarker = ({
     return (
       <>
         <div className="custom-pin">
-          <button className="close-button">
+          <button type="button" className="close-button">
             <span className="material-symbols-outlined"> close </span>
           </button>
 

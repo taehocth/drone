@@ -1,5 +1,5 @@
 // import { useState, FunctionComponent, MouseEvent } from "react"
-import { FunctionComponent } from "react"
+import type { FunctionComponent } from "react"
 
 import "./advancedMarker.css"
 
@@ -52,7 +52,10 @@ export const RealEstateGallery: FunctionComponent<Props> = ({
           // alignItems: "center",
           // transition: "opacity 0.2s ease-in-out",
         }}
+        role="img"
+        aria-label="부동산 이미지"
       >
+        <title>부동산 이미지</title>
         <circle cx="70" cy="70" r="50" fill="#4ADF72" />
       </svg>
 

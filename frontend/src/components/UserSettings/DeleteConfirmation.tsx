@@ -1,92 +1,77 @@
-// import {
-//   AlertDialog,
-//   AlertDialogBody,
-//   AlertDialogContent,
-//   AlertDialogFooter,
-//   AlertDialogHeader,
-//   AlertDialogOverlay,
-//   Button,
-// } from "@chakra-ui/react"
-// import { useMutation, useQueryClient } from "@tanstack/react-query"
-// import { useForm } from "react-hook-form"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 
-// import { type ApiError, UsersService } from "../../client"
-// import useAuth from "../../hooks/useAuth"
-// import useCustomToast from "../../hooks/useCustomToast"
-// import { handleError } from "@/lib/formUtils"
-// import { useRef } from "react"
+import { handleError } from "@/lib/formUtils"
+import { type ApiError, UsersService } from "../../client"
+import useAuth from "../../hooks/useAuth"
+import useCustomToast from "../../hooks/useCustomToast"
 
-interface DeleteProps {
-  isOpen: boolean
-  onClose: () => void
+interface DeleteConfirmationProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
-const DeleteConfirmation = ({ isOpen, onClose }: DeleteProps) => {
-  console.log("z", isOpen, onClose)
-  // const queryClient = useQueryClient()
-  // const showToast = useCustomToast()
-  // const cancelRef = useRef<HTMLButtonElement | null>(null)
-  // const {
-  //   handleSubmit,
-  //   formState: { isSubmitting },
-  // } = useForm()
-  // const { logout } = useAuth()
+const DeleteConfirmation = ({
+  open,
+  onOpenChange,
+}: DeleteConfirmationProps) => {
+  const queryClient = useQueryClient()
+  const showToast = useCustomToast()
+  const { logout } = useAuth()
 
-  // const mutation = useMutation({
-  //   mutationFn: () => UsersService.deleteUserMe(),
-  //   onSuccess: () => {
-  //     showToast("Success Your account has been successfully deleted.")
-  //     logout()
-  //     onClose()
-  //   },
-  //   onError: (err: ApiError) => {
-  //     handleError(err, showToast)
-  //   },
-  //   onSettled: () => {
-  //     queryClient.invalidateQueries({ queryKey: ["currentUser"] })
-  //   },
-  // })
+  const mutation = useMutation({
+    mutationFn: () => UsersService.deleteUserMe(),
+    onSuccess: () => {
+      showToast("성공", "계정이 성공적으로 삭제되었습니다.")
+      logout()
+      onOpenChange(false)
+    },
+    onError: (err: ApiError) => {
+      handleError(err, showToast)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["currentUser"] })
+    },
+  })
 
-  // const onSubmit = async () => {
-  //   mutation.mutate()
-  // }
+  const handleConfirm = () => {
+    mutation.mutate()
+  }
 
   return (
-    <>
-      {/* <AlertDialog
-        isOpen={isOpen}
-        onClose={onClose}
-        leastDestructiveRef={cancelRef}
-        size={{ base: "sm", md: "md" }}
-        isCentered
-      >
-        <AlertDialogOverlay>
-          <AlertDialogContent as="form" onSubmit={handleSubmit(onSubmit)}>
-            <AlertDialogHeader>Confirmation Required</AlertDialogHeader>
-
-            <AlertDialogBody>
-              All your account data will be{" "}
-              <strong>permanently deleted.</strong> If you are sure, please
-              click <strong>"Confirm"</strong> to proceed. This action cannot be
-              undone.
-            </AlertDialogBody>
-
-            <AlertDialogFooter gap={3}>
-              <Button variant="danger" type="submit" isLoading={isSubmitting}>
-                Confirm
-              </Button>
-              <Button
-                ref={cancelRef}
-                onClick={onClose}
-                isDisabled={isSubmitting}
-              >
-                Cancel
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog> */}
-    </>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>정말로 계정을 삭제하시겠습니까?</AlertDialogTitle>
+          <AlertDialogDescription>
+            계정의 모든 데이터가 <strong>영구적으로 삭제됩니다.</strong>
+            정말로 삭제하시려면 <strong>"확인"</strong>을 클릭하세요. 이 작업은
+            되돌릴 수 없습니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={mutation.isPending}>
+            취소
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleConfirm}
+            disabled={mutation.isPending}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {mutation.isPending ? "삭제 중..." : "확인"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
