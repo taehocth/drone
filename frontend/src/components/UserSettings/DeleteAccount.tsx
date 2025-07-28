@@ -1,36 +1,44 @@
-// import {
-//   Button,
-//   Container,
-//   Heading,
-//   Text,
-//   useDisclosure,
-// } from "@chakra-ui/react"
-
-// import DeleteConfirmation from "./DeleteConfirmation"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { useState } from "react"
+import DeleteConfirmation from "./DeleteConfirmation"
 
 const DeleteAccount = () => {
-  // const confirmationModal = useDisclosure()
+  const [showConfirmation, setShowConfirmation] = useState(false)
 
   return (
     <>
-      <div className="m-20">delete account</div>
+      <Card className="border-destructive">
+        <CardHeader>
+          <CardTitle className="text-destructive">계정 삭제</CardTitle>
+          <CardDescription>
+            계정과 연결된 모든 데이터를 영구적으로 삭제합니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4 text-muted-foreground text-sm">
+            이 작업은 되돌릴 수 없습니다. 계정과 관련된 모든 데이터가 영구적으로
+            삭제됩니다.
+          </p>
+          <Button
+            variant="destructive"
+            onClick={() => setShowConfirmation(true)}
+          >
+            계정 삭제
+          </Button>
+        </CardContent>
+      </Card>
 
-      {/* <div maxW="full">
-        <h2 size="sm" py={4}>
-          Delete Account
-        </h2>
-        <Text>
-          Permanently delete your data and everything associated with your
-          account.
-        </Text>
-        <Button variant="danger" mt={4} onClick={confirmationModal.onOpen}>
-          Delete
-        </Button>
-        <DeleteConfirmation
-          isOpen={confirmationModal.isOpen}
-          onClose={confirmationModal.onClose}
-        />
-      </div> */}
+      <DeleteConfirmation
+        open={showConfirmation}
+        onOpenChange={setShowConfirmation}
+      />
     </>
   )
 }

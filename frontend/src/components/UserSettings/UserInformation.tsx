@@ -1,159 +1,169 @@
-// import {
-//   Box,
-//   Button,
-//   Container,
-//   Flex,
-//   FormControl,
-//   FormErrorMessage,
-//   FormLabel,
-//   Heading,
-//   Input,
-//   Text,
-//   useColorModeValue,
-// } from "@chakra-ui/react"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
+import { type SubmitHandler, useForm } from "react-hook-form"
 
-// import { useMutation, useQueryClient } from "@tanstack/react-query"
-// import { useState } from "react"
-// import { type SubmitHandler, useForm } from "react-hook-form"
-
-// import {
-//   type ApiError,
-//   type UserPublic,
-//   type UserUpdateMe,
-//   UsersService,
-// } from "../../client"
-// import useAuth from "../../hooks/useAuth"
-// import useCustomToast from "../../hooks/useCustomToast"
-// import { emailPattern, handleError } from "@/lib/formUtils"
+import { emailPattern, handleError } from "@/lib/formUtils"
+import {
+  type ApiError,
+  type UserPublic,
+  type UserUpdateMe,
+  UsersService,
+} from "../../client"
+import useAuth from "../../hooks/useAuth"
+import useCustomToast from "../../hooks/useCustomToast"
 
 const UserInformation = () => {
-  //   const queryClient = useQueryClient()
-  //   // const color = useColorModeValue("inherit", "ui.light")
-  //   const showToast = useCustomToast()
-  //   const [editMode, setEditMode] = useState(false)
-  //   const { user: currentUser } = useAuth()
-  //   const {
-  //     register,
-  //     handleSubmit,
-  //     reset,
-  //     getValues,
-  //     formState: { isSubmitting, errors, isDirty },
-  //   } = useForm<UserPublic>({
-  //     mode: "onBlur",
-  //     criteriaMode: "all",
-  //     defaultValues: {
-  //       full_name: currentUser?.full_name,
-  //       email: currentUser?.email,
-  //     },
-  //   })
+  const queryClient = useQueryClient()
+  const showToast = useCustomToast()
+  const [editMode, setEditMode] = useState(false)
+  const { user: currentUser } = useAuth()
 
-  //   const toggleEditMode = () => {
-  //     setEditMode(!editMode)
-  //   }
+  const form = useForm<UserPublic>({
+    mode: "onBlur",
+    criteriaMode: "all",
+    defaultValues: {
+      full_name: currentUser?.full_name,
+      email: currentUser?.email,
+    },
+  })
 
-  //   const mutation = useMutation({
-  //     mutationFn: (data: UserUpdateMe) =>
-  //       UsersService.updateUserMe({ requestBody: data }),
-  //     onSuccess: () => {
-  //       showToast("Success! User updated successfully.")
-  //     },
-  //     onError: (err: ApiError) => {
-  //       handleError(err, showToast)
-  //     },
-  //     onSettled: () => {
-  //       queryClient.invalidateQueries()
-  //     },
-  //   })
+  const toggleEditMode = () => {
+    setEditMode(!editMode)
+  }
 
-  //   const onSubmit: SubmitHandler<UserUpdateMe> = async (data) => {
-  //     mutation.mutate(data)
-  //   }
+  const mutation = useMutation({
+    mutationFn: (data: UserUpdateMe) =>
+      UsersService.updateUserMe({ requestBody: data }),
+    onSuccess: () => {
+      showToast("성공", "사용자 정보가 성공적으로 업데이트되었습니다.")
+      toggleEditMode()
+    },
+    onError: (err: ApiError) => {
+      handleError(err, showToast)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries()
+    },
+  })
 
-  //   const onCancel = () => {
-  //     reset()
-  //     toggleEditMode()
-  //   }
+  const onSubmit: SubmitHandler<UserUpdateMe> = async (data) => {
+    mutation.mutate(data)
+  }
+
+  const onCancel = () => {
+    form.reset()
+    toggleEditMode()
+  }
 
   return (
-    <>
-      <div className="m-20">user info</div>
+    <Card>
+      <CardHeader>
+        <CardTitle>사용자 정보</CardTitle>
+        <CardDescription>
+          프로필 정보를 확인하고 수정할 수 있습니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="full_name"
+              rules={{ maxLength: 30 }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>이름</FormLabel>
+                  <FormControl>
+                    {editMode ? (
+                      <Input
+                        {...field}
+                        value={field.value || ""}
+                        placeholder="이름을 입력하세요"
+                      />
+                    ) : (
+                      <p className="py-2 text-muted-foreground text-sm">
+                        {currentUser?.full_name || "N/A"}
+                      </p>
+                    )}
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-      {/* <div maxW="full">
-        <h2 size="sm" py={4}>
-          User Information
-        </h2>
-        <div
-          w={{ sm: "full", md: "50%" }}
-          as="form"
-          onSubmit={handleSubmit(onSubmit)}
-        >
-          <FormControl>
-            <FormLabel color={color} htmlFor="name">
-              Full name
-            </FormLabel>
-            {editMode ? (
-              <Input
-                id="name"
-                {...register("full_name", { maxLength: 30 })}
-                type="text"
-                size="md"
-                w="auto"
-              />
-            ) : (
-              <Text
-                size="md"
-                py={2}
-                color={!currentUser?.full_name ? "ui.dim" : "inherit"}
-                isTruncated
-                maxWidth="250px"
-              >
-                {currentUser?.full_name || "N/A"}
-              </Text>
-            )}
-          </FormControl>
-          <FormControl mt={4} isInvalid={!!errors.email}>
-            <FormLabel color={color} htmlFor="email">
-              Email
-            </FormLabel>
-            {editMode ? (
-              <Input
-                id="email"
-                {...register("email", {
-                  required: "Email is required",
-                  pattern: emailPattern,
-                })}
-                type="email"
-                size="md"
-                w="auto"
-              />
-            ) : (
-              <Text size="md" py={2} isTruncated maxWidth="250px">
-                {currentUser?.email}
-              </Text>
-            )}
-            {errors.email && (
-              <FormErrorMessage>{errors.email.message}</FormErrorMessage>
-            )}
-          </FormControl>
-          <div mt={4} gap={3}>
-            <Button
-              variant="primary"
-              onClick={toggleEditMode}
-              type={editMode ? "button" : "submit"}
-              isLoading={editMode ? isSubmitting : false}
-              isDisabled={editMode ? !isDirty || !getValues("email") : false}
-            >
-              {editMode ? "Save" : "Edit"}
-            </Button>
-            {editMode && (
-              <Button onClick={onCancel} isDisabled={isSubmitting}>
-                Cancel
-              </Button>
-            )}
-          </div>
-        </div>
-      </div> */}
-    </>
+            <FormField
+              control={form.control}
+              name="email"
+              rules={{
+                required: "이메일은 필수입니다.",
+                pattern: emailPattern,
+              }}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>이메일</FormLabel>
+                  <FormControl>
+                    {editMode ? (
+                      <Input
+                        {...field}
+                        type="email"
+                        placeholder="이메일을 입력하세요"
+                      />
+                    ) : (
+                      <p className="py-2 text-sm">{currentUser?.email}</p>
+                    )}
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="flex gap-3">
+              {editMode ? (
+                <>
+                  <Button
+                    type="submit"
+                    disabled={
+                      !form.formState.isDirty || form.formState.isSubmitting
+                    }
+                  >
+                    {form.formState.isSubmitting ? "저장 중..." : "저장"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onCancel}
+                    disabled={form.formState.isSubmitting}
+                  >
+                    취소
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" onClick={toggleEditMode}>
+                  수정
+                </Button>
+              )}
+            </div>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -7,8 +7,13 @@
     "ignore": [
       "node_modules",
       "src/routeTree.gen.ts",
+      "src/client/**",
       "playwright.config.ts",
-      "playwright-report"
+      "playwright-report",
+      "dist",
+      "tsconfig.app.json",
+      "src/components/ui/chart.tsx",
+      "src/components/ui/sidebar.tsx"
     ]
   },
   "linter": {

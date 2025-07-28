@@ -3,6 +3,8 @@ import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { type SubmitHandler, useForm } from "react-hook-form"
 
+import { Typography } from "@/components/Common/Typography"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -22,9 +24,8 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Typography } from "@/components/Common/Typography"
 
+import { emailPattern, handleError } from "@/lib/formUtils"
 import {
   type ApiError,
   type UserPublic,
@@ -32,20 +33,28 @@ import {
   UsersService,
 } from "../../client"
 import useCustomToast from "../../hooks/useCustomToast"
-import { emailPattern, handleError } from "@/lib/formUtils"
 import { Checkbox } from "../ui/checkbox"
 import { DropdownMenuItem } from "../ui/dropdown-menu"
 
 interface EditUserDialogProps {
   user: UserPublic
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
 interface UserUpdateForm extends UserUpdate {
   confirm_password: string
 }
 
-const EditUserDialog = ({ user }: EditUserDialogProps) => {
-  const [open, setOpen] = useState(false)
+const EditUserDialog = ({
+  user,
+  open: controlledOpen,
+  onOpenChange,
+}: EditUserDialogProps) => {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : uncontrolledOpen
+  const setOpen = isControlled ? onOpenChange! : setUncontrolledOpen
   const onClose = () => setOpen(false)
 
   const queryClient = useQueryClient()
@@ -98,15 +107,16 @@ const EditUserDialog = ({ user }: EditUserDialogProps) => {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <DropdownMenuItem>User 수정</DropdownMenuItem>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <DropdownMenuItem>User 수정</DropdownMenuItem>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>'{user.email}' 정보 수정</DialogTitle>
           <DialogDescription>
-            email input full name input set password confirm password is
-            superuser? is active? save
+            사용자 정보를 수정합니다. 비밀번호는 비워두면 변경되지 않습니다.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -130,7 +140,7 @@ const EditUserDialog = ({ user }: EditUserDialogProps) => {
                       value={field.value ?? ""}
                     />
                   </FormControl>
-                  <FormMessage className="text-destructive ml-2" />
+                  <FormMessage className="ml-2 text-destructive" />
                 </FormItem>
               )}
             />
@@ -252,13 +262,20 @@ const EditUserDialog = ({ user }: EditUserDialogProps) => {
                 </FormItem>
               )}
             />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onCancel}>
+                취소
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  !form.formState.isDirty || form.formState.isSubmitting
+                }
+              >
+                {form.formState.isSubmitting ? "저장 중..." : "저장"}
+              </Button>
+            </DialogFooter>
           </form>
-          <DialogFooter>
-            <Button type="submit" disabled={!form.formState.isDirty}>
-              저장 하기
-            </Button>
-            <Button onClick={onCancel}>취소</Button>
-          </DialogFooter>
         </Form>
       </DialogContent>
     </Dialog>

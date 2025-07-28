@@ -1,6 +1,9 @@
-import { useState, useEffect } from "react"
-import { Map, useMap } from "@vis.gl/react-google-maps"
+import { Map as GoogleMap, useMap } from "@vis.gl/react-google-maps"
+import { useEffect, useState } from "react"
 
+import { FlightDataChart } from "@/components/Dashboard/FlightDataChart"
+import { UavMiniCard } from "@/components/Dashboard/UavMiniCard"
+import { WeatherCard } from "@/components/Dashboard/WeatherCard"
 import {
   Card,
   CardContent,
@@ -10,9 +13,6 @@ import {
 } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ConnectionsType } from "@/enum"
-import { UavMiniCard } from "@/components/Dashboard/UavMiniCard"
-import { FlightDataChart } from "@/components/Dashboard/FlightDataChart"
-import { WeatherCard } from "@/components/Dashboard/WeatherCard"
 import { CustomAdvancedMarker } from "../GoogleMap/CustomAdvancedMarker"
 import { UavCard } from "./UavCard"
 
@@ -137,7 +137,7 @@ export function UavDashboard() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="aspect-video overflow-hidden rounded-b-lg">
-              <Map
+              <GoogleMap
                 id={"one-of-my-maps"}
                 mapId={"e781c578f46f824c"}
                 defaultZoom={DEFAULT_MAP_OPTIONS.zoom}
@@ -148,7 +148,7 @@ export function UavDashboard() {
                 <CustomAdvancedMarker
                   position={{ lat: 36.7881, lng: 126.4664 }}
                 />
-              </Map>
+              </GoogleMap>
               {/* <DroneMap drones={drones} selectedDroneId={selectedDrone.id} /> */}
             </div>
           </CardContent>
