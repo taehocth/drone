@@ -30,6 +30,7 @@ import {
   PlusCircle,
   Settings,
   User2,
+  Play,
 } from "lucide-react"
 import Logo from "/assets/images/company-logo.svg"
 
@@ -41,6 +42,11 @@ const items = [
     title: "대시보드",
     url: "/",
     icon: Home,
+  },
+  {
+    title: "드론 시뮬레이션",
+    url: "/simulation",
+    icon: Play,
   },
   {
     title: "기체 추가",
@@ -125,7 +131,7 @@ export function AppSidebar() {
                   <span>내 정보</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleLogout}>
-                  <div className="flex items-center cursor-pointer text-rose-400 gap-1">
+                  <div className="flex cursor-pointer items-center gap-1 text-rose-400">
                     <LogOut className="size-4" />
                     <Typography className="[&:not(:first-child)]:mt-0">
                       로그아웃

@@ -13,6 +13,8 @@ import { GeomagneticChart } from "@/components/Dashboard/GeomagneticChart"
 import { useQuery } from "@tanstack/react-query"
 import { UtilsService } from "@/client"
 
+//
+
 interface WeatherCardProps {
   weather: {
     temperature: number
