@@ -20,6 +20,7 @@ import { Route as LayoutIndexImport } from './routes/_layout.index'
 import { Route as LayoutSimulationImport } from './routes/_layout.simulation'
 import { Route as LayoutSettingsImport } from './routes/_layout.settings'
 import { Route as LayoutItemsImport } from './routes/_layout.items'
+import { Route as LayoutChecklistImport } from './routes/_layout.checklist'
 import { Route as LayoutAdminImport } from './routes/_layout.admin'
 import { Route as LayoutUavUavImport } from './routes/_layout.uav.$uav'
 
@@ -70,6 +71,11 @@ const LayoutItemsRoute = LayoutItemsImport.update({
   getParentRoute: () => LayoutRoute,
 } as any)
 
+const LayoutChecklistRoute = LayoutChecklistImport.update({
+  path: '/checklist',
+  getParentRoute: () => LayoutRoute,
+} as any)
+
 const LayoutAdminRoute = LayoutAdminImport.update({
   path: '/admin',
   getParentRoute: () => LayoutRoute,
@@ -108,6 +114,10 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAdminImport
       parentRoute: typeof LayoutImport
     }
+    '/_layout/checklist': {
+      preLoaderRoute: typeof LayoutChecklistImport
+      parentRoute: typeof LayoutImport
+    }
     '/_layout/items': {
       preLoaderRoute: typeof LayoutItemsImport
       parentRoute: typeof LayoutImport
@@ -136,6 +146,7 @@ declare module '@tanstack/react-router' {
 export const routeTree = rootRoute.addChildren([
   LayoutRoute.addChildren([
     LayoutAdminRoute,
+    LayoutChecklistRoute,
     LayoutItemsRoute,
     LayoutSettingsRoute,
     LayoutSimulationRoute,

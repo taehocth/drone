@@ -1,0 +1,39 @@
+# --- FastAPI 기본 ---
+fastapi
+uvicorn[standard]
+starlette
+
+# --- DB & ORM ---
+sqlalchemy        # SQLModel 의존성 보완
+sqlmodel          # SQLAlchemy + Pydantic 기반 ORM
+psycopg2-binary   # Postgres 드라이버 (Windows/로컬 개발 호환성 ↑)
+
+# --- 인증 & 보안 ---
+PyJWT             # JWT 토큰
+passlib[bcrypt]   # 비밀번호 해싱
+python-multipart  # 파일 업로드(FormData) 처리
+# python-jose[cryptography]  # JWT 대안 (선택)
+
+# --- 설정/환경 관리 ---
+pydantic-settings # Pydantic v2용 환경변수 관리
+python-dotenv     # (선택) 로컬 .env 파일 로딩
+
+# --- 마이그레이션 ---
+alembic
+
+# --- 유틸리티 ---
+sentry-sdk        # (선택) Sentry 에러 추적
+email-validator   # (선택) 이메일 형식 검증
+emails            # 이메일 송신
+jinja2            # 템플릿 렌더링
+requests          # 외부 API 호출
+
+# --- 테스트 (필요시) ---
+httpx             # 비동기 API 호출 테스트
+pytest
+pytest-asyncio
+
+# --- 개발 편의 ---
+black
+isort
+flake8

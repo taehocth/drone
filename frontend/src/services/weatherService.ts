@@ -1,6 +1,5 @@
 // 기상청 API 서비스
-const WEATHER_API_KEY_ENCODED =
-  "BOofH37ikPl2w1qzCRJgNUryyGEYO2b%2BmJcqNTnvBlX0IUMBUB2d1IY%2FU6OdZe3SJqxX0uA5XY4qCov07DEf%2FQ%3D%3D"
+const WEATHER_API_KEY_ENCODED = ""
 const WEATHER_API_KEY_DECODED = decodeURIComponent(WEATHER_API_KEY_ENCODED)
 const BASE_URL = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0"
 

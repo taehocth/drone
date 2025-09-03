@@ -15,7 +15,7 @@ function Dashboard() {
     <div className="container">
       <div className="m-4 pt-12">
         <PageTitle>대시보드</PageTitle>
-        <Typography variant="h4">실시간 비행 상태</Typography>
+        <Typography variant="h4">실시간 비행 상태 - 테스트 변경</Typography>
         <UavDashboard />
         <Separator />
         <div className="flex h-[40vh] w-full items-center justify-center"></div>

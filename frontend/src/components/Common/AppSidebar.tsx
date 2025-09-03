@@ -31,6 +31,7 @@ import {
   Settings,
   User2,
   Play,
+  ClipboardList,
 } from "lucide-react"
 import Logo from "/assets/images/company-logo.svg"
 
@@ -47,6 +48,11 @@ const items = [
     title: "드론 시뮬레이션",
     url: "/simulation",
     icon: Play,
+  },
+  {
+    title: "비행 체크리스트",
+    url: "/checklist",
+    icon: ClipboardList,
   },
   {
     title: "기체 추가",

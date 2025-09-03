@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "firebase": "^12.1.0",
+    "html2canvas": "^1.4.1",
+    "html2canvas-pro": "^1.5.11",
+    "jspdf": "^3.0.2",
+    "jspdf-autotable": "^5.0.2"
+  }
+}
