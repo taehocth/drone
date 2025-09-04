@@ -10,6 +10,7 @@ import {
   MapPin,
   ChevronDown,
   AlertTriangle,
+  Activity,
 } from "lucide-react"
 
 interface WeatherData {
@@ -25,6 +26,8 @@ interface WeatherData {
   safetyLevel: "safe" | "caution" | "danger"
   safetyMessage: string
   lastUpdate: string
+  kpIndex?: number | null
+  kpTime?: string | null
 }
 
 interface Region {
@@ -96,6 +99,24 @@ function getBaseDateTime() {
   }
 }
 
+// ✅ NOAA Kp Index 가져오기
+async function fetchKpIndex() {
+  try {
+    const res = await fetch(
+      "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json",
+    )
+    const data = await res.json()
+    const latest = data[data.length - 1] // 가장 최근 값
+    return {
+      kp: latest.kp_index,
+      time: latest.time_tag,
+    }
+  } catch (err) {
+    console.error("Kp Index 불러오기 실패:", err)
+    return { kp: null, time: null }
+  }
+}
+
 export function WeatherInfoCard() {
   const [selectedRegion, setSelectedRegion] = useState<Region>(REGIONS[2])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -121,25 +142,100 @@ export function WeatherInfoCard() {
       const wind = items.find((i: any) => i.category === "WSD")?.fcstValue || 1
       const pop = items.find((i: any) => i.category === "POP")?.fcstValue || 10
 
+      // ✅ 하늘 상태/강수 형태 파싱
+      const sky = items.find((i: any) => i.category === "SKY")?.fcstValue || "1"
+      const pty = items.find((i: any) => i.category === "PTY")?.fcstValue || "0"
+
+      let condition = "맑음"
+
+      if (pty !== "0") {
+        switch (pty) {
+          case "1":
+            condition = "비"
+            break
+          case "2":
+            condition = "비 또는 눈"
+            break
+          case "3":
+            condition = "눈"
+            break
+          case "4":
+            condition = "소나기"
+            break
+          case "5":
+            condition = "빗방울"
+            break
+          case "6":
+            condition = "빗방울/눈날림"
+            break
+          case "7":
+            condition = "눈날림"
+            break
+        }
+      } else {
+        switch (sky) {
+          case "1":
+            condition = "맑음"
+            break
+          case "3":
+            condition = "구름많음"
+            break
+          case "4":
+            condition = "흐림"
+            break
+        }
+      }
+
+      // ✅ 자기장 데이터 가져오기
+      const kpData = await fetchKpIndex()
+
+      // ✅ 비행 안전도 판정
+      let safetyLevel: "safe" | "caution" | "danger" = "safe"
+      let safetyMessage = "비행하기 좋은 날씨입니다."
+
+      if (pty !== "0") {
+        safetyLevel = "danger"
+        safetyMessage = "비가 감지되어 드론 비행이 금지됩니다."
+      } else if (Number(humidity) >= 80) {
+        safetyLevel = "caution"
+        safetyMessage = "습도 80% 이상: 결로 위험으로 비행을 권장하지 않습니다."
+      } else if (Number(pop) > 60) {
+        safetyLevel = "caution"
+        safetyMessage = "강수 확률이 높아 비행에 주의하세요."
+      }
+
+      // 자기장 위험도 반영
+      if (kpData.kp !== null) {
+        if (kpData.kp >= 6) {
+          safetyLevel = "danger"
+          safetyMessage = `자기장 지수 Kp=${kpData.kp} (매우 높음): 비행 금지`
+        } else if (kpData.kp >= 4) {
+          safetyLevel = "caution"
+          safetyMessage = `자기장 지수 Kp=${kpData.kp} (주의): 비행에 주의 필요`
+        }
+      }
+
+      // ✅ 최종 세팅
       setWeatherData({
         temperature: Number(temp),
-        condition: "맑음", // TODO: SKY 코드로 구체화 가능
-        precipitation: "없음",
+        condition,
+        precipitation: pty !== "0" ? condition : "없음",
         humidity: Number(humidity),
         windSpeed: Number(wind),
         windDirection: "남풍",
         visibility: 10,
         precipitationAmount: 0,
         pop: Number(pop),
-        safetyLevel: Number(pop) > 60 ? "caution" : "safe",
-        safetyMessage:
-          Number(pop) > 60 ? "비행에 주의하세요." : "비행하기 좋은 날씨입니다.",
+        safetyLevel,
+        safetyMessage,
         lastUpdate: new Date().toLocaleTimeString("ko-KR", {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
           hour12: true,
         }),
+        kpIndex: kpData.kp,
+        kpTime: kpData.time,
       })
     } catch (err) {
       console.error("날씨 불러오기 실패:", err)
@@ -261,7 +357,9 @@ export function WeatherInfoCard() {
                   <span className={`text-sm font-medium ${getSafetyColor()}`}>
                     {weatherData.safetyLevel === "safe"
                       ? "비행 가능"
-                      : "비행 주의"}
+                      : weatherData.safetyLevel === "caution"
+                        ? "비행 주의"
+                        : "비행 금지"}
                   </span>
                 </div>
                 <div className="text-xs text-gray-500">
@@ -309,6 +407,25 @@ export function WeatherInfoCard() {
                   <div className="text-xs text-gray-600">강수량</div>
                   <div className="font-semibold">
                     {weatherData.precipitationAmount}mm
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 rounded bg-gray-50 p-2">
+                <Activity className="h-4 w-4 text-red-500" />
+                <div>
+                  <div className="text-xs text-gray-600">자기장 (Kp)</div>
+                  <div className="font-semibold">
+                    {weatherData.kpIndex ?? "--"}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {weatherData.kpIndex !== null
+                      ? weatherData.kpIndex >= 6
+                        ? "⚠️ 매우 높음 (비행 금지)"
+                        : weatherData.kpIndex >= 4
+                          ? "주의 필요"
+                          : "안정"
+                      : "데이터 없음"}
                   </div>
                 </div>
               </div>
