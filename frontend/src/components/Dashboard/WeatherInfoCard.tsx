@@ -256,24 +256,30 @@ export function WeatherInfoCard() {
       case "safe":
         return <div className="h-3 w-3 rounded-full bg-green-500" />
       case "caution":
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+        return (
+          <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+        )
       case "danger":
-        return <AlertTriangle className="h-4 w-4 text-red-600" />
+        return (
+          <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
+        )
       default:
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+        return (
+          <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+        )
     }
   }
 
   const getSafetyColor = () => {
     switch (weatherData?.safetyLevel) {
       case "safe":
-        return "text-green-600"
+        return "text-green-600 dark:text-green-400"
       case "caution":
-        return "text-yellow-600"
+        return "text-yellow-600 dark:text-yellow-400"
       case "danger":
-        return "text-red-600"
+        return "text-red-600 dark:text-red-400"
       default:
-        return "text-yellow-600"
+        return "text-yellow-600 dark:text-yellow-400"
     }
   }
 
@@ -294,13 +300,13 @@ export function WeatherInfoCard() {
         <div className="relative">
           <button
             onClick={() => setShowDropdown(!showDropdown)}
-            className="flex w-full items-center justify-between rounded-lg border p-2 hover:bg-gray-50"
+            className="flex w-full items-center justify-between rounded-lg border p-2 hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             <div className="flex items-center gap-2">
-              <MapPin className="h-4 w-4 text-gray-500" />
+              <MapPin className="h-4 w-4 text-gray-500 dark:text-gray-400" />
               <div className="text-left">
                 <div className="font-medium">{selectedRegion.name}</div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
                   {selectedRegion.description}
                 </div>
               </div>
@@ -311,7 +317,7 @@ export function WeatherInfoCard() {
           </button>
 
           {showDropdown && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-white shadow-lg">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
               {REGIONS.map((region) => (
                 <button
                   key={region.id}
@@ -319,12 +325,12 @@ export function WeatherInfoCard() {
                     setSelectedRegion(region)
                     setShowDropdown(false)
                   }}
-                  className="flex w-full items-center gap-2 p-2 text-left hover:bg-gray-50"
+                  className="flex w-full items-center gap-2 p-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                 >
                   <MapPin className="h-4 w-4 text-gray-400" />
                   <div>
                     <div className="font-medium">{region.name}</div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
                       {region.description}
                     </div>
                   </div>
@@ -339,14 +345,14 @@ export function WeatherInfoCard() {
         {weatherData ? (
           <>
             {/* 현재 날씨 */}
-            <div className="flex items-center justify-between rounded-lg bg-gradient-to-r from-blue-50 to-sky-50 p-3">
+            <div className="flex items-center justify-between rounded-lg bg-gradient-to-r from-blue-50 to-sky-50 p-3 dark:from-blue-900/20 dark:to-sky-900/20">
               <div className="flex items-center gap-3">
-                <Cloud className="h-8 w-8 text-gray-600" />
+                <Cloud className="h-8 w-8 text-gray-600 dark:text-gray-300" />
                 <div>
                   <div className="text-2xl font-bold">
                     {weatherData.temperature}°C
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-600 dark:text-gray-300">
                     {weatherData.condition} • {weatherData.precipitation}
                   </div>
                 </div>
@@ -362,7 +368,7 @@ export function WeatherInfoCard() {
                         : "비행 금지"}
                   </span>
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-gray-500 dark:text-gray-400">
                   강수확률 {weatherData.pop}%
                 </div>
               </div>
@@ -370,56 +376,67 @@ export function WeatherInfoCard() {
 
             {/* 상세 기상 정보 */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2">
+              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
                 <Droplets className="h-4 w-4 text-blue-500" />
                 <div>
-                  <div className="text-xs text-gray-600">습도</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    습도
+                  </div>
                   <div className="font-semibold">{weatherData.humidity}%</div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2">
+              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
                 <Wind className="h-4 w-4 text-green-500" />
                 <div>
-                  <div className="text-xs text-gray-600">풍속</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    풍속
+                  </div>
                   <div className="font-semibold">
                     {weatherData.windSpeed}m/s
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
                     {weatherData.windDirection}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2">
+              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
                 <Eye className="h-4 w-4 text-purple-500" />
                 <div>
-                  <div className="text-xs text-gray-600">시정</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    시정
+                  </div>
                   <div className="font-semibold">
                     {weatherData.visibility}km
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2">
+              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
                 <CloudRain className="h-4 w-4 text-blue-600" />
                 <div>
-                  <div className="text-xs text-gray-600">강수량</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    강수량
+                  </div>
                   <div className="font-semibold">
                     {weatherData.precipitationAmount}mm
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2">
+              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
                 <Activity className="h-4 w-4 text-red-500" />
                 <div>
-                  <div className="text-xs text-gray-600">자기장 (Kp)</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    자기장 (Kp)
+                  </div>
                   <div className="font-semibold">
                     {weatherData.kpIndex ?? "--"}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {weatherData.kpIndex !== null
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    {weatherData.kpIndex !== null &&
+                    weatherData.kpIndex !== undefined
                       ? weatherData.kpIndex >= 6
                         ? "⚠️ 매우 높음 (비행 금지)"
                         : weatherData.kpIndex >= 4
@@ -432,20 +449,20 @@ export function WeatherInfoCard() {
             </div>
 
             {/* 비행 안전도 */}
-            <div className="rounded border-l-4 border-yellow-500 bg-yellow-50 p-3">
+            <div className="rounded border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:border-yellow-400 dark:bg-yellow-900/20">
               <div className="flex items-center gap-2">
                 {getSafetyIcon()}
                 <span className={`font-medium ${getSafetyColor()}`}>
                   드론 비행 안전도
                 </span>
               </div>
-              <p className="mt-1 text-sm text-gray-600">
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
                 {weatherData.safetyMessage}
               </p>
             </div>
           </>
         ) : (
-          <div className="p-3 text-center text-gray-500">
+          <div className="p-3 text-center text-gray-500 dark:text-gray-400">
             날씨 데이터를 불러오는 중...
           </div>
         )}

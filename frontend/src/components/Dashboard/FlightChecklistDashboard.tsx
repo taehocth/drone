@@ -38,9 +38,6 @@ import {
   Trash2,
 } from "lucide-react"
 
-// ✅ PDF 관련 라이브러리
-import html2canvas from "html2canvas"
-
 export function FlightChecklistDashboard() {
   // 1) 매뉴얼 메타(로컬 정의)
   const manualMetas: ManualChecklist[] = useMemo(
@@ -226,29 +223,36 @@ export function FlightChecklistDashboard() {
   const toggleCategory = (c: string) =>
     setCollapsedCategories((prev) => ({ ...prev, [c]: !prev[c] }))
 
-  // ✅ PDF 내보내기 핸들러 (dom-to-image-more 사용)
-  const handleExportPDF_UI = async () => {
+  // PDF 내보내기 핸들러
+  const handleExportPDF = async () => {
     const element = document.getElementById("pdf-area")
     if (!element) return
 
-    const dataUrl = await domtoimage.toPng(element)
-    const pdf = new jsPDF("p", "mm", "a4")
-    const pdfWidth = pdf.internal.pageSize.getWidth()
-    const pdfHeight = pdf.internal.pageSize.getHeight()
+    // PDF용 임시 스타일 적용
+    const originalStyle = element.style.cssText
+    element.style.backgroundColor = "#ffffff"
+    element.style.color = "#000000"
+    element.style.padding = "20px"
 
-    const img = new Image()
-    img.src = dataUrl
-    pdf.addImage(img, "PNG", 0, 0, pdfWidth, pdfHeight)
-    pdf.save("checklist.pdf")
+    try {
+      const dataUrl = await domtoimage.toPng(element)
+      const pdf = new jsPDF("p", "mm", "a4")
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+
+      const img = new Image()
+      img.src = dataUrl
+      pdf.addImage(img, "PNG", 0, 0, pdfWidth, pdfHeight)
+      pdf.save("checklist.pdf")
+    } finally {
+      // 원래 스타일 복원
+      element.style.cssText = originalStyle
+    }
   }
 
   // ======= UI =======
   return (
-    <div
-      id="pdf-area"
-      className="space-y-4 p-4"
-      style={{ backgroundColor: "#ffffff", color: "#000000" }} // ✅ 캡처 영역 색상 강제
-    >
+    <div id="pdf-area" className="space-y-4 p-4">
       {/* 상단: 버튼 영역 */}
       <div className="flex gap-2">
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -263,7 +267,6 @@ export function FlightChecklistDashboard() {
               <DialogTitle>새 체크리스트 추가</DialogTitle>
             </DialogHeader>
 
-            {/* ✅ 추가 입력 폼 전체 복구 */}
             <div className="grid gap-3 py-3">
               {/* Manual 선택 */}
               <div className="grid gap-2">
@@ -364,9 +367,9 @@ export function FlightChecklistDashboard() {
           </DialogContent>
         </Dialog>
 
-        {/* ✅ PDF 저장 버튼 */}
+        {/* PDF 저장 버튼 */}
         <Button
-          onClick={handleExportPDF_UI}
+          onClick={handleExportPDF}
           className="bg-green-600 hover:bg-green-700"
         >
           PDF 저장
@@ -385,7 +388,7 @@ export function FlightChecklistDashboard() {
               key={meta.id}
               className="border-2 transition-shadow hover:shadow-lg"
             >
-              <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+              <CardHeader className="border-b bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700">
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-xl">{meta.title}</CardTitle>
@@ -430,7 +433,7 @@ export function FlightChecklistDashboard() {
                   !errorByManual[meta.id] &&
                   (items.length === 0 ? (
                     <div className="text-muted-foreground text-sm">
-                      항목이 없습니다. 상단의 ‘체크리스트 추가’로 만들어 보세요.
+                      항목이 없습니다. 상단의 '체크리스트 추가'로 만들어 보세요.
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -446,7 +449,7 @@ export function FlightChecklistDashboard() {
                           >
                             <button
                               onClick={() => toggleCategory(category)}
-                              className="flex w-full items-center justify-between bg-gray-50 p-3 hover:bg-gray-100"
+                              className="flex w-full items-center justify-between bg-gray-50 p-3 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700"
                             >
                               <div className="flex items-center gap-3">
                                 <span className="text-base font-semibold">
@@ -470,7 +473,7 @@ export function FlightChecklistDashboard() {
                             </button>
 
                             {!isCollapsed && (
-                              <div className="space-y-2 bg-white p-3">
+                              <div className="space-y-2 bg-white p-3 dark:bg-gray-900">
                                 {catItems.map((item) => {
                                   const itemId = item.id ?? `${meta.id}-temp`
                                   const done = !!item.isCompleted
@@ -482,8 +485,8 @@ export function FlightChecklistDashboard() {
                                       key={itemId}
                                       className={`flex items-start gap-2 rounded-lg border p-2 ${
                                         done
-                                          ? "border-green-200 bg-green-50"
-                                          : "border-gray-200 bg-white hover:bg-gray-50"
+                                          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                                          : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
                                       }`}
                                     >
                                       <Checkbox
@@ -503,8 +506,8 @@ export function FlightChecklistDashboard() {
                                           htmlFor={itemId}
                                           className={`cursor-pointer font-medium ${
                                             done
-                                              ? "text-green-700 line-through"
-                                              : "text-gray-900"
+                                              ? "text-green-700 line-through dark:text-green-400"
+                                              : "text-gray-900 dark:text-gray-100"
                                           }`}
                                         >
                                           {title}
@@ -513,7 +516,7 @@ export function FlightChecklistDashboard() {
                                           <p
                                             className={`text-sm ${
                                               done
-                                                ? "text-green-600"
+                                                ? "text-green-600 dark:text-green-300"
                                                 : "text-muted-foreground"
                                             }`}
                                           >
@@ -528,7 +531,7 @@ export function FlightChecklistDashboard() {
                                           onClick={() =>
                                             handleDeleteItem(meta.id, item.id!)
                                           }
-                                          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
                                         >
                                           <Trash2 className="h-4 w-4" />
                                         </Button>
