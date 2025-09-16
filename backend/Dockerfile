@@ -6,6 +6,14 @@ ENV PYTHONUNBUFFERED=1
 # 작업 디렉토리
 WORKDIR /app
 
+# 🔧 pymavlink 설치를 위한 시스템 패키지 설치
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libxml2-dev \
+    libxslt1-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # requirements.txt 복사 및 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

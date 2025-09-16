@@ -1,5 +1,6 @@
 import uuid
 from typing import Any
+from datetime import datetime
 
 from sqlmodel import Session, select
 
@@ -12,6 +13,10 @@ from app.models import (
     ItemCreate,
     ChecklistItem,
     ManualChecklist,
+    SavedChecklist,
+    SavedChecklistCreate,
+    SavedChecklistPublic,
+    SavedChecklistsPublic,
 )
 
 # -------------------------------
@@ -132,3 +137,42 @@ def delete_checklist_item(*, session: Session, item_id: uuid.UUID) -> bool:
         session.commit()
         return True
     return False
+
+
+# -------------------------------
+# 🟢 Saved Checklist 관련 CRUD
+# -------------------------------
+
+def create_saved_checklist(
+    session: Session, 
+    checklist_in: SavedChecklistCreate
+) -> SavedChecklist:
+    db_checklist = SavedChecklist.model_validate(checklist_in)
+    session.add(db_checklist)
+    session.commit()
+    session.refresh(db_checklist)
+    return db_checklist
+
+def get_saved_checklists(
+    session: Session, 
+    skip: int = 0, 
+    limit: int = 100
+) -> list[SavedChecklist]:
+    statement = select(SavedChecklist).offset(skip).limit(limit).order_by(SavedChecklist.created_at.desc())
+    return session.exec(statement).all()
+
+def get_saved_checklist(
+    session: Session, 
+    checklist_id: uuid.UUID
+) -> SavedChecklist | None:
+    return session.get(SavedChecklist, checklist_id)
+
+def delete_saved_checklist(
+    session: Session, 
+    checklist_id: uuid.UUID
+) -> SavedChecklist | None:
+    checklist = session.get(SavedChecklist, checklist_id)
+    if checklist:
+        session.delete(checklist)
+        session.commit()
+    return checklist

@@ -47,14 +47,15 @@ class Settings(BaseSettings):
             self.FRONTEND_HOST
         ]
 
-    PROJECT_NAME: str
+    # 기본값 추가 (환경 변수가 없을 때 사용)
+    PROJECT_NAME: str = "Drone Management System"
     SENTRY_DSN: HttpUrl | None = None
     # ✅ PostgreSQL 관련 (유지)
-    POSTGRES_SERVER: str
+    POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str = ""
-    POSTGRES_DB: str = ""
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "changethis"
+    POSTGRES_DB: str = "drone_db"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -95,8 +96,8 @@ class Settings(BaseSettings):
     # EMAIL_TEST_USER: str = "test@example.com"
     # -------------------------------
 
-    FIRST_SUPERUSER: str
-    FIRST_SUPERUSER_PASSWORD: str
+    FIRST_SUPERUSER: str = "admin@example.com"
+    FIRST_SUPERUSER_PASSWORD: str = "changethis"
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value == "changethis":
