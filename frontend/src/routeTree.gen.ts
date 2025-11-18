@@ -17,14 +17,14 @@ import { Route as ResetPasswordImport } from './routes/reset-password'
 import { Route as RecoverPasswordImport } from './routes/recover-password'
 import { Route as LoginImport } from './routes/login'
 import { Route as LayoutImport } from './routes/_layout'
-import { Route as LayoutSimulationBOOKVUBGB4HSDIImport } from './routes/_layout.simulation-BOOK-VUBGB4HSDI'
-import { Route as LayoutIndexBOOKVUBGB4HSDIImport } from './routes/_layout.index-BOOK-VUBGB4HSDI'
-import { Route as LayoutChecklistBOOKVUBGB4HSDIImport } from './routes/_layout.checklist-BOOK-VUBGB4HSDI'
 import { Route as LayoutIndexImport } from './routes/_layout.index'
+import { Route as LayoutSimulationBOOKVUBGB4HSDIImport } from './routes/_layout.simulation-BOOK-VUBGB4HSDI'
 import { Route as LayoutSimulationImport } from './routes/_layout.simulation'
 import { Route as LayoutSettingsImport } from './routes/_layout.settings'
 import { Route as LayoutItemsImport } from './routes/_layout.items'
+import { Route as LayoutIndexBOOKVUBGB4HSDIImport } from './routes/_layout.index-BOOK-VUBGB4HSDI'
 import { Route as LayoutFlightLogImport } from './routes/_layout.flight-log'
+import { Route as LayoutChecklistBOOKVUBGB4HSDIImport } from './routes/_layout.checklist-BOOK-VUBGB4HSDI'
 import { Route as LayoutChecklistImport } from './routes/_layout.checklist'
 import { Route as LayoutAdminImport } from './routes/_layout.admin'
 import { Route as LayoutUavUavImport } from './routes/_layout.uav.$uav'
@@ -61,27 +61,16 @@ const LayoutRoute = LayoutImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const LayoutIndexRoute = LayoutIndexImport.update({
+  path: '/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+
 const LayoutSimulationBOOKVUBGB4HSDIRoute =
   LayoutSimulationBOOKVUBGB4HSDIImport.update({
     path: '/simulation-BOOK-VUBGB4HSDI',
     getParentRoute: () => LayoutRoute,
   } as any)
-
-const LayoutIndexBOOKVUBGB4HSDIRoute = LayoutIndexBOOKVUBGB4HSDIImport.update({
-  path: '/index-BOOK-VUBGB4HSDI',
-  getParentRoute: () => LayoutRoute,
-} as any)
-
-const LayoutChecklistBOOKVUBGB4HSDIRoute =
-  LayoutChecklistBOOKVUBGB4HSDIImport.update({
-    path: '/checklist-BOOK-VUBGB4HSDI',
-    getParentRoute: () => LayoutRoute,
-  } as any)
-
-const LayoutIndexRoute = LayoutIndexImport.update({
-  path: '/',
-  getParentRoute: () => LayoutRoute,
-} as any)
 
 const LayoutSimulationRoute = LayoutSimulationImport.update({
   path: '/simulation',
@@ -98,10 +87,21 @@ const LayoutItemsRoute = LayoutItemsImport.update({
   getParentRoute: () => LayoutRoute,
 } as any)
 
+const LayoutIndexBOOKVUBGB4HSDIRoute = LayoutIndexBOOKVUBGB4HSDIImport.update({
+  path: '/index-BOOK-VUBGB4HSDI',
+  getParentRoute: () => LayoutRoute,
+} as any)
+
 const LayoutFlightLogRoute = LayoutFlightLogImport.update({
   path: '/flight-log',
   getParentRoute: () => LayoutRoute,
 } as any)
+
+const LayoutChecklistBOOKVUBGB4HSDIRoute =
+  LayoutChecklistBOOKVUBGB4HSDIImport.update({
+    path: '/checklist-BOOK-VUBGB4HSDI',
+    getParentRoute: () => LayoutRoute,
+  } as any)
 
 const LayoutChecklistRoute = LayoutChecklistImport.update({
   path: '/checklist',
@@ -142,6 +142,10 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignupImport
       parentRoute: typeof rootRoute
     }
+    '/signup-BOOK-VUBGB4HSDI': {
+      preLoaderRoute: typeof SignupBOOKVUBGB4HSDIImport
+      parentRoute: typeof rootRoute
+    }
     '/_layout/admin': {
       preLoaderRoute: typeof LayoutAdminImport
       parentRoute: typeof LayoutImport
@@ -150,8 +154,16 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutChecklistImport
       parentRoute: typeof LayoutImport
     }
+    '/_layout/checklist-BOOK-VUBGB4HSDI': {
+      preLoaderRoute: typeof LayoutChecklistBOOKVUBGB4HSDIImport
+      parentRoute: typeof LayoutImport
+    }
     '/_layout/flight-log': {
       preLoaderRoute: typeof LayoutFlightLogImport
+      parentRoute: typeof LayoutImport
+    }
+    '/_layout/index-BOOK-VUBGB4HSDI': {
+      preLoaderRoute: typeof LayoutIndexBOOKVUBGB4HSDIImport
       parentRoute: typeof LayoutImport
     }
     '/_layout/items': {
@@ -166,28 +178,16 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutSimulationImport
       parentRoute: typeof LayoutImport
     }
+    '/_layout/simulation-BOOK-VUBGB4HSDI': {
+      preLoaderRoute: typeof LayoutSimulationBOOKVUBGB4HSDIImport
+      parentRoute: typeof LayoutImport
+    }
     '/_layout/': {
       preLoaderRoute: typeof LayoutIndexImport
       parentRoute: typeof LayoutImport
     }
     '/_layout/uav/$uav': {
       preLoaderRoute: typeof LayoutUavUavImport
-      parentRoute: typeof LayoutImport
-    }
-    '/_layout/checklist-BOOK-VUBGB4HSDI': {
-      preLoaderRoute: typeof LayoutChecklistBOOKVUBGB4HSDIImport
-      parentRoute: typeof LayoutImport
-    }
-    '/signup-BOOK-VUBGB4HSDI': {
-      preLoaderRoute: typeof SignupBOOKVUBGB4HSDIImport
-      parentRoute: typeof rootRoute
-    }
-    '/_layout/index-BOOK-VUBGB4HSDI': {
-      preLoaderRoute: typeof LayoutIndexBOOKVUBGB4HSDIImport
-      parentRoute: typeof LayoutImport
-    }
-    '/_layout/simulation-BOOK-VUBGB4HSDI': {
-      preLoaderRoute: typeof LayoutSimulationBOOKVUBGB4HSDIImport
       parentRoute: typeof LayoutImport
     }
   }
@@ -199,15 +199,15 @@ export const routeTree = rootRoute.addChildren([
   LayoutRoute.addChildren([
     LayoutAdminRoute,
     LayoutChecklistRoute,
+    LayoutChecklistBOOKVUBGB4HSDIRoute,
     LayoutFlightLogRoute,
+    LayoutIndexBOOKVUBGB4HSDIRoute,
     LayoutItemsRoute,
     LayoutSettingsRoute,
     LayoutSimulationRoute,
+    LayoutSimulationBOOKVUBGB4HSDIRoute,
     LayoutIndexRoute,
     LayoutUavUavRoute,
-    LayoutChecklistBOOKVUBGB4HSDIRoute,
-    LayoutIndexBOOKVUBGB4HSDIRoute,
-    LayoutSimulationBOOKVUBGB4HSDIRoute,
   ]),
   LoginRoute,
   RecoverPasswordRoute,

@@ -1,4 +1,4 @@
-version: "3.9"
+# version: "3.9"   # <-- 더 이상 필요 없음. Docker Compose V2에서는 자동 인식됨.
 
 services:
   # Database (Postgres)
@@ -17,7 +17,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_DB: ${POSTGRES_DB}
 
-  # Adminer (DB 관리 툴)
+  # Adminer
   adminer:
     image: adminer
     restart: always
@@ -62,17 +62,15 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
-      - /app/node_modules
+      - /app/node_modules    # ⬅ 문제 원인 해결! anonymous volume
     environment:
       VITE_API_URL: http://backend:8000
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-
-
     depends_on:
       - backend
 
-  # Mailcatcher (메일 테스트)
+  # Mailcatcher
   mailcatcher:
     image: schickling/mailcatcher
     ports:

@@ -31,6 +31,7 @@ export interface AnalysisResult {
   avgSpeed: number
   batteryDrop: number
   rapidDescentDetected: boolean
+  esc_temp_max?: number
 
   extra?: {
     // Battery
@@ -47,6 +48,10 @@ export interface AnalysisResult {
     esc_output_std?: number
     esc_imbalance_index?: number
     esc_avg_rpm?: number
+
+    // ⭐ 여기 추가해야 함
+    esc_rpm_avg?: number[] // ESC RPM 배열
+    esc_temp_max?: number[] // ESC 온도 배열
 
     // FCC
     fcc_roll_std?: number
