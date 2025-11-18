@@ -365,8 +365,13 @@ const DroneSimulation: React.FC = () => {
         {/* 오른쪽 열: 기상 정보 */}
         <div className="space-y-6">
           <WeatherCard
-            latitude={mavlinkData.latitude || 36.9645258}
-            longitude={mavlinkData.longitude || 126.3358099}
+            weather={{
+              temperature: 25,
+              windSpeed: 3.2,
+              windDirection: "NE",
+              condition: "맑음",
+              humidity: 65,
+            }}
           />
         </div>
       </div>

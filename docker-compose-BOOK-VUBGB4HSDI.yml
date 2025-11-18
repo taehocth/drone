@@ -1,0 +1,115 @@
+# version: "3.9"
+
+services:
+  db:
+    image: postgres:12
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - app-db-data:/var/lib/postgresql/data/pgdata
+    env_file:
+      - .env
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DESIGN: pepa-linha-dark
+    depends_on:
+      - db
+
+  backend:
+    build: ./backend
+    restart: always
+    ports:
+      - "8000:8000"
+      - "14445:14445/udp"
+    volumes:
+      - ./backend:/app
+      - ./backend/htmlcov:/app/htmlcov
+    # ✅ USB 장치가 있을 때만 인식되게 안전하게 처리
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app
+      SECRET_KEY: ${SECRET_KEY}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      FRONTEND_HOST: ${FRONTEND_HOST}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
+      SMTP_HOST: mailcatcher
+      SMTP_PORT: 1025
+      SMTP_TLS: "false"
+      EMAILS_FROM_EMAIL: noreply@example.com
+    depends_on:
+      - db
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.localhost`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+      - "traefik.http.routers.backend.entrypoints=web"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      VITE_API_URL: http://api.localhost
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      WSL_USE_POLLING: "true"
+    depends_on:
+      - backend
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    restart: always
+    ports:
+      - "1080:1080"
+      - "1025:1025"
+
+  proxy:
+    image: traefik:v3.0
+    container_name: drone-proxy
+    restart: always
+    command:
+      - --providers.docker
+      - --entrypoints.web.address=:80
+      - --api.dashboard=true
+      - --api.insecure=true
+    ports:
+      - "80:80"       # http://localhost
+      - "8090:8080"   # Traefik 대시보드
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+volumes:
+  app-db-data:

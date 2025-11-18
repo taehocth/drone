@@ -1,0 +1,55 @@
+﻿# --- FastAPI 湲곕낯 ---
+fastapi
+uvicorn[standard]
+starlette
+
+# --- DB & ORM ---
+sqlalchemy
+# SQLModel ?섏〈??蹂댁셿
+sqlmodel
+# SQLAlchemy + Pydantic 湲곕컲 ORM
+psycopg2-binary
+# Postgres ?쒕씪?대쾭 (Windows/濡쒖뺄 媛쒕컻 ?명솚????
+
+# --- ?몄쬆 & 蹂댁븞 ---
+PyJWT
+# JWT ?좏겙
+passlib[bcrypt]
+# 鍮꾨?踰덊샇 ?댁떛
+python-multipart
+# ?뚯씪 ?낅줈??FormData) 泥섎━
+# python-jose[cryptography]
+# JWT ???(?좏깮)
+
+# --- ?ㅼ젙/?섍꼍 愿由?---
+pydantic-settings
+# Pydantic v2???섍꼍蹂??愿由?
+python-dotenv
+# (?좏깮) 濡쒖뺄 .env ?뚯씪 濡쒕뵫
+
+# --- 留덉씠洹몃젅?댁뀡 ---
+alembic
+
+# --- ?좏떥由ы떚 ---
+sentry-sdk
+# (?좏깮) Sentry ?먮윭 異붿쟻
+email-validator
+# (?좏깮) ?대찓???뺤떇 寃利?
+emails
+# ?대찓???≪떊
+jinja2
+# ?쒗뵆由??뚮뜑留?
+requests
+# ?몃? API ?몄텧
+
+# --- ?뚯뒪??(?꾩슂?? ---
+httpx
+# 鍮꾨룞湲?API ?몄텧 ?뚯뒪??
+pytest
+pytest-asyncio
+
+# --- 媛쒕컻 ?몄쓽 ---
+black
+isort
+flake8
+pymavlink

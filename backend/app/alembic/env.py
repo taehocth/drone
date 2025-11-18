@@ -1,6 +1,5 @@
 import os
 from logging.config import fileConfig
-
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -20,6 +19,9 @@ fileConfig(config.config_file_name)
 
 from app.models import SQLModel  # noqa
 from app.core.config import settings # noqa
+
+# Import all models to ensure they are registered with SQLModel.metadata
+from app.models import User, Item, ChecklistItem, ManualChecklist  # noqa
 
 target_metadata = SQLModel.metadata
 

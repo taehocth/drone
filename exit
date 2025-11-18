@@ -1,0 +1,57 @@
+[33m909fdaa[m[33m ([m[1;36mHEAD[m[33m)[m 웹 페이지에 픽스호크 연결
+[33mc9653fc[m 메시지
+[33mc691808[m QGC 연동 전 저장
+[33m8f10da8[m 네이버 지도 기능 추가
+[33m63fdc22[m[33m ([m[1;31morigin/feat/first[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mfeat/first[m[33m)[m 드론 모니터링 UI 개선 + API 연결 수정
+[33mfcf35d7[m 날씨 대시보드 자기장 지표 추가 및 체크리스트 레이아웃 수정
+[33m3d6e9d6[m Update WeatherInfoCard with safety logic and add date to checklist title
+[33mec8579e[m Add weather safety feature and checklist components
+[33m51a6417[m 태안 해수욕장으로 기본 위치 변경 및 드론 시뮬레이션 기능 추가
+[33m13861cf[m 하이
+[33m92904e1[m 컴포넌트들 Shadcn UI로 마이그레이션 (#3)
+[33me6090ba[m Rename UAVCard.tsx to UavCard.tsx
+[33m7e3eb54[m feat: Dashboard page 개편
+[33m9398d59[m fix: Production 서버에서 api 호출 시 에러 나는 것 수정
+[33mc4274bb[m Merge branch 'migration/react-19'
+[33mdf7a20f[m fix: Github Action 중 lint 에러 나는 것 해결
+[33me8a376b[m Merge pull request #1 from For-safe-drone-operations/migration/react-19
+[33ma8572e3[m wip
+[33m8d2f3f2[m feat!: React 19, Tailwind v4, Shadcn 으로 마이그레이션
+[33m741f8de[m update: React 19.0 version으로 업데이트
+[33m4ccde18[m feat: UAV 페이지에 뒤로가기 버튼 추가
+[33m7bc1d04[m feat: Google Map에 advanced marker 추가
+[33m579b39c[m refactor: GeomagneticCard 컴포넌트 추가하여 관심사 분리
+[33m18f02f9[m feat: 지구자기장 API 연동 및 UI 추가
+[33m0b580f0[m chore: generate-client 명령어로 첫 생성
+[33mb4dd767[m feat: geomagnetic-kindex 백엔드 API 추가
+[33ma795f8c[m feat: KASA 지구자기장 API test
+[33mb2f5b1c[m feat: 게이지 모양의 <HalfCircularProgress /> 컴포넌트 추가
+[33mae7b825[m feat: 한울드론 로고 수정 및 사이드바 UI 개선
+[33m1ad1cbc[m feat: Route 구조 변경 및 UAV 페이지 추가
+[33m645e8af[m feat: UAVCard 내 lat, lng 표시를 임시로 제거
+[33m0a5aac8[m feat: Dashboard에 표시할 UAVCard 컴포넌트 구조만 잡아서 추가
+[33m56c14c8[m fix: items.tsx 함수 매개변수 타입 수정
+[33m126e676[m feat: Google Map의 default 값 지정
+[33mb310326[m feat: 폰트 관련 세팅 적용
+[33maa20fa4[m chore: tsconfig에 tsx 파일도 함께 체크하도록 변경
+[33me182a76[m feat: Pretendard 폰트 추가 후 적용
+[33m5dd6308[m fix: Docker build 과정에서 dev dependencies를 추가하는 플래그 추가
+[33mcba112a[m fix: VITE_GOOGLE_MAP_API_KEY 도커에 등하여 구글맵 에러 해결
+[33m149e787[m feat: PROJECT_NAME 환경변수가 없어 backend restart 문제 해결
+[33mbe88b76[m feat: 기체 connection 상태를 표시할 <Badge /> 컴포넌트 추가
+[33maea9abb[m fix: TS unused local variables and import 에러 수정
+[33me787efa[m fix: CI/CD 시 환경변수 에러 나는 것 방지
+[33m952570e[m feat: Google Map API 연동
+[33m0e59ffd[m fix logging code
+[33md63ea1a[m Add github actions debug code
+[33m0c6c081[m feat: docker compose command를 위해 .env 파일 생성하는 step 추가
+[33mc6c8eda[m fix: frontend_host 추가
+[33mce1391f[m fix: GitHub Actions secret에 postgres 관련 값 추가
+[33m89aba73[m fix: GitHub Actions variable set error 해결을 위해 secret 등록
+[33m91e2c9f[m chore: main 브랜치 push 시 Github Action 실행되게 변경
+[33m25cf8bd[m feat: 1차 한글화 완료
+[33mc4e3c44[m change: 기본 로고에서 한울드론 로고로 변경
+[33m916edbc[m feat: 프로젝트 기본 config 설정
+[33m6826af2[m chore: .gitignore 설정
+[33m76b0dc0[m Add files from fastapi/full-stack-fastapi-template
+[33m584723d[m Initial commit

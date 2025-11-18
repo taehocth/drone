@@ -1,0 +1,45 @@
+# --- FastAPI 기본 ---
+fastapi
+uvicorn[standard]
+starlette
+orjson
+# --- DB & ORM ---
+sqlalchemy
+sqlmodel
+psycopg2-binary
+
+# --- 인증 & 보안 ---
+PyJWT
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart
+
+# --- 설정/환경 관리 ---
+pydantic-settings
+python-dotenv
+
+# --- 마이그레이션 ---
+alembic
+
+# --- 유틸리티 ---
+sentry-sdk
+email-validator
+emails
+jinja2
+requests
+
+# --- 테스트 ---
+httpx
+pytest
+pytest-asyncio
+
+# --- 개발 편의 ---
+black
+isort
+flake8
+pymavlink
+pyserial==3.5
+xmltodict
+feedparser==6.0.12
+pandas==2.2.3
+pyulog==1.2.2

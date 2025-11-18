@@ -2,17 +2,7 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Wifi,
-  WifiOff,
-  Plane,
-  PlaneTakeoff,
-  PlaneLanding,
-  MapPin,
-  Gauge,
-  TrendingUp,
-  Zap,
-} from "lucide-react"
+import { Wifi, WifiOff, PlaneTakeoff, PlaneLanding } from "lucide-react"
 
 interface DroneData {
   connected: boolean
