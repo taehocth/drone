@@ -464,7 +464,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
             </div>
 
             {/* 자기장 경보 */}
-            {weatherData.kpIndex && weatherData.kpIndex >= 5 && (
+            {weatherData.kpIndex != null && weatherData.kpIndex >= 5 && (
               <div className="rounded bg-red-100 p-2 text-center text-sm text-red-700">
                 ⚠️ 지자기 폭풍 경보: GPS 이상 가능성 있음
               </div>

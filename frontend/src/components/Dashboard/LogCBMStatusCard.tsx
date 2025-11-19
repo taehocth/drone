@@ -108,14 +108,17 @@ function evalMetric(
   }
 
   if (label.includes("ESC 출력")) {
-    if (value >= 1600) return { level: "danger", reason: "ESC 출력 과다" }
-    if (value >= 1300) return { level: "warning", reason: "ESC 출력 높음" }
+    // 마이크로초 단위 (1000~2000 범위)
+    if (value >= 1800 || value < 1100)
+      return { level: "danger", reason: "ESC 출력 과다" }
+    if (value >= 1500) return { level: "warning", reason: "ESC 출력 높음" }
     return { level: "safe", reason: "ESC 출력 정상" }
   }
 
   if (label === "출력 변동성") {
-    if (value >= 200) return { level: "danger", reason: "출력 변동 심함" }
-    if (value >= 100) return { level: "warning", reason: "출력 변동 있음" }
+    // 마이크로초 단위 표준편차
+    if (value >= 100) return { level: "danger", reason: "출력 변동 심함" }
+    if (value >= 50) return { level: "warning", reason: "출력 변동 있음" }
     return { level: "safe", reason: "출력 안정적" }
   }
 
@@ -217,15 +220,15 @@ export function LogCBMStatusCard({
       name: "ESC / 추진계",
       icon: <Thermometer className="h-6 w-6 text-red-500 drop-shadow" />,
       level:
-        (e.esc_avg_output ?? 0) > 1600
+        (e.esc_avg_output ?? 0) >= 1800 || (e.esc_avg_output ?? 0) < 1100
           ? "danger"
-          : (e.esc_avg_output ?? 0) > 1300
+          : (e.esc_avg_output ?? 0) >= 1500
             ? "warning"
             : "safe",
       message:
-        (e.esc_avg_output ?? 0) > 1600
-          ? "추진계 과부하"
-          : (e.esc_avg_output ?? 0) > 1300
+        (e.esc_avg_output ?? 0) >= 1800 || (e.esc_avg_output ?? 0) < 1100
+          ? "추진계 과부하 또는 과소"
+          : (e.esc_avg_output ?? 0) >= 1500
             ? "추진계 부하 증가"
             : "정상 작동",
       metrics: [

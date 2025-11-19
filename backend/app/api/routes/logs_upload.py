@@ -11,23 +11,26 @@ import math
 
 router = APIRouter(tags=["Flight Logs"])
 
+# --------------------------------------------------------
+# Constants
+# --------------------------------------------------------
+PWM_MIN_US = 1000.0
+PWM_MAX_US = 2000.0
+PWM_RANGE_US = PWM_MAX_US - PWM_MIN_US
+
 
 # --------------------------------------------------------
 # Utility: Safe clean (NaN / Inf 제거)
 # --------------------------------------------------------
 def deep_clean(obj):
-    """모든 자료형을 JSON 직렬화 가능하게 재귀적으로 변환"""
     if isinstance(obj, dict):
         return {k: deep_clean(v) for k, v in obj.items()}
-
     if isinstance(obj, list):
         return [deep_clean(v) for v in obj]
-
     if isinstance(obj, (float, np.floating)):
         if math.isnan(obj) or math.isinf(obj):
             return None
         return float(obj)
-
     return obj
 
 
@@ -61,7 +64,6 @@ async def upload_log(file: UploadFile = File(...)):
         if not file.filename.endswith(".ulg"):
             raise HTTPException(status_code=400, detail="ULG 파일만 업로드할 수 있습니다.")
 
-        # Temp 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix=".ulg") as tmp:
             tmp.write(await file.read())
             tmp_path = tmp.name
@@ -69,12 +71,11 @@ async def upload_log(file: UploadFile = File(...)):
         ulog = ULog(tmp_path)
         print(f"[DEBUG] Loaded ULog — topics: {len(ulog.data_list)}")
 
-        # ⭐⭐⭐ 여기서부터 추가된 디버그 코드 ⭐⭐⭐
+        # ⭐ Debug: 전체 토픽 목록 출력
         print("=============== ULOG TOPIC LIST ===============")
         for d in ulog.data_list:
-            print(f"- {d.name} → fields: {list(d.data.keys())}")
+            print(f"- {d.name} → {list(d.data.keys())}")
         print("================================================")
-        # ⭐⭐⭐ 여기까지 추가 ⭐⭐⭐
 
         # 주요 Topic
         local_pos = next((d for d in ulog.data_list if d.name == "vehicle_local_position"), None)
@@ -84,13 +85,26 @@ async def upload_log(file: UploadFile = File(...)):
         attitude = next((d for d in ulog.data_list if d.name == "vehicle_attitude"), None)
         estimator_att = next((d for d in ulog.data_list if d.name == "estimator_attitude"), None)
 
-        # 확장 Topic
         esc_status = next((d for d in ulog.data_list if d.name == "esc_status"), None)
         imu_status = next((d for d in ulog.data_list if d.name == "vehicle_imu_status"), None)
-        rates_sp = next((d for d in ulog.data_list if d.name == "vehicle_rates_setpoint"), None)
 
         if not local_pos:
             raise HTTPException(status_code=400, detail="필수 토픽 vehicle_local_position 없음")
+
+        # --------------------------------------------------------
+        # ⭐⭐ ESC RAW 디버그 추가 ⭐⭐
+        # --------------------------------------------------------
+        print("\n\n=========== ESC RAW DEBUG ===========")
+        if esc:
+            esc_keys = list(esc.data.keys())
+            print("[ESC KEYS]:", esc_keys)
+
+            for k in esc_keys:
+                print(f"[{k}] 첫 20개 값:", esc.data[k][:20])
+        else:
+            print("❌ actuator_outputs 토픽 없음")
+        print("=====================================\n\n")
+        # --------------------------------------------------------
 
         min_ts = float(local_pos.data["timestamp"][0])
         rel_time = lambda t: (float(t) - min_ts) / 1_000_000
@@ -106,6 +120,56 @@ async def upload_log(file: UploadFile = File(...)):
         att_t, att_d = extract(attitude)
         est_t, est_d = extract(estimator_att)
         pos_t, pos_d = extract(local_pos)
+
+        # 🔍 ESC 필드 및 데이터 범위 사전 감지
+        esc_keys = []
+        esc_range_type = None  # 'us', 'norm_01', 'norm_-11', 'unknown'
+        
+        if esc:
+            # ESC 필드 자동 탐지 (output[0], output[1] 등)
+            esc_keys = [
+                k for k in esc_d.keys()
+                if "output" in k.lower() and "[" in k
+            ]
+            
+            # output[0] 형식이 없으면 다른 패턴 시도
+            if not esc_keys:
+                esc_keys = [
+                    k for k in esc_d.keys()
+                    if any(x in k.lower() for x in ["output", "control"])
+                ]
+            
+            # 데이터 범위 감지 (처음 100개 샘플)
+            # ⚠️ 0이 아닌 값만 사용 (사용되지 않는 채널 제외)
+            if esc_keys and len(esc_d[esc_keys[0]]) > 0:
+                sample_values = []
+                sample_count = min(100, len(esc_d[esc_keys[0]]))
+                for sample_idx in range(sample_count):
+                    sample_raw = [
+                        float(esc_d[k][sample_idx]) 
+                        for k in esc_keys 
+                        if abs(float(esc_d[k][sample_idx])) > 10  # 0이 아닌 값만 (10 µs 이상)
+                    ]
+                    if sample_raw:
+                        sample_values.append(sum(sample_raw) / len(sample_raw))
+                
+                if sample_values:
+                    min_val = min(sample_values)
+                    max_val = max(sample_values)
+                    print(f"[ESC DEBUG] 샘플 범위: {min_val:.2f} ~ {max_val:.2f}")
+                    
+                    if min_val >= 900 and max_val <= 2100:
+                        esc_range_type = 'us'  # 이미 마이크로초 단위
+                        print("[ESC DEBUG] 범위 감지: 마이크로초 단위 (그대로 사용)")
+                    elif min_val >= -1.1 and max_val <= 1.1:
+                        esc_range_type = 'norm_-11'  # -1~1 범위
+                        print("[ESC DEBUG] 범위 감지: -1~1 정규화 (변환 필요)")
+                    elif min_val >= -0.1 and max_val <= 1.1:
+                        esc_range_type = 'norm_01'  # 0~1 범위
+                        print("[ESC DEBUG] 범위 감지: 0~1 정규화 (변환 필요)")
+                    else:
+                        esc_range_type = 'unknown'
+                        print(f"[ESC DEBUG] 범위 감지: 알 수 없음 (min={min_val:.2f}, max={max_val:.2f})")
 
         merged = []
         voltages, currents = [], []
@@ -135,13 +199,40 @@ async def upload_log(file: UploadFile = File(...)):
                 if 0 < idx < len(gps_t):
                     gps_sats.append(int(gps_d["satellites_used"][idx - 1]))
 
-            # ESC output
-            if esc_t:
+            # ESC Output (사전 감지한 범위 타입에 따라 변환)
+            # ⚠️ 0이 아닌 값만 사용 (사용되지 않는 채널 제외)
+            if esc_t and esc_keys:
                 idx = bisect.bisect_left(esc_t, t)
                 if 0 < idx < len(esc_t):
-                    values = [float(v[idx - 1]) for k, v in esc_d.items() if "output" in k]
-                    if values:
-                        esc_outputs.append(sum(values)/len(values))
+                    raw_values = [
+                        float(esc_d[k][idx - 1]) 
+                        for k in esc_keys 
+                        if abs(float(esc_d[k][idx - 1])) > 10  # 0이 아닌 값만 (10 µs 이상)
+                    ]
+                    if not raw_values:
+                        continue  # 유효한 값이 없으면 스킵
+                    avg_raw = sum(raw_values) / len(raw_values)
+                    
+                    if esc_range_type == 'us':
+                        # 이미 마이크로초 단위 → 그대로 사용
+                        esc_outputs.append(avg_raw)
+                    elif esc_range_type == 'norm_-11':
+                        # -1~1 범위 → 0~1로 변환 후 마이크로초
+                        normalized = (avg_raw + 1.0) / 2.0
+                        normalized = max(0.0, min(1.0, normalized))
+                        esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
+                    elif esc_range_type == 'norm_01':
+                        # 0~1 범위 → 마이크로초
+                        normalized = max(0.0, min(1.0, avg_raw))
+                        esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
+                    else:
+                        # 알 수 없는 범위 → 값 자체로 판단
+                        if 900 <= avg_raw <= 2100:
+                            esc_outputs.append(avg_raw)  # 마이크로초로 가정
+                        else:
+                            # 정규화된 값으로 가정하고 변환
+                            normalized = max(0.0, min(1.0, avg_raw))
+                            esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
 
             # Attitude
             if att_t and "q[0]" in att_d:
@@ -181,25 +272,11 @@ async def upload_log(file: UploadFile = File(...)):
             summary["battery_temp_avg"] = float(np.mean(temps))
             summary["battery_temp_max"] = float(np.max(temps))
 
-        # ESC
+        # ESC summary
         if esc_outputs:
             summary["esc_avg_output"] = float(statistics.mean(esc_outputs))
             summary["esc_max_output"] = float(max(esc_outputs))
             summary["esc_output_std"] = float(np.std(esc_outputs))
-
-        # ESC 상태
-        if esc_status:
-            rpm_keys = [k for k in esc_status.data.keys() if "esc_rpm" in k]
-            temp_keys = [k for k in esc_status.data.keys() if "esc_temperature" in k]
-
-            if rpm_keys:
-                summary["esc_rpm_avg"] = [
-                    float(np.mean([float(v) for v in esc_status.data[k]])) for k in rpm_keys
-                ]
-            if temp_keys:
-                summary["esc_temp_max"] = [
-                    float(np.max([float(v) for v in esc_status.data[k]])) for k in temp_keys
-                ]
 
         # FCC
         if roll_vals:
@@ -209,13 +286,6 @@ async def upload_log(file: UploadFile = File(...)):
                 max(max(abs(r) for r in roll_vals),
                     max(abs(p) for p in pitch_vals)) * 180/math.pi
             )
-
-        # IMU
-        if imu_status:
-            if "gyro_inconsistency_rad_s" in imu_status.data:
-                summary["imu_gyro_inconsistency"] = float(np.max(imu_status.data["gyro_inconsistency_rad_s"]))
-            if "accel_inconsistency_m_s_s" in imu_status.data:
-                summary["imu_accel_inconsistency"] = float(np.max(imu_status.data["accel_inconsistency_m_s_s"]))
 
         # GPS
         if gps_sats:
@@ -229,7 +299,7 @@ async def upload_log(file: UploadFile = File(...)):
             alt = [-float(z) for z in pos_d["z"]]
             summary["gnss_alt_std"] = float(np.std(alt))
 
-        # Flight
+        # Flight summary
         altitudes = [m["altitude"] for m in merged]
         speeds = [m["speed"] for m in merged]
 

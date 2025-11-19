@@ -2,12 +2,17 @@ import { useState } from "react"
 import { NaverMap } from "@/components/Map/NaverMap"
 import { UavMiniCard } from "@/components/Dashboard/UavMiniCard"
 import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
-import { DroneNewsBanner } from "@/components/Dashboard/DroneNewsBanner"
+// import { DroneNewsBanner } from "@/components/Dashboard/DroneNewsBanner"
+
+// ⛔ 잘못된 named import 제거
+// import { UavCard } from "./UavCard"
+// ✅ default import로 변경해야 정상 동작
 import { UavCard } from "./UavCard"
-import DroneSimulation, {
-  DroneData,
-} from "@/components/Dashboard/DroneSimulation"
+
+import DroneSimulation, { DroneData } from "./DroneSimulation"
+
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
+
 import {
   Card,
   CardContent,
@@ -15,10 +20,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+
 import { MapPin, Cloud, Activity, AlertTriangle } from "lucide-react"
 import { ConnectionsType } from "@/enum"
 
-// ✅ 기본 지도 설정
+// ==========================
+// 기본 지도 설정
+// ==========================
 const DEFAULT_MAP_OPTIONS = {
   zoom: 11,
   center: { lat: 36.7881, lng: 126.4664 },
@@ -26,7 +34,9 @@ const DEFAULT_MAP_OPTIONS = {
   disableDefaultUI: true,
 }
 
-// ✅ 드론 샘플 데이터
+// ==========================
+// 샘플 드론 데이터
+// ==========================
 const uavs = [
   {
     id: "drone-001",
@@ -98,21 +108,21 @@ const uavs = [
   },
 ]
 
-// ✅ UAV Dashboard 본문
+// ==========================
+// UAV Dashboard Component
+// ==========================
 export function UavDashboard() {
   const [selectedUav, setSelectedUav] = useState(uavs[0])
   const [clickedCoordinates, setClickedCoordinates] = useState<{
     nx: number
     ny: number
   } | null>(null)
+
   const [droneConnected, setDroneConnected] = useState(false)
   const [droneData, setDroneData] = useState<DroneData | null>(null)
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      {/* ✅ 드론 뉴스 배너 */}
-      <DroneNewsBanner />
-
       {/* 헤더 */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -163,12 +173,13 @@ export function UavDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {/* 상세 카드 */}
         <UavCard uav={selectedUav} />
       </div>
 
-      {/* 드론 실시간 시뮬레이션 + 기상 정보 */}
+      {/* 실시간 시뮬레이션 + 기상 정보 */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* 드론 실시간 시뮬레이션 */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-indigo-500 p-2">
@@ -190,7 +201,6 @@ export function UavDashboard() {
           />
         </div>
 
-        {/* 기상 정보 */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-cyan-500 p-2">
@@ -209,7 +219,7 @@ export function UavDashboard() {
         </div>
       </div>
 
-      {/* ✅ CBM 상태 기반 정비 섹션 */}
+      {/* CBM 상태 기반 정비 */}
       <div className="mt-8 space-y-4">
         <div className="flex items-center gap-3">
           <div className="rounded-full bg-amber-500 p-2">
@@ -224,6 +234,7 @@ export function UavDashboard() {
             </p>
           </div>
         </div>
+
         <RealtimeCBMStatusCard
           connected={droneConnected}
           droneData={
