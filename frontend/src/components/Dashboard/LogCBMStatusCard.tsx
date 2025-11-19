@@ -78,7 +78,7 @@ function formatNumber(raw: any): string {
 }
 
 // --------------------------------------------------------
-// Metric Evaluation  (**FIXED** 타입 지정 필수!)
+// Metric Evaluation  (ESC 기준 최신 적용)
 // --------------------------------------------------------
 function evalMetric(
   label: string,
@@ -87,57 +87,55 @@ function evalMetric(
   const value = typeof rawValue === "number" ? rawValue : parseFloat(rawValue)
   if (isNaN(value)) return { level: "safe", reason: "" }
 
+  // -------------------- 배터리 --------------------
   if (label === "평균 전압") {
-    if (value < 18)
-      return { level: "danger", reason: "평균 전압이 매우 낮습니다." }
-    if (value < 20)
-      return { level: "warning", reason: "평균 전압이 낮은 편입니다." }
+    if (value < 18) return { level: "danger", reason: "평균 전압 매우 낮음" }
+    if (value < 20) return { level: "warning", reason: "평균 전압 낮음" }
     return { level: "safe", reason: "전압 정상" }
   }
 
   if (label === "최저 전압") {
     if (value < 17) return { level: "danger", reason: "최저 전압 매우 낮음" }
     if (value < 19) return { level: "warning", reason: "최저 전압 낮음" }
-    return { level: "safe", reason: "안정적인 최저 전압" }
+    return { level: "safe", reason: "정상 범위" }
   }
 
   if (label === "평균 전류" || label === "최대 전류") {
     if (value >= 40) return { level: "danger", reason: "전류 과부하" }
     if (value >= 20) return { level: "warning", reason: "전류 높음" }
-    return { level: "safe", reason: "전류 정상" }
+    return { level: "safe", reason: "정상" }
   }
 
+  // -------------------- ESC --------------------
   if (label.includes("ESC 출력")) {
-    // 마이크로초 단위 (1000~2000 범위)
-    if (value >= 1800 || value < 1100)
-      return { level: "danger", reason: "ESC 출력 과다" }
-    if (value >= 1500) return { level: "warning", reason: "ESC 출력 높음" }
-    return { level: "safe", reason: "ESC 출력 정상" }
+    if (value >= 1750) return { level: "danger", reason: "ESC 출력 과부하" }
+    if (value >= 1600) return { level: "warning", reason: "ESC 출력 증가" }
+    return { level: "safe", reason: "정상" }
   }
 
   if (label === "출력 변동성") {
-    // 마이크로초 단위 표준편차
     if (value >= 100) return { level: "danger", reason: "출력 변동 심함" }
     if (value >= 50) return { level: "warning", reason: "출력 변동 있음" }
-    return { level: "safe", reason: "출력 안정적" }
+    return { level: "safe", reason: "안정적" }
   }
 
+  // -------------------- GNSS --------------------
   if (label === "평균 위성 수") {
-    if (value < 6) return { level: "danger", reason: "위성 수신 부족" }
-    if (value < 10) return { level: "warning", reason: "위성 부족" }
+    if (value < 6) return { level: "danger", reason: "위성 부족" }
+    if (value < 10) return { level: "warning", reason: "위성 신호 약함" }
     return { level: "safe", reason: "수신 양호" }
   }
 
   if (label === "HDOP") {
     if (value >= 2.5) return { level: "danger", reason: "정확도 낮음" }
-    if (value >= 1.5) return { level: "warning", reason: "정확도 낮아짐" }
+    if (value >= 1.5) return { level: "warning", reason: "정확도 떨어짐" }
     return { level: "safe", reason: "정확도 우수" }
   }
 
   if (label === "고도 표준편차") {
-    if (value >= 3) return { level: "danger", reason: "고도 불안정" }
+    if (value >= 3) return { level: "danger", reason: "고도 흔들림 심함" }
     if (value >= 1.5) return { level: "warning", reason: "고도 변동 있음" }
-    return { level: "safe", reason: "고도 안정적" }
+    return { level: "safe", reason: "안정적" }
   }
 
   return { level: "safe", reason: "정상" }
@@ -220,15 +218,15 @@ export function LogCBMStatusCard({
       name: "ESC / 추진계",
       icon: <Thermometer className="h-6 w-6 text-red-500 drop-shadow" />,
       level:
-        (e.esc_avg_output ?? 0) >= 1800 || (e.esc_avg_output ?? 0) < 1100
+        (e.esc_avg_output ?? 0) >= 1750
           ? "danger"
-          : (e.esc_avg_output ?? 0) >= 1500
+          : (e.esc_avg_output ?? 0) >= 1600
             ? "warning"
             : "safe",
       message:
-        (e.esc_avg_output ?? 0) >= 1800 || (e.esc_avg_output ?? 0) < 1100
-          ? "추진계 과부하 또는 과소"
-          : (e.esc_avg_output ?? 0) >= 1500
+        (e.esc_avg_output ?? 0) >= 1750
+          ? "추진계 고부하 (위험)"
+          : (e.esc_avg_output ?? 0) >= 1600
             ? "추진계 부하 증가"
             : "정상 작동",
       metrics: [
@@ -243,33 +241,15 @@ export function LogCBMStatusCard({
           value: formatNumber(e.esc_max_output),
           unit: "μs",
           desc: "최대 PWM",
+          ...evalMetric("ESC 출력", e.esc_max_output),
         },
         {
           label: "출력 변동성",
           value: formatNumber(e.esc_output_std),
           unit: "μs",
           desc: "변동성",
+          ...evalMetric("출력 변동성", e.esc_output_std),
         },
-
-        ...(Array.isArray(e.esc_rpm_avg)
-          ? e.esc_rpm_avg.map((rpm: number, idx: number) => ({
-              label: `ESC RPM #${idx + 1}`,
-              value: formatNumber(rpm),
-              unit: "RPM",
-              desc: "회전 속도",
-              ...evalMetric("ESC RPM", rpm),
-            }))
-          : []),
-
-        ...(Array.isArray(e.esc_temp_max)
-          ? e.esc_temp_max.map((temp: number, idx: number) => ({
-              label: `ESC 온도 #${idx + 1}`,
-              value: formatNumber(temp),
-              unit: "°C",
-              desc: "온도",
-              ...evalMetric("ESC 온도", temp),
-            }))
-          : []),
       ].map((m) => ({ ...m, ...evalMetric(m.label, m.value) })),
     },
 
@@ -293,13 +273,16 @@ export function LogCBMStatusCard({
         {
           label: "Roll 안정성",
           value: formatNumber(e.fcc_roll_std),
+          unit: "rad",
           desc: "좌우 흔들림",
         },
         {
           label: "Pitch 안정성",
           value: formatNumber(e.fcc_pitch_std),
+          unit: "rad",
           desc: "앞뒤 흔들림",
         },
+
         {
           label: "최대 기울기",
           value: formatNumber(e.max_attitude_deg),
