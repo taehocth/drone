@@ -1,6 +1,10 @@
 import uuid
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .item import Item
 
 
 # Shared properties
@@ -40,6 +44,8 @@ class UpdatePassword(SQLModel):
 
 # Database model
 class User(UserBase, table=True):
+    __tablename__ = "users"   # ✅ 예약어 충돌 방지
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     hashed_password: str
     items: list["Item"] = Relationship(back_populates="owner", cascade_delete=True)

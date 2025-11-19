@@ -25,7 +25,7 @@ export const useQGC = (): QGCConnection => {
 
   const connect = useCallback(() => {
     try {
-      const websocket = new WebSocket("ws://localhost:8000/api/v1/ws/qgc")
+      const websocket = new WebSocket("ws://127.0.0.1:8000/api/v1/qgc/ws/qgc")
 
       websocket.onopen = () => {
         setIsConnected(true)

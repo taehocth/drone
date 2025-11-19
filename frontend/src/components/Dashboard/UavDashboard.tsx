@@ -1,9 +1,13 @@
-import { Map as GoogleMap, useMap } from "@vis.gl/react-google-maps"
-import { useEffect, useState } from "react"
-
-import { FlightDataChart } from "@/components/Dashboard/FlightDataChart"
+import { useState } from "react"
+import { NaverMap } from "@/components/Map/NaverMap"
 import { UavMiniCard } from "@/components/Dashboard/UavMiniCard"
-import { WeatherCard } from "@/components/Dashboard/WeatherCard"
+import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
+import { DroneNewsBanner } from "@/components/Dashboard/DroneNewsBanner"
+import { UavCard } from "./UavCard"
+import DroneSimulation, {
+  DroneData,
+} from "@/components/Dashboard/DroneSimulation"
+import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
 import {
   Card,
   CardContent,
@@ -11,11 +15,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { MapPin, Cloud, Activity, AlertTriangle } from "lucide-react"
 import { ConnectionsType } from "@/enum"
-import { CustomAdvancedMarker } from "../GoogleMap/CustomAdvancedMarker"
-import { UavCard } from "./UavCard"
 
+// ✅ 기본 지도 설정
 const DEFAULT_MAP_OPTIONS = {
   zoom: 11,
   center: { lat: 36.7881, lng: 126.4664 },
@@ -23,6 +26,7 @@ const DEFAULT_MAP_OPTIONS = {
   disableDefaultUI: true,
 }
 
+// ✅ 드론 샘플 데이터
 const uavs = [
   {
     id: "drone-001",
@@ -56,7 +60,6 @@ const uavs = [
       { time: "09:45", altitude: 85, speed: 13, battery: 30 },
       { time: "10:00", altitude: 85, speed: 12.8, battery: 23 },
     ],
-
     lastUpdate: "5분 전",
   },
   {
@@ -74,7 +77,6 @@ const uavs = [
       { time: "09:45", altitude: 5, speed: 2, battery: 10 },
       { time: "10:00", altitude: 0, speed: 0, battery: 5 },
     ],
-
     lastUpdate: "1분 전",
   },
   {
@@ -96,28 +98,36 @@ const uavs = [
   },
 ]
 
-const weatherData = {
-  temperature: 22,
-  windSpeed: 3.5,
-  windDirection: "북동",
-  condition: "맑음",
-  humidity: 45,
-}
-
+// ✅ UAV Dashboard 본문
 export function UavDashboard() {
   const [selectedUav, setSelectedUav] = useState(uavs[0])
-
-  const map = useMap("main-drone-map")
-
-  useEffect(() => {
-    if (!map) return
-
-    map.setOptions(DEFAULT_MAP_OPTIONS)
-    // do something with the map instance
-  }, [map])
+  const [clickedCoordinates, setClickedCoordinates] = useState<{
+    nx: number
+    ny: number
+  } | null>(null)
+  const [droneConnected, setDroneConnected] = useState(false)
+  const [droneData, setDroneData] = useState<DroneData | null>(null)
 
   return (
-    <div className="grid gap-4 p-4 md:gap-6 md:p-6">
+    <div className="space-y-6 p-4 md:p-6">
+      {/* ✅ 드론 뉴스 배너 */}
+      <DroneNewsBanner />
+
+      {/* 헤더 */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              드론 대시보드
+            </h1>
+            <p className="mt-2 text-gray-600 dark:text-gray-400">
+              실시간 드론 상태 모니터링 및 비행 관리 시스템
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 드론 미니 카드 */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {uavs.map((uav) => (
           <UavMiniCard
@@ -129,77 +139,103 @@ export function UavDashboard() {
         ))}
       </div>
 
+      {/* 드론 위치 + 상세 정보 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="gap-0 pb-0 lg:col-span-2">
-          <CardHeader>
-            <CardTitle>드론 위치</CardTitle>
-            <CardDescription>실시간 드론 위치 및 비행 경로</CardDescription>
+        <Card className="gap-0 pb-0 transition-all duration-300 hover:scale-[1.01] hover:shadow-xl lg:col-span-2">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+            <div className="flex items-center gap-3">
+              <div className="rounded-full bg-blue-500 p-2">
+                <MapPin className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <CardTitle>드론 위치</CardTitle>
+                <CardDescription>실시간 드론 위치 및 비행 경로</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="aspect-video overflow-hidden rounded-b-lg">
-              <GoogleMap
-                id={"one-of-my-maps"}
-                mapId={"e781c578f46f824c"}
-                defaultZoom={DEFAULT_MAP_OPTIONS.zoom}
-                defaultCenter={DEFAULT_MAP_OPTIONS.center}
-                gestureHandling={DEFAULT_MAP_OPTIONS.gestureHandling}
-                disableDefaultUI={DEFAULT_MAP_OPTIONS.disableDefaultUI}
-              >
-                <CustomAdvancedMarker
-                  position={{ lat: 36.7881, lng: 126.4664 }}
-                />
-              </GoogleMap>
-              {/* <DroneMap drones={drones} selectedDroneId={selectedDrone.id} /> */}
+              <NaverMap
+                lat={DEFAULT_MAP_OPTIONS.center.lat}
+                lng={DEFAULT_MAP_OPTIONS.center.lng}
+                onMapClick={(nx, ny) => setClickedCoordinates({ nx, ny })}
+              />
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>비행 기록</CardTitle>
-            <CardDescription>
-              {selectedUav.name} - {new Date().toLocaleDateString("ko-KR")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="altitude">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="altitude">고도</TabsTrigger>
-                <TabsTrigger value="speed">속도</TabsTrigger>
-                <TabsTrigger value="battery">배터리</TabsTrigger>
-              </TabsList>
-              <TabsContent value="altitude">
-                <FlightDataChart
-                  data={selectedUav.flightData}
-                  dataKey="altitude"
-                  label="고도 (m)"
-                  color="hsl(var(--chart-1))"
-                />
-              </TabsContent>
-              <TabsContent value="speed">
-                <FlightDataChart
-                  data={selectedUav.flightData}
-                  dataKey="speed"
-                  label="속도 (m/s)"
-                  color="hsl(var(--chart-2))"
-                />
-              </TabsContent>
-              <TabsContent value="battery">
-                <FlightDataChart
-                  data={selectedUav.flightData}
-                  dataKey="battery"
-                  label="배터리 (%)"
-                  color="hsl(var(--chart-3))"
-                />
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+        <UavCard uav={selectedUav} />
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <WeatherCard weather={weatherData} />
+      {/* 드론 실시간 시뮬레이션 + 기상 정보 */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* 드론 실시간 시뮬레이션 */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-indigo-500 p-2">
+              <Activity className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                드론 실시간 시뮬레이션
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                연결된 드론의 자세, 속도, 배터리 및 위치를 실시간으로
+                모니터링합니다.
+              </p>
+            </div>
+          </div>
+          <DroneSimulation
+            onConnectionChange={setDroneConnected}
+            onDataChange={setDroneData}
+          />
+        </div>
 
-        <UavCard uav={selectedUav} />
+        {/* 기상 정보 */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-cyan-500 p-2">
+              <Cloud className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                기상 정보
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                실시간 기상 데이터 및 비행 안전성 분석
+              </p>
+            </div>
+          </div>
+          <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
+        </div>
+      </div>
+
+      {/* ✅ CBM 상태 기반 정비 섹션 */}
+      <div className="mt-8 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-full bg-amber-500 p-2">
+            <AlertTriangle className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+              상태 기반 정비 (CBM)
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              드론 연결 상태에 따라 실시간으로 시스템 상태를 평가합니다.
+            </p>
+          </div>
+        </div>
+        <RealtimeCBMStatusCard
+          connected={droneConnected}
+          droneData={
+            droneData
+              ? {
+                  battery: droneData.battery,
+                  altitude: droneData.altitude,
+                  speed: droneData.speed,
+                }
+              : undefined
+          }
+        />
       </div>
     </div>
   )

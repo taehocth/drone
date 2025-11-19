@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client"
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { RouterProvider, createRouter } from "@tanstack/react-router"
-import { APIProvider } from "@vis.gl/react-google-maps"
+import { ThemeProvider } from "next-themes"
 import { routeTree } from "./routeTree.gen"
 
 import { Toaster } from "@/components/ui/sonner"
@@ -16,8 +16,6 @@ OpenAPI.TOKEN = async () => {
   return localStorage.getItem("access_token") || ""
 }
 
-const GOOGLE_MAP_API_KEY = import.meta.env.VITE_GOOGLE_MAP_API_KEY
-
 const queryClient = new QueryClient()
 
 const router = createRouter({ routeTree })
@@ -29,11 +27,11 @@ declare module "@tanstack/react-router" {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <APIProvider apiKey={GOOGLE_MAP_API_KEY} libraries={["marker"]}>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <QueryClientProvider client={queryClient}>
         <RouterProvider router={router} />
         <Toaster />
-      </APIProvider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

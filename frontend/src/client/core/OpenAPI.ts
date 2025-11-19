@@ -41,12 +41,19 @@ export type OpenAPIConfig = {
 }
 
 export const OpenAPI: OpenAPIConfig = {
-  BASE: "http://localhost:8000",
+  // ✅ 환경변수 기반 API URL 사용 (docker 환경에 맞춰 조정)
+  BASE: import.meta.env.VITE_API_URL || "http://api.localhost/api/v1",
+
   CREDENTIALS: "include",
   ENCODE_PATH: undefined,
   HEADERS: undefined,
   PASSWORD: undefined,
-  TOKEN: undefined,
+
+  // ✅ 로그인 토큰 자동 주입
+  TOKEN: async () => {
+    const token = localStorage.getItem("access_token")
+    return token ? `Bearer ${token}` : ""
+  },
   USERNAME: undefined,
   VERSION: "0.1.0",
   WITH_CREDENTIALS: false,

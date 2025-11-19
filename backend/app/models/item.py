@@ -1,40 +1,53 @@
 import uuid
 from sqlmodel import Field, Relationship, SQLModel
-from .user import User  # User 모델과 연결
+from typing import Optional, List
+from .user import User
 
 
-# Shared properties
+# ---------------------------------
+# Base properties
+# ---------------------------------
 class ItemBase(SQLModel):
     title: str = Field(min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=255)
 
 
-# Properties to receive on item creation
+# ---------------------------------
+# Create
+# ---------------------------------
 class ItemCreate(ItemBase):
     pass
 
 
-# Properties to receive on item update
-class ItemUpdate(ItemBase):
-    title: str | None = Field(default=None, min_length=1, max_length=255)  # type: ignore
+# ---------------------------------
+# Update
+# ---------------------------------
+class ItemUpdate(SQLModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = Field(default=None, max_length=255)
 
 
-# Database model
+# ---------------------------------
+# DB Model
+# ---------------------------------
 class Item(ItemBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    title: str = Field(max_length=255)
     owner_id: uuid.UUID = Field(
-        foreign_key="user.id", nullable=False, ondelete="CASCADE"
+        foreign_key="users.id",  # ← FIXED
+        nullable=False,
     )
-    owner: User | None = Relationship(back_populates="items")
+
+    owner: Optional[User] = Relationship(back_populates="items")
 
 
-# Properties to return via API
+# ---------------------------------
+# API Return Schemas
+# ---------------------------------
 class ItemPublic(ItemBase):
     id: uuid.UUID
     owner_id: uuid.UUID
 
 
 class ItemsPublic(SQLModel):
-    data: list[ItemPublic]
+    data: List[ItemPublic]
     count: int

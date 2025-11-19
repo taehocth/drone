@@ -1,4 +1,4 @@
-import { Map as GoogleMap, useMap } from "@vis.gl/react-google-maps"
+import { NaverMap } from "@/components/Map/NaverMap"
 import { useEffect, useState } from "react"
 
 import { FlightDataChart } from "@/components/Dashboard/FlightDataChart"
@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ConnectionsType } from "@/enum"
-import { CustomAdvancedMarker } from "../GoogleMap/CustomAdvancedMarker"
+
 import { UavCard } from "./UavCard"
 import { Play, Pause, RotateCcw } from "lucide-react"
 
@@ -76,13 +76,7 @@ export function SimulationDashboard() {
   const [isSimulationRunning, setIsSimulationRunning] = useState(false)
   const [simulationTime, setSimulationTime] = useState(0)
 
-  const map = useMap("simulation-drone-map")
-
-  useEffect(() => {
-    if (!map) return
-
-    map.setOptions(DEFAULT_MAP_OPTIONS)
-  }, [map])
+  // GoogleMap 제거: NaverMap은 자체 렌더링으로 대체
 
   useEffect(() => {
     let interval: NodeJS.Timeout
@@ -110,7 +104,7 @@ export function SimulationDashboard() {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
   }
 
   return (
@@ -173,29 +167,21 @@ export function SimulationDashboard() {
 
       {/* 메인 시뮬레이션 영역 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="gap-0 pb-0 lg:col-span-2">
+        <Card className="min-h-[500px] gap-0 pb-0 lg:col-span-2">
           <CardHeader>
             <CardTitle>시뮬레이션 맵</CardTitle>
             <CardDescription>드론 비행 시뮬레이션 맵</CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="aspect-video overflow-hidden rounded-b-lg">
-              <GoogleMap
-                id={"simulation-drone-map"}
-                mapId={"e781c578f46f824c"}
-                defaultZoom={DEFAULT_MAP_OPTIONS.zoom}
-                defaultCenter={DEFAULT_MAP_OPTIONS.center}
-                gestureHandling={DEFAULT_MAP_OPTIONS.gestureHandling}
-                disableDefaultUI={DEFAULT_MAP_OPTIONS.disableDefaultUI}
-              >
-                <CustomAdvancedMarker
-                  position={{ lat: 36.7881, lng: 126.4664 }}
-                />
-              </GoogleMap>
+          <CardContent className="flex-1 p-0">
+            <div className="h-80 overflow-hidden rounded-b-lg sm:h-96 md:h-[28rem] lg:h-[32rem]">
+              <NaverMap
+                lat={DEFAULT_MAP_OPTIONS.center.lat}
+                lng={DEFAULT_MAP_OPTIONS.center.lng}
+              />
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="pb-2">
             <CardTitle>시뮬레이션 데이터</CardTitle>

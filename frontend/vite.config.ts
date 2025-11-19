@@ -1,9 +1,9 @@
 // vite.config.ts
+import { defineConfig } from "vite"
 import path from "path"
 import react from "@vitejs/plugin-react-swc"
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin"
 import tailwindcss from "@tailwindcss/vite"
-import { defineConfig } from "vite"
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:8000", // ✅ FastAPI 백엔드
+        target: "http://backend:8000", // 🚀 backend 컨테이너 서비스명 사용
         changeOrigin: true,
       },
     },

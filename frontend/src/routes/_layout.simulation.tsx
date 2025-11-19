@@ -2,8 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 
 import { PageTitle } from "@/components/layout/PageTitle"
 import { Typography } from "@/components/Common/Typography"
-import { DroneSimulationCard } from "@/components/Dashboard/DroneSimulationCard"
-import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
+import DroneSimulation from "@/components/Dashboard/DroneSimulation"
 
 export const Route = createFileRoute("/_layout/simulation")({
   component: Simulation,
@@ -23,10 +22,7 @@ function Simulation() {
           </Typography>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <DroneSimulationCard />
-          <WeatherInfoCard />
-        </div>
+        <DroneSimulation />
       </div>
     </div>
   )

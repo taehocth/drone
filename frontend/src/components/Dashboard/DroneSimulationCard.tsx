@@ -1,196 +1,184 @@
-import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Wifi, WifiOff, PlaneTakeoff, PlaneLanding } from "lucide-react"
+import {
+  Wifi,
+  WifiOff,
+  Gauge,
+  Battery,
+  MapPin,
+  Activity,
+  Zap,
+  Ruler,
+} from "lucide-react"
+import React, { useRef } from "react"
+import type { DroneData } from "./DroneSimulation"
 
-interface DroneData {
-  connected: boolean
-  aircraft: string
-  model: string
-  totalDistance: string
-  maxAltitudeDiff: string
-  averageSpeed: string
-  maxSpeed: string
-  latitude: string
-  longitude: string
-  lastUpdate: string
+const toDegrees = (rad?: number) =>
+  rad !== undefined ? (rad * 180) / Math.PI : undefined
+
+function useSmoothedValue(
+  value: number | undefined,
+  windowSize = 5,
+  deadband = 0.5,
+) {
+  const valuesRef = React.useRef<number[]>([])
+  const prevRef = React.useRef<number | undefined>(undefined)
+
+  if (value !== undefined && !Number.isNaN(value)) {
+    valuesRef.current.push(value)
+    if (valuesRef.current.length > windowSize) valuesRef.current.shift()
+  }
+
+  if (!valuesRef.current.length) return value
+  const avg =
+    valuesRef.current.reduce((a, b) => a + b, 0) / valuesRef.current.length
+
+  if (
+    prevRef.current !== undefined &&
+    Math.abs(avg - prevRef.current) < deadband
+  )
+    return prevRef.current
+
+  prevRef.current = avg
+  return avg
 }
 
-export function DroneSimulationCard() {
-  const [droneData, setDroneData] = useState<DroneData>({
-    connected: false,
-    aircraft: "Generic Quadcopter",
-    model: "Quadrotor x (4001)",
-    totalDistance: "8.22km",
-    maxAltitudeDiff: "52m",
-    averageSpeed: "27.7km/h",
-    maxSpeed: "37.9km/h",
-    latitude: "126.335°",
-    longitude: "36.964°",
-    lastUpdate: new Date().toLocaleTimeString("ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-    }),
-  })
+interface Props {
+  data: DroneData
+  connected: boolean
+  onToggleConnect: () => void
+  wsRef?: React.MutableRefObject<WebSocket | null>
+}
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDroneData((prev) => ({
-        ...prev,
-        lastUpdate: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: true,
-        }),
-      }))
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  const handleConnect = () => {
-    setDroneData((prev) => ({ ...prev, connected: !prev.connected }))
-  }
-
-  const handleTakeoff = () => {
-    if (droneData.connected) {
-      console.log("이륙 명령 전송")
-    }
-  }
-
-  const handleLanding = () => {
-    if (droneData.connected) {
-      console.log("착륙 명령 전송")
-    }
-  }
+export const DroneSimulationCard: React.FC<Props> = ({
+  data,
+  connected,
+  onToggleConnect,
+  wsRef,
+}) => {
+  const altitude = useSmoothedValue(data?.altitude, 3, 0.2)
+  const rollDeg = useSmoothedValue(toDegrees(data?.roll), 3, 0.5)
+  const pitchDeg = useSmoothedValue(toDegrees(data?.pitch), 3, 0.5)
+  const yawDeg = useSmoothedValue(toDegrees(data?.yaw), 3, 1)
+  const throttle = useSmoothedValue(data?.throttle, 3, 0.3)
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Wifi className="h-5 w-5" />
-          MAVLink 드론 시뮬레이션:
-          <Badge
-            variant={droneData.connected ? "default" : "destructive"}
-            className="flex items-center gap-1"
-          >
-            {droneData.connected ? (
-              <>
-                <Wifi className="h-3 w-3" />
-                연결됨
-              </>
-            ) : (
-              <>
-                <WifiOff className="h-3 w-3" />
-                연결 안됨
-              </>
-            )}
-          </Badge>
+    <Card className="mx-auto w-full max-w-2xl rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 shadow-md transition-all hover:shadow-lg dark:border-gray-800 dark:from-gray-900 dark:to-gray-800">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-700">
+        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-gray-800 sm:text-xl dark:text-gray-100">
+          <Gauge className="h-5 w-5 text-blue-500" />
+          드론 상태
         </CardTitle>
+        <Badge
+          variant={connected ? "default" : "destructive"}
+          className={`flex items-center gap-1 px-3 py-1 text-sm ${
+            connected
+              ? "bg-green-500/10 text-green-600"
+              : "bg-red-500/10 text-red-600"
+          }`}
+        >
+          {connected ? (
+            <>
+              <Wifi className="h-3 w-3" /> 연결됨
+            </>
+          ) : (
+            <>
+              <WifiOff className="h-3 w-3" /> 연결 안됨
+            </>
+          )}
+        </Badge>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* 기체 정보 */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold">기체 정보</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">기체:</span>
-              <span>{droneData.aircraft}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">모델:</span>
-              <span>{droneData.model}</span>
-            </div>
+
+      <CardContent className="space-y-4 p-5 text-sm text-gray-800 sm:p-6 sm:text-base dark:text-gray-200">
+        {/* 메인 데이터 그리드 */}
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-2">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">고도:</span>
+            <span className="font-medium">
+              {altitude?.toFixed(1) ?? "0.0"} m
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">속도:</span>
+            <span className="font-medium">
+              {data?.speed?.toFixed(1) ?? "0.0"} m/s
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">배터리:</span>
+            <span className="flex items-center gap-1 font-medium">
+              <Battery className="h-4 w-4 text-green-500" />
+              {data?.battery?.toFixed(0) ?? "0"}%
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">스로틀:</span>
+            <span className="flex items-center gap-1 font-medium">
+              <Zap className="h-4 w-4 text-yellow-500" />
+              {throttle?.toFixed(0) ?? "0"}%
+            </span>
+          </div>
+
+          <div className="col-span-2 flex items-center justify-between">
+            <span className="text-muted-foreground flex items-center gap-1">
+              <Activity className="h-4 w-4 text-blue-500" /> 자세 (R/P/Y):
+            </span>
+            <span className="font-medium">
+              {rollDeg?.toFixed(0) ?? "0"}° / {pitchDeg?.toFixed(0) ?? "0"}° /{" "}
+              {yawDeg?.toFixed(0) ?? "0"}°
+            </span>
+          </div>
+
+          <div className="col-span-2 flex flex-wrap items-center justify-between text-sm sm:text-base">
+            <span className="text-muted-foreground flex items-center gap-1">
+              <MapPin className="h-4 w-4 text-red-500" /> 위치:
+            </span>
+            <span className="break-all font-medium">
+              {data?.latitude?.toFixed(5) ?? "0.00000"},{" "}
+              {data?.longitude?.toFixed(5) ?? "0.00000"}
+            </span>
           </div>
         </div>
 
-        {/* 비행 성능 */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold">비행 성능</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">총 거리:</span>
-              <span className="font-medium text-green-600">
-                {droneData.totalDistance}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">최대 고도차:</span>
-              <span className="font-medium text-orange-600">
-                {droneData.maxAltitudeDiff}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">평균 속도:</span>
-              <span className="font-medium text-purple-600">
-                {droneData.averageSpeed}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">최고 속도:</span>
-              <span className="font-medium text-red-600">
-                {droneData.maxSpeed}
-              </span>
-            </div>
-          </div>
+        {/* 버튼 그룹 */}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button
+            onClick={() => {
+              if (connected && wsRef?.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(
+                  JSON.stringify({ action: "reset_altitude_zero" }),
+                )
+                console.log("📏 고도 기준 리셋 명령 전송됨")
+              } else {
+                console.warn("⚠️ 드론이 연결되지 않음")
+              }
+            }}
+            variant="secondary"
+            size="sm"
+            className="flex items-center gap-1 rounded-lg px-3 py-1 text-xs sm:text-sm"
+          >
+            <Ruler className="h-4 w-4 text-blue-500" /> 고도 기준 리셋
+          </Button>
+
+          <Button
+            onClick={onToggleConnect}
+            variant={connected ? "outline" : "default"}
+            size="sm"
+            className="rounded-lg px-4 py-2 text-sm font-medium sm:text-base"
+          >
+            {connected ? "연결 해제" : "연결"}
+          </Button>
         </div>
 
-        {/* 위치 정보 */}
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold">위치 정보</h4>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">위도:</span>
-              <span className="font-medium text-blue-600">
-                {droneData.latitude}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">경도:</span>
-              <span className="font-medium text-blue-600">
-                {droneData.longitude}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 업데이트 시간 */}
-        <div className="text-muted-foreground text-xs">
-          업데이트 시간: {droneData.lastUpdate}
-        </div>
-
-        {/* 액션 버튼들 */}
-        <div className="flex gap-2 pt-2">
-          <Button
-            onClick={handleConnect}
-            variant={droneData.connected ? "outline" : "default"}
-            size="sm"
-            className="flex-1"
-          >
-            {droneData.connected ? "연결 해제" : "연결"}
-          </Button>
-          <Button
-            onClick={handleTakeoff}
-            disabled={!droneData.connected}
-            size="sm"
-            className="flex-1"
-          >
-            <PlaneTakeoff className="mr-1 h-4 w-4" />
-            이륙
-          </Button>
-          <Button
-            onClick={handleLanding}
-            disabled={!droneData.connected}
-            size="sm"
-            className="flex-1"
-          >
-            <PlaneLanding className="mr-1 h-4 w-4" />
-            착륙
-          </Button>
+        <div className="text-muted-foreground mt-3 border-t border-gray-100 pt-2 text-xs sm:text-sm dark:border-gray-700">
+          마지막 업데이트:{" "}
+          {data?.timestamp
+            ? new Date(data.timestamp).toLocaleTimeString("ko-KR")
+            : "N/A"}
         </div>
       </CardContent>
     </Card>

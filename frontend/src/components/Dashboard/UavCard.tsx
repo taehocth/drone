@@ -13,6 +13,8 @@ import {
   TrendingUp as Altitude,
   Gauge,
   ArrowRight as LinkIcon,
+  Plane,
+  Activity,
 } from "lucide-react"
 
 import { ConnectionsType } from "@/enum"
@@ -39,12 +41,21 @@ function getBatteryColorClass(batteryLevel: number): string {
 
 export function UavCard({ uav }: UavCardProps) {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
+      <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <CardTitle>기체 정보</CardTitle>
-            <CardDescription>{uav.name}</CardDescription>
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-indigo-500 p-2">
+              {uav.altitude > 0 ? (
+                <Activity className="h-5 w-5 text-white" />
+              ) : (
+                <Plane className="h-5 w-5 text-white" />
+              )}
+            </div>
+            <div>
+              <CardTitle>기체 정보</CardTitle>
+              <CardDescription>{uav.name}</CardDescription>
+            </div>
           </div>
           <Link
             className="flex items-center gap-2"

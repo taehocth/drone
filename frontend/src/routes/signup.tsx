@@ -52,8 +52,10 @@ function SignUp() {
     },
   })
 
+  // ✅ confirm_password는 제외하고 API 호출
   const onSubmit: SubmitHandler<UserRegisterForm> = (data) => {
-    signUpMutation.mutate(data)
+    const { confirm_password, ...payload } = data
+    signUpMutation.mutate(payload) // payload = { email, full_name, password }
   }
 
   return (
@@ -83,8 +85,8 @@ function SignUp() {
                   </div>
                   <FormControl>
                     <Input
-                      type="username"
-                      id="username"
+                      type="text"
+                      id="full_name"
                       {...field}
                       value={field.value ?? ""}
                     />
@@ -107,8 +109,8 @@ function SignUp() {
                   </div>
                   <FormControl>
                     <Input
-                      type="username"
-                      id="username"
+                      type="email"
+                      id="email"
                       placeholder="Email 입력"
                       {...field}
                       value={field.value ?? ""}
@@ -152,7 +154,7 @@ function SignUp() {
                   <FormControl>
                     <Input
                       type="password"
-                      id="password"
+                      id="confirm_password"
                       placeholder="비밀번호 입력 확인"
                       {...field}
                       value={field.value ?? ""}

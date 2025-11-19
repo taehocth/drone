@@ -1,4 +1,4 @@
-import { Battery } from "lucide-react"
+import { Battery, Plane, Activity } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { ConnectionBadge } from "@/components/Dashboard/ConnectionBadge"
@@ -23,30 +23,93 @@ interface UavMiniCardProps {
 }
 
 export function UavMiniCard({ uav, isSelected, onClick }: UavMiniCardProps) {
+  const getStatusColor = (status: ConnectionsType) => {
+    switch (status) {
+      case ConnectionsType.Connected:
+        return "border-green-200 bg-green-50/50 dark:bg-green-900/10"
+      case ConnectionsType.Connecting:
+        return "border-yellow-200 bg-yellow-50/50 dark:bg-yellow-900/10"
+      case ConnectionsType.Disconnected:
+        return "border-red-200 bg-red-50/50 dark:bg-red-900/10"
+      default:
+        return "border-gray-200 bg-gray-50/50 dark:bg-gray-900/10"
+    }
+  }
+
   return (
     <Card
       className={cn(
-        "hover:bg-muted/50 cursor-pointer transition-colors",
-        isSelected && "border-primary",
+        "cursor-pointer transition-all duration-300 hover:scale-105 hover:shadow-lg",
+        isSelected && "border-primary scale-105 shadow-lg",
+        getStatusColor(uav.status),
       )}
       onClick={onClick}
     >
-      <CardContent className="px-4">
+      <CardContent className="p-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Typography variant="h4">{uav.name}</Typography>
+          <div className="flex items-center gap-3">
+            <div
+              className={`rounded-full p-2 ${
+                uav.status === ConnectionsType.Connected
+                  ? "bg-green-500"
+                  : uav.status === ConnectionsType.Connecting
+                    ? "bg-yellow-500"
+                    : "bg-red-500"
+              }`}
+            >
+              {uav.altitude > 0 ? (
+                <Activity className="h-4 w-4 text-white" />
+              ) : (
+                <Plane className="h-4 w-4 text-white" />
+              )}
+            </div>
+            <Typography variant="h4" className="font-semibold">
+              {uav.name}
+            </Typography>
           </div>
           <ConnectionBadge status={uav.status} />
         </div>
 
-        <div className="mt-1 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Battery className="text-muted-foreground size-7 fill-gray-100" />
-            <Typography variant="bold">{uav.battery}%</Typography>
+            <Battery
+              className={`size-5 ${
+                uav.battery > 50
+                  ? "text-green-500"
+                  : uav.battery > 20
+                    ? "text-yellow-500"
+                    : "text-red-500"
+              }`}
+            />
+            <Typography
+              variant="bold"
+              className={`${
+                uav.battery > 50
+                  ? "text-green-600"
+                  : uav.battery > 20
+                    ? "text-yellow-600"
+                    : "text-red-600"
+              }`}
+            >
+              {uav.battery}%
+            </Typography>
           </div>
-          <Typography variant="small" className="text-muted-foreground text-xs">
-            {uav.lastUpdate}
-          </Typography>
+          <div className="text-right">
+            <Typography
+              variant="small"
+              className="text-muted-foreground text-xs"
+            >
+              {uav.lastUpdate}
+            </Typography>
+            {uav.altitude > 0 && (
+              <Typography
+                variant="small"
+                className="text-xs font-medium text-blue-600"
+              >
+                {uav.altitude}m 고도
+              </Typography>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

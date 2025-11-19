@@ -1,5 +1,6 @@
 import uuid
 from typing import Any
+from datetime import datetime
 
 from sqlmodel import Session, select
 
@@ -74,7 +75,7 @@ def get_items_by_owner(*, session: Session, owner_id: uuid.UUID) -> list[Item]:
 
 
 # -------------------------------
-# 🟢 Checklist 관련 CRUD
+# 🟢 Manual Checklist 관련 CRUD
 # -------------------------------
 
 def create_manual(

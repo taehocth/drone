@@ -2,12 +2,10 @@
 FROM node:20 AS build-stage
 
 # 1. Accept build arguments
-ARG VITE_GOOGLE_MAP_API_KEY
 ARG VITE_API_URL
 ARG NODE_ENV
 
 # 2. Set environment variables (so Vite sees them)
-ENV VITE_GOOGLE_MAP_API_KEY=$VITE_GOOGLE_MAP_API_KEY
 ENV VITE_API_URL=$VITE_API_URL
 ENV NODE_ENV=$NODE_ENV
 

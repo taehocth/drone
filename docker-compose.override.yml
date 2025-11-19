@@ -1,15 +1,11 @@
-version: "3.9"
-
 services:
-
-  # Proxy (Traefik)
   proxy:
     image: traefik:3.0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "80:80"        # 로컬 http만 사용
-      - "8090:8080"    # Traefik 대시보드
+      - "80:80"
+      - "8090:8080"
     command:
       - --providers.docker
       - --providers.docker.constraints=Label("traefik.constraint-label","traefik-public")
@@ -27,7 +23,6 @@ services:
       - traefik-public
       - default
 
-  # Database
   db:
     image: postgres:12
     restart: unless-stopped
@@ -41,13 +36,7 @@ services:
       - app-db-data:/var/lib/postgresql/data/pgdata
     env_file:
       - .env
-    environment:
-      PGDATA: /var/lib/postgresql/data/pgdata
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
-      POSTGRES_USER: ${POSTGRES_USER?Variable not set}
-      POSTGRES_DB: ${POSTGRES_DB?Variable not set}
 
-  # Adminer (DB GUI)
   adminer:
     image: adminer
     restart: always
@@ -62,56 +51,33 @@ services:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
       - traefik.constraint-label=traefik-public
-      - traefik.http.routers.${STACK_NAME?Variable not set}-adminer-http.rule=Host(`adminer.${DOMAIN?Variable not set}`)
-      - traefik.http.routers.${STACK_NAME?Variable not set}-adminer-http.entrypoints=http
-      # HTTPS 관련 설정 제거 (로컬 개발이라 필요 없음)
-      - traefik.http.services.${STACK_NAME?Variable not set}-adminer.loadbalancer.server.port=8080
+      - traefik.http.routers.adminer-http.rule=Host(`adminer.localhost`)
+      - traefik.http.routers.adminer-http.entrypoints=http
+      - traefik.http.services.adminer.loadbalancer.server.port=8080
 
-  # Backend (FastAPI)
   backend:
     build:
       context: ./backend
-    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    image: 'drone-backend:latest'
     restart: always
     depends_on:
       db:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      DOMAIN: ${DOMAIN}
-      PROJECT_NAME: ${PROJECT_NAME?Variable not set}
-      FRONTEND_HOST: ${FRONTEND_HOST?Variable not set}
-      ENVIRONMENT: ${ENVIRONMENT}
-      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
-      SECRET_KEY: ${SECRET_KEY?Variable not set}
-      FIRST_SUPERUSER: ${FIRST_SUPERUSER?Variable not set}
-      FIRST_SUPERUSER_PASSWORD: ${FIRST_SUPERUSER_PASSWORD?Variable not set}
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      EMAILS_FROM_EMAIL: ${EMAILS_FROM_EMAIL}
-      POSTGRES_SERVER: db
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER?Variable not set}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
-      SENTRY_DSN: ${SENTRY_DSN}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]   # ✅ 수정
+      interval: 30s
+      timeout: 10s
       retries: 5
     labels:
       - traefik.enable=true
       - traefik.docker.network=traefik-public
       - traefik.constraint-label=traefik-public
-      - traefik.http.services.${STACK_NAME?Variable not set}-backend.loadbalancer.server.port=8000
-      - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.rule=Host(`api.${DOMAIN?Variable not set}`)
-      - traefik.http.routers.${STACK_NAME?Variable not set}-backend-http.entrypoints=http
-      # HTTPS 관련 설정 제거
+      - traefik.http.services.backend.loadbalancer.server.port=8000
+      - traefik.http.routers.backend-http.rule=Host(`api.localhost`)
+      - traefik.http.routers.backend-http.entrypoints=http
 
-  # Frontend (Vite Dev Server)
   frontend:
     build:
       context: ./frontend
@@ -124,8 +90,15 @@ services:
     env_file:
       - .env
     environment:
-      VITE_API_URL: http://localhost:8000
-      VITE_GOOGLE_MAP_API_KEY: ${VITE_GOOGLE_MAP_API_KEY?Variable not set}
+      VITE_API_URL: http://api.localhost   # ✅ 수정
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+      - traefik.http.routers.frontend-http.rule=Host(`localhost`)
+      - traefik.http.routers.frontend-http.entrypoints=http
+      - traefik.http.services.frontend.loadbalancer.server.port=5173
+    networks:
+      - traefik-public
 
 volumes:
   app-db-data:

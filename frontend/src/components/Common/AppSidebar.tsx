@@ -32,6 +32,7 @@ import {
   User2,
   Play,
   ClipboardList,
+  FileText,
 } from "lucide-react"
 import Logo from "/assets/images/company-logo.svg"
 
@@ -45,9 +46,9 @@ const items = [
     icon: Home,
   },
   {
-    title: "드론 시뮬레이션",
-    url: "/simulation",
-    icon: Play,
+    title: "비행 로그 분석",
+    url: "/flight-log",
+    icon: FileText,
   },
   {
     title: "비행 체크리스트",
