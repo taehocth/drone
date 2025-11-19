@@ -6,7 +6,7 @@ from app.models import Message, KindexResponse
 from app.utils import generate_test_email, send_email
 import requests
 
-router = APIRouter(prefix="/utils", tags=["utils"])
+router = APIRouter(tags=["utils"])
 
 
 @router.post(

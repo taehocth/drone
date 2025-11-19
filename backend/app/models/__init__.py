@@ -36,10 +36,23 @@ from .checklist import (
 # ---------------------
 # Auth / Token models
 # ---------------------
-from .token import (
-    Token,
-    TokenPayload,
+from .token import Token, TokenPayload, NewPassword
+
+# ---------------------
+# Saved checklist models
+# ---------------------
+from .saved_checklist import (
+    SavedChecklist,
+    SavedChecklistBase,
+    SavedChecklistCreate,
+    SavedChecklistPublic,
+    SavedChecklistsPublic,
 )
+
+# ---------------------
+# K-index models
+# ---------------------
+from .kindex import Kindex, KindexRecent, KindexResponse
 
 # ---------------------
 # Message model
@@ -74,6 +87,19 @@ __all__ = [
     # Token / Auth
     "Token",
     "TokenPayload",
+    "NewPassword",
+
+    # Saved checklist
+    "SavedChecklistBase",
+    "SavedChecklist",
+    "SavedChecklistCreate",
+    "SavedChecklistPublic",
+    "SavedChecklistsPublic",
+
+    # K-index
+    "KindexRecent",
+    "Kindex",
+    "KindexResponse",
 
     # Message
     "Message",
