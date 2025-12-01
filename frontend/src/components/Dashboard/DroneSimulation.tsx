@@ -94,6 +94,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                   alt: updated.altitude,
                   speed: updated.speed,
                   battery: updated.battery,
+                  yaw: updated.yaw, // ✅ 헤딩 방향 추가
                 },
               }),
             )

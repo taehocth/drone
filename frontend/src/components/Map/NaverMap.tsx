@@ -223,46 +223,57 @@ export function NaverMap({
     return () => window.removeEventListener("resize", handleResize)
   }, [lat, lng])
 
-  // ✅ 드론 마커 생성/업데이트 함수
-  const updateDroneMarker = (lat: number, lng: number) => {
+  // ✅ 드론 마커 생성/업데이트 함수 (yaw 방향 포함)
+  const updateDroneMarker = (lat: number, lng: number, yaw?: number) => {
     if (!mapInstance.current) return
 
     const naver = (window as any).naver
     const position = new naver.maps.LatLng(lat, lng)
 
-    // ✅ 드론 마커가 없으면 생성
+    // ✅ yaw 각도 (0-360도, 북쪽이 0도, 시계방향)
+    const rotation = yaw !== undefined ? yaw : 0
+
+    // ✅ SVG 기반 화살표 마커 생성 함수
+    const createArrowIcon = (angle: number) => {
+      return {
+        content: `
+          <div style="
+            width: 40px;
+            height: 40px;
+            position: relative;
+            transform: rotate(${angle}deg);
+            transform-origin: center center;
+          ">
+            <svg width="40" height="40" viewBox="0 0 40 40" style="filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));">
+              <!-- 화살표 삼각형 (위쪽) -->
+              <path d="M 20 5 L 28 25 L 12 25 Z" 
+                    fill="#ef4444" 
+                    stroke="white" 
+                    stroke-width="2"/>
+              <!-- 중심 원 -->
+              <circle cx="20" cy="25" r="6" fill="#ef4444" stroke="white" stroke-width="2"/>
+            </svg>
+          </div>
+        `,
+        anchor: new naver.maps.Point(20, 20),
+        size: new naver.maps.Size(40, 40),
+      }
+    }
+
+    // ✅ 드론 마커가 없으면 생성 (화살표 형태)
     if (!droneMarkerRef.current) {
       droneMarkerRef.current = new naver.maps.Marker({
         position: position,
         map: mapInstance.current,
-        icon: {
-          content: `
-            <div style="
-              width: 24px;
-              height: 24px;
-              background-color: #ef4444;
-              border: 3px solid white;
-              border-radius: 50%;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            ">
-              <div style="
-                width: 8px;
-                height: 8px;
-                background-color: white;
-                border-radius: 50%;
-              "></div>
-            </div>
-          `,
-          anchor: new naver.maps.Point(12, 12),
-        },
+        icon: createArrowIcon(rotation),
         zIndex: 1000, // 다른 마커보다 위에 표시
       })
     } else {
-      // ✅ 기존 마커 위치 업데이트
+      // ✅ 기존 마커 위치 및 회전 업데이트
       droneMarkerRef.current.setPosition(position)
+
+      // ✅ 마커 아이콘 회전 업데이트 (새로운 아이콘 생성)
+      droneMarkerRef.current.setIcon(createArrowIcon(rotation))
     }
   }
 
@@ -277,11 +288,11 @@ export function NaverMap({
   // ✅ 실시간 드론 경로 업데이트 (DroneSimulation.tsx → window 이벤트)
   useEffect(() => {
     const handleDroneUpdate = (e: CustomEvent) => {
-      const { lat, lng } = e.detail
+      const { lat, lng, yaw } = e.detail
       if (!lat || !lng || !mapInstance.current) return
 
-      // ✅ 드론 마커 업데이트
-      updateDroneMarker(lat, lng)
+      // ✅ 드론 마커 업데이트 (yaw 방향 포함)
+      updateDroneMarker(lat, lng, yaw)
       setIsDroneConnected(true) // ✅ 드론 연결 상태 업데이트
 
       // ✅ 경로 누적
