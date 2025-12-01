@@ -54,6 +54,7 @@ async def qgc_ws(websocket: WebSocket):
             "speed": 0.0, "altitude": 0.0, "heading": 0.0,
             "throttle": 0.0, "battery": 0.0,
             "latitude": 0.0, "longitude": 0.0,
+            "satellites": 0,  # ✅ GPS 위성 개수
         }
 
         last_send_time = asyncio.get_event_loop().time()
@@ -106,14 +107,27 @@ async def qgc_ws(websocket: WebSocket):
                     cell_voltage = voltage / cell_count
                     latest["battery"] = max(0, min(100, ((cell_voltage - 3.0) / (4.2 - 3.0)) * 100))
 
-            # ✅ GPS 정보
+            # ✅ GPS 정보 (GPS_RAW_INT)
             elif mtype == "GPS_RAW_INT":
                 latest["latitude"] = getattr(msg, "lat", 0) / 1e7
                 latest["longitude"] = getattr(msg, "lon", 0) / 1e7
                 satellites = getattr(msg, "satellites_visible", 0)
+                latest["satellites"] = satellites  # ✅ latest에 저장
                 hdop = getattr(msg, "eph", 99.9) / 100.0  # eph = HDOP * 100
+                print(f"🛰️ GPS_RAW_INT: 위도={latest['latitude']:.6f}, 경도={latest['longitude']:.6f}, 위성={satellites}개")
+                
+            # ✅ GPS 정보 (GLOBAL_POSITION_INT - 위치만 있는 경우)
+            elif mtype == "GLOBAL_POSITION_INT":
+                latest["latitude"] = getattr(msg, "lat", 0) / 1e7
+                latest["longitude"] = getattr(msg, "lon", 0) / 1e7
+                # satellites는 이전 값 유지 (GLOBAL_POSITION_INT에는 위성 수 정보 없음)
+                satellites = latest.get("satellites", 0)
+                hdop = 99.9
+                print(f"📍 GLOBAL_POSITION_INT: 위도={latest['latitude']:.6f}, 경도={latest['longitude']:.6f}")
             else:
-                satellites, hdop = 0, 99.9
+                # 다른 메시지 타입일 때는 이전 값 유지
+                satellites = latest.get("satellites", 0)
+                hdop = 99.9
 
             # ✅ IMU 온도
             if mtype == "SCALED_IMU":

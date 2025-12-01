@@ -121,6 +121,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
+      
+      // ✅ 연결 종료 시 드론 마커 제거 이벤트 발생
+      window.dispatchEvent(
+        new CustomEvent("droneDisconnected", {
+          detail: {},
+        }),
+      )
     }
 
     // ⚠️ 에러 처리
@@ -129,6 +136,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
+      
+      // ✅ 에러 발생 시 드론 마커 제거 이벤트 발생
+      window.dispatchEvent(
+        new CustomEvent("droneDisconnected", {
+          detail: {},
+        }),
+      )
     }
 
     // 🧹 cleanup
@@ -162,6 +176,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       }
       setQgcData(initialData)
       onDataChange?.(initialData)
+      
+      // ✅ 연결 해제 시 드론 마커 제거 이벤트 발생
+      window.dispatchEvent(
+        new CustomEvent("droneDisconnected", {
+          detail: {},
+        }),
+      )
     } else {
       console.log("🔌 연결 버튼 클릭 → 연결 시작")
       setConnected(true)

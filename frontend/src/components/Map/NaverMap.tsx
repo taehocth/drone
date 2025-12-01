@@ -20,6 +20,7 @@ export function NaverMap({
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
   const currentMarker = useRef<any>(null)
+  const droneMarkerRef = useRef<any>(null) // ✅ 드론 마커 Ref
 
   // ✅ 경로 관련 Ref
   const pathCoords = useRef<any[]>([])
@@ -38,6 +39,12 @@ export function NaverMap({
     windSpeed: number
     precipitationAmount: number
   } | null>(null)
+
+  // ✅ 드론 추적 모드 상태 (기본값: true)
+  const [isTrackingDrone, setIsTrackingDrone] = useState(true)
+
+  // ✅ 드론 연결 상태 (드론 마커가 있는지 확인)
+  const [isDroneConnected, setIsDroneConnected] = useState(false)
 
   // ✅ 날씨 정보 가져오기
   const fetchWeatherData = async (nx: number, ny: number) => {
@@ -216,11 +223,66 @@ export function NaverMap({
     return () => window.removeEventListener("resize", handleResize)
   }, [lat, lng])
 
+  // ✅ 드론 마커 생성/업데이트 함수
+  const updateDroneMarker = (lat: number, lng: number) => {
+    if (!mapInstance.current) return
+
+    const naver = (window as any).naver
+    const position = new naver.maps.LatLng(lat, lng)
+
+    // ✅ 드론 마커가 없으면 생성
+    if (!droneMarkerRef.current) {
+      droneMarkerRef.current = new naver.maps.Marker({
+        position: position,
+        map: mapInstance.current,
+        icon: {
+          content: `
+            <div style="
+              width: 24px;
+              height: 24px;
+              background-color: #ef4444;
+              border: 3px solid white;
+              border-radius: 50%;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            ">
+              <div style="
+                width: 8px;
+                height: 8px;
+                background-color: white;
+                border-radius: 50%;
+              "></div>
+            </div>
+          `,
+          anchor: new naver.maps.Point(12, 12),
+        },
+        zIndex: 1000, // 다른 마커보다 위에 표시
+      })
+    } else {
+      // ✅ 기존 마커 위치 업데이트
+      droneMarkerRef.current.setPosition(position)
+    }
+  }
+
+  // ✅ 드론 마커 제거 함수
+  const removeDroneMarker = () => {
+    if (droneMarkerRef.current) {
+      droneMarkerRef.current.setMap(null)
+      droneMarkerRef.current = null
+    }
+  }
+
   // ✅ 실시간 드론 경로 업데이트 (DroneSimulation.tsx → window 이벤트)
   useEffect(() => {
     const handleDroneUpdate = (e: CustomEvent) => {
       const { lat, lng } = e.detail
       if (!lat || !lng || !mapInstance.current) return
+
+      // ✅ 드론 마커 업데이트
+      updateDroneMarker(lat, lng)
+      setIsDroneConnected(true) // ✅ 드론 연결 상태 업데이트
 
       // ✅ 경로 누적
       pathCoords.current.push(new (window as any).naver.maps.LatLng(lat, lng))
@@ -235,24 +297,38 @@ export function NaverMap({
         strokeOpacity: 0.8,
       })
 
-      // ✅ 지도 중심 이동
-      mapInstance.current.setCenter(
-        new (window as any).naver.maps.LatLng(lat, lng),
-      )
+      // ✅ 지도 중심 이동 (추적 모드가 켜져 있을 때만)
+      if (isTrackingDrone) {
+        mapInstance.current.setCenter(
+          new (window as any).naver.maps.LatLng(lat, lng),
+        )
+      }
+    }
+
+    // ✅ 연결 해제 이벤트 핸들러
+    const handleDroneDisconnected = () => {
+      removeDroneMarker()
+      setIsDroneConnected(false) // ✅ 드론 연결 해제 상태 업데이트
     }
 
     window.addEventListener("dronePositionUpdate", handleDroneUpdate)
-    return () =>
+    window.addEventListener("droneDisconnected", handleDroneDisconnected)
+    return () => {
       window.removeEventListener("dronePositionUpdate", handleDroneUpdate)
-  }, [])
+      window.removeEventListener("droneDisconnected", handleDroneDisconnected)
+      // 컴포넌트 언마운트 시 드론 마커 제거
+      removeDroneMarker()
+    }
+  }, [isTrackingDrone]) // ✅ isTrackingDrone 의존성 추가
 
-  // ✅ 경로 초기화 버튼
+  // ✅ 경로 초기화 버튼 (드론 마커는 유지)
   const clearPath = () => {
     pathCoords.current = []
     if (polylineRef.current) {
       polylineRef.current.setMap(null)
       polylineRef.current = null
     }
+    // 드론 마커는 유지 (연결이 끊어지지 않는 한)
   }
 
   return (
@@ -284,6 +360,25 @@ export function NaverMap({
       >
         경로 초기화
       </button>
+
+      {/* ✅ 드론 추적 모드 토글 버튼 */}
+      {isDroneConnected && (
+        <button
+          onClick={() => setIsTrackingDrone(!isTrackingDrone)}
+          className={`absolute right-4 top-16 z-50 rounded px-3 py-1 text-xs text-white shadow transition-colors ${
+            isTrackingDrone
+              ? "bg-green-500 hover:bg-green-600"
+              : "bg-gray-500 hover:bg-gray-600"
+          }`}
+          title={
+            isTrackingDrone
+              ? "드론 추적 중 - 클릭하여 해제"
+              : "드론 추적 해제됨 - 클릭하여 추적 시작"
+          }
+        >
+          {isTrackingDrone ? "📍 추적 중" : "📍 추적 해제"}
+        </button>
+      )}
 
       {/* ✅ 클릭 정보 표시 패널 */}
       {showInfoPanel && clickedInfo && (
