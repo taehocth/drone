@@ -8,15 +8,6 @@ import {
 } from "@/components/ui/card"
 import { Upload, Brain, FileChartColumn } from "lucide-react"
 import Papa from "papaparse"
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts"
 
 interface ParsedLog {
   time: number
@@ -277,74 +268,6 @@ export function FlightReviewAnalyzerCard({
             className="hidden"
           />
         </label>
-
-        {/* 데이터 그래프 */}
-        {data.length > 0 && (
-          <div className="h-[270px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
-                <XAxis
-                  dataKey="time"
-                  type="number"
-                  domain={["dataMin", "dataMax"]}
-                  tickCount={10}
-                  interval="preserveStartEnd"
-                  tickFormatter={(t) => {
-                    if (t >= 60) {
-                      const m = Math.floor(t / 60)
-                      const s = Math.floor(t % 60)
-                      return s === 0 ? `${m}m` : `${m}m ${s}s`
-                    }
-                    return `${t.toFixed(0)}s`
-                  }}
-                />
-                <YAxis />
-                <Tooltip
-                  formatter={(value: number, name: string, props: any) => {
-                    if (props.dataKey === "altitude")
-                      return [`${value.toFixed(1)} m`, "고도"]
-                    if (props.dataKey === "speed")
-                      return [`${value.toFixed(1)} m/s`, "속도"]
-                    if (props.dataKey === "battery")
-                      return [`${value.toFixed(1)} %`, "배터리"]
-                    return [value, name]
-                  }}
-                  labelFormatter={(label) => {
-                    const totalSec = Math.floor(label)
-                    const m = Math.floor(totalSec / 60)
-                    const s = totalSec % 60
-                    return m > 0 ? `시간: ${m}분 ${s}초` : `시간: ${s}초`
-                  }}
-                />
-                <Legend verticalAlign="top" height={36} />
-                <Line
-                  type="monotone"
-                  dataKey="altitude"
-                  stroke="#3b82f6"
-                  name="고도 (m)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="speed"
-                  stroke="#f59e0b"
-                  name="속도 (m/s)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="battery"
-                  stroke="#ef4444"
-                  name="배터리 (%)"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
 
         {summary && (
           <div className="flex items-start gap-3 rounded-lg bg-indigo-50 p-3 dark:bg-indigo-900/10">

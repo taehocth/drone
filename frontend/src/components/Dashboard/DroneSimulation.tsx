@@ -16,6 +16,7 @@ export interface DroneData {
   vy?: number
   vz?: number
   timestamp: string
+  satellites?: number
 }
 
 const initialData: DroneData = {
@@ -81,24 +82,31 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             roll: msg.roll ?? prev.roll,
             pitch: msg.pitch ?? prev.pitch,
             yaw: msg.yaw ?? prev.yaw,
+            satellites: msg.satellites ?? prev.satellites, // ✅ GPS 위성 개수
             timestamp: msg.timestamp ?? new Date().toISOString(),
           }
 
-          // ✅ 지도 위치 업데이트용 이벤트
-          if (updated.latitude && updated.longitude) {
-            window.dispatchEvent(
-              new CustomEvent("dronePositionUpdate", {
-                detail: {
-                  lat: updated.latitude,
-                  lng: updated.longitude,
-                  alt: updated.altitude,
-                  speed: updated.speed,
-                  battery: updated.battery,
-                  yaw: updated.yaw, // ✅ 헤딩 방향 추가
-                },
-              }),
-            )
-          }
+          // ✅ 디버깅: GPS 위성 개수 로그
+          if (
+            msg.satellites !== undefined &&
+            msg.satellites !== prev.satellites
+          )
+            if (updated.latitude && updated.longitude) {
+              // ✅ 지도 위치 업데이트용 이벤트
+              window.dispatchEvent(
+                new CustomEvent("dronePositionUpdate", {
+                  detail: {
+                    lat: updated.latitude,
+                    lng: updated.longitude,
+                    alt: updated.altitude,
+                    speed: updated.speed,
+                    battery: updated.battery,
+                    yaw: updated.yaw, // ✅ 헤딩 방향 추가
+                    satellites: updated.satellites, // ✅ GPS 위성 개수 추가
+                  },
+                }),
+              )
+            }
 
           // ✅ React 렌더링 안전하게 처리 (경고 방지)
           queueMicrotask(() => {
@@ -122,7 +130,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
-      
+
       // ✅ 연결 종료 시 드론 마커 제거 이벤트 발생
       window.dispatchEvent(
         new CustomEvent("droneDisconnected", {
@@ -137,7 +145,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
-      
+
       // ✅ 에러 발생 시 드론 마커 제거 이벤트 발생
       window.dispatchEvent(
         new CustomEvent("droneDisconnected", {
@@ -177,7 +185,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       }
       setQgcData(initialData)
       onDataChange?.(initialData)
-      
+
       // ✅ 연결 해제 시 드론 마커 제거 이벤트 발생
       window.dispatchEvent(
         new CustomEvent("droneDisconnected", {

@@ -5,7 +5,7 @@ interface NaverMapProps {
   lat?: number
   lng?: number
   markers?: Array<{ lat: number; lng: number; id: number }>
-  onMapClick?: (nx: number, ny: number) => void // ✅ (lat,lng) → (nx,ny)
+  onMapClick?: (nx: number, ny: number) => void
 }
 
 const DEFAULT_LAT = 36.5941
@@ -20,9 +20,8 @@ export function NaverMap({
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
   const currentMarker = useRef<any>(null)
-  const droneMarkerRef = useRef<any>(null) // ✅ 드론 마커 Ref
+  const droneMarkerRef = useRef<any>(null)
 
-  // ✅ 경로 관련 Ref
   const pathCoords = useRef<any[]>([])
   const polylineRef = useRef<any>(null)
 
@@ -32,21 +31,44 @@ export function NaverMap({
     lng: number
     address: string
   } | null>(null)
+
   const [showInfoPanel, setShowInfoPanel] = useState(false)
   const [isAddressExpanded, setIsAddressExpanded] = useState(false)
+
   const [weatherData, setWeatherData] = useState<{
     temperature: number
     windSpeed: number
     precipitationAmount: number
   } | null>(null)
 
-  // ✅ 드론 추적 모드 상태 (기본값: true)
   const [isTrackingDrone, setIsTrackingDrone] = useState(true)
-
-  // ✅ 드론 연결 상태 (드론 마커가 있는지 확인)
   const [isDroneConnected, setIsDroneConnected] = useState(false)
 
-  // ✅ 날씨 정보 가져오기
+  // ⭐ GNSS 위성 수 State
+  const [satellites, setSatellites] = useState<number | null>(null)
+
+  const lastWeatherUpdateRef = useRef<{ lat: number; lng: number } | null>(null)
+
+  // ================================
+  // ⭐ 위성수 이벤트 수신
+  // ================================
+  useEffect(() => {
+    const handleSatelliteUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent
+      const satellitesValue = customEvent.detail?.satellites
+      if (satellitesValue !== undefined) {
+        setSatellites(satellitesValue)
+      }
+    }
+
+    window.addEventListener("droneSatelliteUpdate", handleSatelliteUpdate)
+    return () =>
+      window.removeEventListener("droneSatelliteUpdate", handleSatelliteUpdate)
+  }, [])
+
+  // ================================
+  // 날씨 정보 가져오기
+  // ================================
   const fetchWeatherData = async (nx: number, ny: number) => {
     try {
       const now = new Date()
@@ -59,11 +81,11 @@ export function NaverMap({
 
       const url = `http://localhost:8000/api/v1/weather?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
       const res = await fetch(url)
-      if (!res.ok) return console.error("❌ 날씨 API 요청 실패:", res.status)
+
+      if (!res.ok) return
 
       const data = await res.json()
       const items = data?.response?.body?.items?.item ?? []
-      if (items.length === 0) return console.warn("⚠️ 날씨 데이터 없음")
 
       let temperature = 0
       let windSpeed = 0
@@ -85,30 +107,34 @@ export function NaverMap({
 
       setWeatherData({ temperature, windSpeed, precipitationAmount })
     } catch (err) {
-      console.error("날씨 불러오기 실패:", err)
-      setWeatherData(null)
+      console.error("날씨 API 실패:", err)
     }
   }
 
-  // ✅ 장소 검색
+  // ================================
+  // 장소 검색
+  // ================================
   const handleSearch = async () => {
     if (!mapInstance.current) return
+
     try {
       const res = await fetch(
         `http://localhost:8000/api/v1/naver/search-place?query=${encodeURIComponent(
           searchQuery,
         )}`,
       )
+
       if (!res.ok) return alert("검색 실패")
 
       const data = await res.json()
-      if (!data.items || data.items.length === 0)
-        return alert("검색 결과가 없습니다.")
+      if (!data.items || data.items.length === 0) return alert("결과 없음")
 
       const place = data.items[0]
       const lat = parseFloat(place.mapy) / 1e7
       const lng = parseFloat(place.mapx) / 1e7
-      const latlng = new (window as any).naver.maps.LatLng(lat, lng)
+
+      const naver = (window as any).naver
+      const latlng = new naver.maps.LatLng(lat, lng)
 
       mapInstance.current.setCenter(latlng)
       mapInstance.current.setZoom(15)
@@ -124,11 +150,13 @@ export function NaverMap({
       onMapClick?.(nx, ny)
       fetchWeatherData(nx, ny)
     } catch (err) {
-      console.error("검색 에러:", err)
+      console.error(err)
     }
   }
 
-  // ✅ 마커 제거
+  // ================================
+  // 클릭 마커 제거
+  // ================================
   const removeCurrentMarker = () => {
     if (currentMarker.current) {
       currentMarker.current.setMap(null)
@@ -136,12 +164,16 @@ export function NaverMap({
     }
   }
 
-  // ✅ 마커 추가
+  // ================================
+  // 클릭 마커 추가
+  // ================================
   const addMarker = (lat: number, lng: number) => {
     if (!mapInstance.current) return
     removeCurrentMarker()
-    const marker = new (window as any).naver.maps.Marker({
-      position: new (window as any).naver.maps.LatLng(lat, lng),
+
+    const naver = (window as any).naver
+    const marker = new naver.maps.Marker({
+      position: new naver.maps.LatLng(lat, lng),
       map: mapInstance.current,
       icon: {
         content: `
@@ -154,33 +186,40 @@ export function NaverMap({
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
           "></div>
         `,
-        anchor: new (window as any).naver.maps.Point(9, 9),
+        anchor: new naver.maps.Point(9, 9),
       },
     })
+
     currentMarker.current = marker
   }
 
-  // ✅ 지도 클릭 이벤트
+  // ================================
+  // 지도 클릭: 주소 + 날씨 표시
+  // ================================
   const handleMapClick = (e: any) => {
     const lat = e.coord.lat()
     const lng = e.coord.lng()
+
     addMarker(lat, lng)
 
     const { nx, ny } = convertGRID_GPS("toXY", lat, lng)
     onMapClick?.(nx, ny)
     fetchWeatherData(nx, ny)
-    ;(window as any).naver.maps.Service.reverseGeocode(
+
+    const naver = (window as any).naver
+    naver.maps.Service.reverseGeocode(
       {
-        coords: new (window as any).naver.maps.LatLng(lat, lng),
+        coords: new naver.maps.LatLng(lat, lng),
         orders: [
-          (window as any).naver.maps.Service.OrderType.ADDR,
-          (window as any).naver.maps.Service.OrderType.ROAD_ADDR,
+          naver.maps.Service.OrderType.ADDR,
+          naver.maps.Service.OrderType.ROAD_ADDR,
         ].join(","),
       },
       (status: any, response: any) => {
-        if (status === (window as any).naver.maps.Service.Status.OK) {
+        if (status === naver.maps.Service.Status.OK) {
           const address =
-            response.v2.address.jibunAddress || response.v2.address.roadAddress
+            response.v2.address.roadAddress || response.v2.address.jibunAddress
+
           setClickedInfo({ lat, lng, address })
           setShowInfoPanel(true)
           setIsAddressExpanded(false)
@@ -189,9 +228,12 @@ export function NaverMap({
     )
   }
 
-  // ✅ 네이버 지도 초기화
+  // ================================
+  // 지도 초기화
+  // ================================
   useEffect(() => {
     const scriptId = "naver-map-script"
+
     if (!document.getElementById(scriptId)) {
       const script = document.createElement("script")
       script.id = scriptId
@@ -206,78 +248,69 @@ export function NaverMap({
 
     function initMap() {
       if (!mapRef.current || !(window as any).naver) return
+
       const naver = (window as any).naver
-      const map = new naver.maps.Map(mapRef.current, {
+      mapInstance.current = new naver.maps.Map(mapRef.current, {
         center: new naver.maps.LatLng(DEFAULT_LAT, DEFAULT_LNG),
         zoom: 15,
       })
-      mapInstance.current = map
-      naver.maps.Event.addListener(map, "click", handleMapClick)
+
+      naver.maps.Event.addListener(mapInstance.current, "click", handleMapClick)
     }
 
     const handleResize = () => {
       if (mapInstance.current)
         (window as any).naver.maps.Event.trigger(mapInstance.current, "resize")
     }
+
     window.addEventListener("resize", handleResize)
     return () => window.removeEventListener("resize", handleResize)
   }, [lat, lng])
 
-  // ✅ 드론 마커 생성/업데이트 함수 (yaw 방향 포함)
+  // ================================
+  // 드론 화살표 마커 생성/업데이트
+  // ================================
   const updateDroneMarker = (lat: number, lng: number, yaw?: number) => {
     if (!mapInstance.current) return
 
     const naver = (window as any).naver
     const position = new naver.maps.LatLng(lat, lng)
+    const rotation = yaw ?? 0
 
-    // ✅ yaw 각도 (0-360도, 북쪽이 0도, 시계방향)
-    const rotation = yaw !== undefined ? yaw : 0
+    const createArrowIcon = (angle: number) => ({
+      content: `
+        <div style="
+          width: 40px;
+          height: 40px;
+          position: relative;
+          transform: rotate(${angle}deg);
+        ">
+          <svg width="40" height="40" viewBox="0 0 40 40" style="filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));">
+            <path d="M 20 5 L 28 25 L 12 25 Z"
+                  fill="#ef4444"
+                  stroke="white"
+                  stroke-width="2"/>
+            <circle cx="20" cy="25" r="6" fill="#ef4444" stroke="white" stroke-width="2"/>
+          </svg>
+        </div>
+      `,
+      anchor: new naver.maps.Point(20, 20),
+      size: new naver.maps.Size(40, 40),
+    })
 
-    // ✅ SVG 기반 화살표 마커 생성 함수
-    const createArrowIcon = (angle: number) => {
-      return {
-        content: `
-          <div style="
-            width: 40px;
-            height: 40px;
-            position: relative;
-            transform: rotate(${angle}deg);
-            transform-origin: center center;
-          ">
-            <svg width="40" height="40" viewBox="0 0 40 40" style="filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));">
-              <!-- 화살표 삼각형 (위쪽) -->
-              <path d="M 20 5 L 28 25 L 12 25 Z" 
-                    fill="#ef4444" 
-                    stroke="white" 
-                    stroke-width="2"/>
-              <!-- 중심 원 -->
-              <circle cx="20" cy="25" r="6" fill="#ef4444" stroke="white" stroke-width="2"/>
-            </svg>
-          </div>
-        `,
-        anchor: new naver.maps.Point(20, 20),
-        size: new naver.maps.Size(40, 40),
-      }
-    }
-
-    // ✅ 드론 마커가 없으면 생성 (화살표 형태)
     if (!droneMarkerRef.current) {
       droneMarkerRef.current = new naver.maps.Marker({
-        position: position,
+        position,
         map: mapInstance.current,
         icon: createArrowIcon(rotation),
-        zIndex: 1000, // 다른 마커보다 위에 표시
+        zIndex: 1000,
       })
     } else {
-      // ✅ 기존 마커 위치 및 회전 업데이트
       droneMarkerRef.current.setPosition(position)
-
-      // ✅ 마커 아이콘 회전 업데이트 (새로운 아이콘 생성)
       droneMarkerRef.current.setIcon(createArrowIcon(rotation))
     }
   }
 
-  // ✅ 드론 마커 제거 함수
   const removeDroneMarker = () => {
     if (droneMarkerRef.current) {
       droneMarkerRef.current.setMap(null)
@@ -285,22 +318,29 @@ export function NaverMap({
     }
   }
 
-  // ✅ 실시간 드론 경로 업데이트 (DroneSimulation.tsx → window 이벤트)
+  // ================================
+  // 실시간 드론 위치 업데이트
+  // ================================
   useEffect(() => {
     const handleDroneUpdate = (e: CustomEvent) => {
-      const { lat, lng, yaw } = e.detail
+      const { lat, lng, yaw, satellites } = e.detail
+
       if (!lat || !lng || !mapInstance.current) return
 
-      // ✅ 드론 마커 업데이트 (yaw 방향 포함)
       updateDroneMarker(lat, lng, yaw)
-      setIsDroneConnected(true) // ✅ 드론 연결 상태 업데이트
+      setIsDroneConnected(true)
 
-      // ✅ 경로 누적
-      pathCoords.current.push(new (window as any).naver.maps.LatLng(lat, lng))
+      // ✅ GPS 위성 개수 업데이트
+      if (satellites !== undefined) {
+        setSatellites(satellites)
+      }
 
-      // ✅ 이전 경로 삭제 후 새로 그림
+      const naver = (window as any).naver
+
+      pathCoords.current.push(new naver.maps.LatLng(lat, lng))
+
       if (polylineRef.current) polylineRef.current.setMap(null)
-      polylineRef.current = new (window as any).naver.maps.Polyline({
+      polylineRef.current = new naver.maps.Polyline({
         map: mapInstance.current,
         path: pathCoords.current,
         strokeColor: "#1E90FF",
@@ -308,40 +348,75 @@ export function NaverMap({
         strokeOpacity: 0.8,
       })
 
-      // ✅ 지도 중심 이동 (추적 모드가 켜져 있을 때만)
       if (isTrackingDrone) {
-        mapInstance.current.setCenter(
-          new (window as any).naver.maps.LatLng(lat, lng),
+        mapInstance.current.setCenter(new naver.maps.LatLng(lat, lng))
+      }
+
+      // ✅ 드론 위치의 기상정보와 주소 가져오기 (일정 거리 이상 이동했을 때만)
+      const lastUpdate = lastWeatherUpdateRef.current
+      const shouldUpdateWeather =
+        !lastUpdate ||
+        Math.abs(lat - lastUpdate.lat) > 0.01 ||
+        Math.abs(lng - lastUpdate.lng) > 0.01 // 약 1km 이상 이동
+
+      if (shouldUpdateWeather) {
+        const { nx, ny } = convertGRID_GPS("toXY", lat, lng)
+        fetchWeatherData(nx, ny)
+        lastWeatherUpdateRef.current = { lat, lng }
+
+        naver.maps.Service.reverseGeocode(
+          {
+            coords: new naver.maps.LatLng(lat, lng),
+            orders: [
+              naver.maps.Service.OrderType.ADDR,
+              naver.maps.Service.OrderType.ROAD_ADDR,
+            ].join(","),
+          },
+          (status: any, response: any) => {
+            if (status === naver.maps.Service.Status.OK) {
+              const address =
+                response.v2.address.roadAddress ||
+                response.v2.address.jibunAddress
+
+              setClickedInfo({ lat, lng, address })
+              setShowInfoPanel(true)
+              setIsAddressExpanded(false)
+            }
+          },
         )
       }
     }
 
-    // ✅ 연결 해제 이벤트 핸들러
-    const handleDroneDisconnected = () => {
+    const handleDisconnect = () => {
       removeDroneMarker()
-      setIsDroneConnected(false) // ✅ 드론 연결 해제 상태 업데이트
+      setIsDroneConnected(false)
+      setSatellites(null) // ✅ 위성 수 초기화
     }
 
     window.addEventListener("dronePositionUpdate", handleDroneUpdate)
-    window.addEventListener("droneDisconnected", handleDroneDisconnected)
+    window.addEventListener("droneDisconnected", handleDisconnect)
+
     return () => {
       window.removeEventListener("dronePositionUpdate", handleDroneUpdate)
-      window.removeEventListener("droneDisconnected", handleDroneDisconnected)
-      // 컴포넌트 언마운트 시 드론 마커 제거
+      window.removeEventListener("droneDisconnected", handleDisconnect)
       removeDroneMarker()
     }
-  }, [isTrackingDrone]) // ✅ isTrackingDrone 의존성 추가
+  }, [isTrackingDrone])
 
-  // ✅ 경로 초기화 버튼 (드론 마커는 유지)
+  // ================================
+  // 경로 초기화
+  // ================================
   const clearPath = () => {
     pathCoords.current = []
     if (polylineRef.current) {
       polylineRef.current.setMap(null)
       polylineRef.current = null
     }
-    // 드론 마커는 유지 (연결이 끊어지지 않는 한)
   }
 
+  // -------------------------------------------------------------------
+  //                             UI 출력
+  // -------------------------------------------------------------------
   return (
     <div className="relative flex h-full w-full flex-col">
       {/* 검색창 */}
@@ -364,7 +439,7 @@ export function NaverMap({
         </div>
       </div>
 
-      {/* ✅ 경로 초기화 버튼 */}
+      {/* 경로 초기화 버튼 */}
       <button
         onClick={clearPath}
         className="absolute right-4 top-4 z-50 rounded bg-red-500 px-3 py-1 text-xs text-white shadow hover:bg-red-600"
@@ -372,26 +447,33 @@ export function NaverMap({
         경로 초기화
       </button>
 
-      {/* ✅ 드론 추적 모드 토글 버튼 */}
+      {/* 드론 추적 모드 */}
       {isDroneConnected && (
         <button
           onClick={() => setIsTrackingDrone(!isTrackingDrone)}
-          className={`absolute right-4 top-16 z-50 rounded px-3 py-1 text-xs text-white shadow transition-colors ${
+          className={`absolute right-4 top-16 z-50 rounded px-3 py-1 text-xs text-white shadow ${
             isTrackingDrone
               ? "bg-green-500 hover:bg-green-600"
               : "bg-gray-500 hover:bg-gray-600"
           }`}
-          title={
-            isTrackingDrone
-              ? "드론 추적 중 - 클릭하여 해제"
-              : "드론 추적 해제됨 - 클릭하여 추적 시작"
-          }
         >
           {isTrackingDrone ? "📍 추적 중" : "📍 추적 해제"}
         </button>
       )}
 
-      {/* ✅ 클릭 정보 표시 패널 */}
+      {/* ⭐ GNSS 위성 HUD */}
+      {satellites !== null && (
+        <div className="absolute right-4 top-28 z-50 rounded-lg bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md">
+          <div className="flex items-center gap-2">
+            <span>🛰️</span>
+            <span>
+              <strong>위성:</strong> {satellites}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 클릭 패널 */}
       {showInfoPanel && clickedInfo && (
         <div className="absolute bottom-0 left-0 right-0 z-50">
           <div className="mx-4 mb-4 rounded-lg bg-black/80 px-3 py-2 text-white backdrop-blur-sm">
@@ -418,7 +500,7 @@ export function NaverMap({
                     )}
                   </div>
                 </div>
-                {/* 날씨 정보 */}
+
                 {weatherData && (
                   <div className="mt-2 flex flex-wrap items-center gap-3 border-t border-white/20 pt-2">
                     <span>
@@ -434,6 +516,7 @@ export function NaverMap({
                   </div>
                 )}
               </div>
+
               <button
                 onClick={() => {
                   setShowInfoPanel(false)
