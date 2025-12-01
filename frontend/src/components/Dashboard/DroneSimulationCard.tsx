@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
   Wifi,
-  WifiOff,
   Gauge,
   Battery,
   MapPin,
@@ -11,38 +10,8 @@ import {
   Zap,
   Ruler,
 } from "lucide-react"
-import React, { useRef } from "react"
+import React from "react"
 import type { DroneData } from "./DroneSimulation"
-
-const toDegrees = (rad?: number) =>
-  rad !== undefined ? (rad * 180) / Math.PI : undefined
-
-function useSmoothedValue(
-  value: number | undefined,
-  windowSize = 5,
-  deadband = 0.5,
-) {
-  const valuesRef = React.useRef<number[]>([])
-  const prevRef = React.useRef<number | undefined>(undefined)
-
-  if (value !== undefined && !Number.isNaN(value)) {
-    valuesRef.current.push(value)
-    if (valuesRef.current.length > windowSize) valuesRef.current.shift()
-  }
-
-  if (!valuesRef.current.length) return value
-  const avg =
-    valuesRef.current.reduce((a, b) => a + b, 0) / valuesRef.current.length
-
-  if (
-    prevRef.current !== undefined &&
-    Math.abs(avg - prevRef.current) < deadband
-  )
-    return prevRef.current
-
-  prevRef.current = avg
-  return avg
-}
 
 interface Props {
   data: DroneData
@@ -57,12 +26,6 @@ export const DroneSimulationCard: React.FC<Props> = ({
   onToggleConnect,
   wsRef,
 }) => {
-  const altitude = useSmoothedValue(data?.altitude, 3, 0.2)
-  const rollDeg = useSmoothedValue(toDegrees(data?.roll), 3, 0.5)
-  const pitchDeg = useSmoothedValue(toDegrees(data?.pitch), 3, 0.5)
-  const yawDeg = useSmoothedValue(toDegrees(data?.yaw), 3, 1)
-  const throttle = useSmoothedValue(data?.throttle, 3, 0.3)
-
   return (
     <Card className="mx-auto w-full max-w-2xl rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 shadow-md transition-all hover:shadow-lg dark:border-gray-800 dark:from-gray-900 dark:to-gray-800">
       <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-700">
@@ -71,22 +34,14 @@ export const DroneSimulationCard: React.FC<Props> = ({
           드론 상태
         </CardTitle>
         <Badge
-          variant={connected ? "default" : "destructive"}
+          variant="default"
           className={`flex items-center gap-1 px-3 py-1 text-sm ${
             connected
               ? "bg-green-500/10 text-green-600"
-              : "bg-red-500/10 text-red-600"
+              : "bg-gray-500/10 text-gray-600"
           }`}
         >
-          {connected ? (
-            <>
-              <Wifi className="h-3 w-3" /> 연결됨
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-3 w-3" /> 연결 안됨
-            </>
-          )}
+          <Wifi className="h-3 w-3" /> {connected ? "연결됨" : "연결 안 됨"}
         </Badge>
       </CardHeader>
 
@@ -96,22 +51,38 @@ export const DroneSimulationCard: React.FC<Props> = ({
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">고도:</span>
             <span className="font-medium">
-              {altitude?.toFixed(1) ?? "0.0"} m
+              {connected && data?.altitude !== undefined
+                ? `${data.altitude.toFixed(1)} m`
+                : "0.0 m"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">속도:</span>
             <span className="font-medium">
-              {data?.speed?.toFixed(1) ?? "0.0"} m/s
+              {connected && data?.speed !== undefined
+                ? `${data.speed.toFixed(1)} m/s`
+                : "0.0 m/s"}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">배터리:</span>
             <span className="flex items-center gap-1 font-medium">
-              <Battery className="h-4 w-4 text-green-500" />
-              {data?.battery?.toFixed(0) ?? "0"}%
+              <Battery
+                className={`h-4 w-4 ${
+                  connected && data?.battery !== undefined
+                    ? data.battery > 20
+                      ? "text-green-500"
+                      : data.battery > 10
+                        ? "text-yellow-500"
+                        : "text-red-500"
+                    : "text-gray-400"
+                }`}
+              />
+              {connected && data?.battery !== undefined
+                ? `${data.battery.toFixed(1)}%`
+                : "0%"}
             </span>
           </div>
 
@@ -119,7 +90,9 @@ export const DroneSimulationCard: React.FC<Props> = ({
             <span className="text-muted-foreground">스로틀:</span>
             <span className="flex items-center gap-1 font-medium">
               <Zap className="h-4 w-4 text-yellow-500" />
-              {throttle?.toFixed(0) ?? "0"}%
+              {connected && data?.throttle !== undefined
+                ? `${data.throttle.toFixed(0)}%`
+                : "0%"}
             </span>
           </div>
 
@@ -128,8 +101,12 @@ export const DroneSimulationCard: React.FC<Props> = ({
               <Activity className="h-4 w-4 text-blue-500" /> 자세 (R/P/Y):
             </span>
             <span className="font-medium">
-              {rollDeg?.toFixed(0) ?? "0"}° / {pitchDeg?.toFixed(0) ?? "0"}° /{" "}
-              {yawDeg?.toFixed(0) ?? "0"}°
+              {connected &&
+              data?.roll !== undefined &&
+              data?.pitch !== undefined &&
+              data?.yaw !== undefined
+                ? `${data.roll.toFixed(2)}° / ${data.pitch.toFixed(2)}° / ${data.yaw.toFixed(2)}°`
+                : "0.00° / 0.00° / 0.00°"}
             </span>
           </div>
 
@@ -138,8 +115,11 @@ export const DroneSimulationCard: React.FC<Props> = ({
               <MapPin className="h-4 w-4 text-red-500" /> 위치:
             </span>
             <span className="break-all font-medium">
-              {data?.latitude?.toFixed(5) ?? "0.00000"},{" "}
-              {data?.longitude?.toFixed(5) ?? "0.00000"}
+              {connected &&
+              data?.latitude !== undefined &&
+              data?.longitude !== undefined
+                ? `${data.latitude.toFixed(5)}, ${data.longitude.toFixed(5)}`
+                : "0.00000, 0.00000"}
             </span>
           </div>
         </div>

@@ -38,8 +38,8 @@ services:
       - ./backend/app:/app/app          # 소스코드 부분만 동기화
       - ./backend/htmlcov:/app/htmlcov  # 커버리지 폴더만 동기화
 
-    # devices:
-    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
 
     env_file:
       - .env

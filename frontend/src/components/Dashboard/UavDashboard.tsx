@@ -187,7 +187,7 @@ export function UavDashboard() {
             </div>
             <div>
               <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                드론 실시간 시뮬레이션
+                기체 실시간 정보
               </h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 연결된 드론의 자세, 속도, 배터리 및 위치를 실시간으로

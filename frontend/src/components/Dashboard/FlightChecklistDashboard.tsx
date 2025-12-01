@@ -223,7 +223,8 @@ export function FlightChecklistDashboard() {
       0,
     )
     const completedItems = Object.values(itemsByManual).reduce(
-      (sum, items) => sum + items.filter((item) => item.isCompleted).length,
+      (sum, items) =>
+        sum + items.filter((item) => item.isCompleted === true).length,
       0,
     )
     const completionRate =
@@ -264,6 +265,12 @@ export function FlightChecklistDashboard() {
     Record<string, Record<string, Record<string, boolean>>>
   >({})
 
+  // 폴백 항목의 체크 상태를 로컬에서 관리 (Firestore 업데이트 전까지)
+  // 구조: { [manualId]: { [categoryLabel]: { [title]: boolean } } }
+  const [fallbackCheckedStates, setFallbackCheckedStates] = useState<
+    Record<string, Record<string, Record<string, boolean>>>
+  >({})
+
   const hideFallbackItem = (
     manualId: string,
     category: string,
@@ -298,18 +305,51 @@ export function FlightChecklistDashboard() {
           setLoadingByManual((p) => ({ ...p, [meta.id]: true }))
           await upsertManual(meta)
           const unsub = listenManualItems(meta.id, async (rawItems) => {
-            const safe = (rawItems ?? []).map((i) => ({
-              id: i.id ?? undefined,
-              title: i.title ?? "",
-              description: i.description ?? "",
-              isCompleted: Boolean(i.isCompleted),
-              isRequired: i.isRequired ?? true,
-              category: i.category ?? "기타",
-              createdAt: i.createdAt ?? null,
-            }))
+            const safe = (rawItems ?? []).map((i) => {
+              // isCompleted가 명시적으로 true인 경우에만 true로 설정
+              // undefined, null, false, 0, "" 등은 모두 false로 처리
+              const isCompleted = i.isCompleted === true
+
+              return {
+                id: i.id ?? undefined,
+                title: i.title ?? "",
+                description: i.description ?? "",
+                isCompleted,
+                isRequired: i.isRequired ?? true,
+                category: i.category ?? "기타",
+                createdAt: i.createdAt ?? null,
+              }
+            })
             // 빈 스냅샷인 경우: 이제 시드 로직은 훅(useFlightChecklist)에서 관리합니다.
             // 여기서는 별도의 자동 시드를 수행하지 않습니다.
             setItemsByManual((prev) => ({ ...prev, [meta.id]: safe }))
+
+            // Firestore에서 항목이 업데이트되면 해당 항목의 로컬 체크 상태 정리
+            setFallbackCheckedStates((prev) => {
+              const next = { ...(prev || {}) }
+              if (next[meta.id]) {
+                const updated = { ...next[meta.id] }
+                // Firestore에 있는 항목들의 로컬 상태 제거
+                safe.forEach((item) => {
+                  if (updated[item.category]) {
+                    const categoryState = { ...updated[item.category] }
+                    delete categoryState[item.title]
+                    if (Object.keys(categoryState).length === 0) {
+                      delete updated[item.category]
+                    } else {
+                      updated[item.category] = categoryState
+                    }
+                  }
+                })
+                if (Object.keys(updated).length === 0) {
+                  delete next[meta.id]
+                } else {
+                  next[meta.id] = updated
+                }
+              }
+              return next
+            })
+
             setLoadingByManual((p) => ({ ...p, [meta.id]: false }))
           })
           unsubs.push(unsub)
@@ -346,6 +386,15 @@ export function FlightChecklistDashboard() {
     checked: boolean,
   ) => {
     try {
+      // 즉시 로컬 상태 업데이트하여 UI에 반영
+      setFallbackCheckedStates((prev) => {
+        const next = { ...(prev || {}) }
+        next[manualId] = { ...(next[manualId] || {}) }
+        next[manualId][category] = { ...(next[manualId][category] || {}) }
+        next[manualId][category][title] = checked
+        return next
+      })
+
       const existing = itemsByManual[manualId] || []
       const defaultStructure = getDefaultStructureFor(manualId)
 
@@ -355,17 +404,35 @@ export function FlightChecklistDashboard() {
       // the remaining items remain visible.
       if (existing.length === 0 && defaultStructure) {
         const meta = manualMetas.find((m) => m.id === manualId)
+        const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+        const catStripped = strip(category)
+        const matchKey = Object.keys(defaultStructure).find((k) => {
+          const kStripped = strip(k)
+          return (
+            catStripped === kStripped ||
+            category.includes(k) ||
+            k.includes(catStripped) ||
+            catStripped.includes(k)
+          )
+        })
+
         const ops: Promise<void>[] = []
         for (const [catBase, subItems] of Object.entries(defaultStructure)) {
           const label =
-            meta?.categories?.find((d) => d.includes(catBase)) || catBase
+            meta?.categories?.find((d) => {
+              const dStripped = strip(d)
+              return dStripped === strip(catBase) || d.includes(catBase)
+            }) || catBase
           for (const t of subItems) {
+            // 클릭한 항목이 이 카테고리에 있고 제목이 일치하면 checked 상태 적용
+            const isClickedItem =
+              matchKey === catBase && t.trim() === title.trim()
             ops.push(
               createChecklistItem(manualId, {
                 title: t,
                 description: "",
                 isRequired: true,
-                isCompleted: t === title ? !!checked : false,
+                isCompleted: isClickedItem ? !!checked : false,
                 category: label,
               }),
             )
@@ -383,18 +450,24 @@ export function FlightChecklistDashboard() {
         )
         if (!hasCategoryItems) {
           const meta = manualMetas.find((m) => m.id === manualId)
-          const strip = (s: string) => s.replace(/^[\d.\s]+/, "")
+          const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
           const catStripped = strip(category)
-          const matchKey = Object.keys(defaultStructure).find(
-            (k) =>
+          const matchKey = Object.keys(defaultStructure).find((k) => {
+            const kStripped = strip(k)
+            return (
+              catStripped === kStripped ||
               category.includes(k) ||
               k.includes(catStripped) ||
-              catStripped.includes(k),
-          )
+              catStripped.includes(k)
+            )
+          })
           if (matchKey) {
             const subItems = defaultStructure[matchKey]
             const label =
-              meta?.categories?.find((d) => d.includes(matchKey)) || category
+              meta?.categories?.find((d) => {
+                const dStripped = strip(d)
+                return dStripped === strip(matchKey) || d.includes(matchKey)
+              }) || category
             const ops: Promise<void>[] = []
             for (const t of subItems) {
               ops.push(
@@ -414,6 +487,17 @@ export function FlightChecklistDashboard() {
       }
 
       // Fallback: create only the clicked item
+      // 기존 항목 중 같은 제목이 있는지 확인
+      const existingItem = existing.find(
+        (it) => (it.title || "").trim() === title.trim(),
+      )
+      if (existingItem && existingItem.id) {
+        // 이미 존재하는 항목이면 토글만 수행
+        await toggleChecklistItem(manualId, existingItem.id, !!checked)
+        return
+      }
+
+      // 새 항목 생성
       await createChecklistItem(manualId, {
         title,
         description: "",
@@ -503,10 +587,10 @@ export function FlightChecklistDashboard() {
 
   const getCompletionStatus = (items: ChecklistItem[]) => {
     const list = items ?? []
-    const completedCount = list.filter((i) => !!i.isCompleted).length
+    const completedCount = list.filter((i) => i.isCompleted === true).length
     const totalCount = list.length
     const requiredCompletedCount = list.filter(
-      (i) => !!i.isRequired && !!i.isCompleted,
+      (i) => !!i.isRequired && i.isCompleted === true,
     ).length
     const requiredTotalCount = list.filter((i) => !!i.isRequired).length
     return {
@@ -588,11 +672,41 @@ export function FlightChecklistDashboard() {
     const itemsToSave: Record<string, ChecklistItem[]> = {}
     for (const meta of manualMetas) {
       const existing = itemsByManual[meta.id] || []
-      const safeItems = existing.map((item) => ({
-        ...item,
-        isCompleted: item.isCompleted, // ✅ 모든 체크 초기화
-      }))
-      itemsToSave[meta.id] = safeItems
+
+      // 카테고리 이름 정규화 함수 (번호 제거 후 매칭)
+      const normalizeCategory = (cat: string): string => {
+        const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+        const stripped = strip(cat)
+        // meta.categories에서 정확히 매칭되는 번호가 있는 카테고리 찾기
+        const matched = meta.categories?.find((c) => {
+          const cStripped = strip(c)
+          return (
+            cStripped === stripped ||
+            c.includes(stripped) ||
+            stripped.includes(cStripped)
+          )
+        })
+        return matched || cat // 매칭되면 번호가 있는 카테고리 사용, 아니면 원본 사용
+      }
+
+      // 중복 제거: 제목과 정규화된 카테고리 조합으로 유니크한 항목만 저장
+      const seen = new Set<string>()
+      const uniqueItems: ChecklistItem[] = []
+
+      for (const item of existing) {
+        const normalizedCategory = normalizeCategory(item.category || "기타")
+        const key = `${normalizedCategory}|${item.title || ""}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          uniqueItems.push({
+            ...item,
+            category: normalizedCategory, // 정규화된 카테고리로 통일
+            isCompleted: item.isCompleted, // 체크 상태 유지
+          })
+        }
+      }
+
+      itemsToSave[meta.id] = uniqueItems
     }
 
     const newSavedChecklist = {
@@ -1044,7 +1158,82 @@ export function FlightChecklistDashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {manualMetas.map((meta) => {
           const items = itemsByManual[meta.id] || []
-          const status = getCompletionStatus(items)
+
+          // 폴백 항목도 포함한 전체 상태 계산
+          const defaultStructure = getDefaultStructureFor(meta.id)
+          let totalFallbackItems = 0
+          let completedFallbackItems = 0
+
+          if (defaultStructure) {
+            const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+
+            // 모든 카테고리의 폴백 항목 계산
+            meta.categories?.forEach((category) => {
+              const catStripped = strip(category)
+              const matchKey = Object.keys(defaultStructure).find((k) => {
+                const kStripped = strip(k)
+                return (
+                  catStripped === kStripped ||
+                  category.includes(k) ||
+                  k.includes(catStripped) ||
+                  catStripped.includes(k)
+                )
+              })
+
+              if (matchKey) {
+                const fallbackSubItems = defaultStructure[matchKey] || []
+                const existingItems = items.filter(
+                  (item) => item.category === category,
+                )
+                const existingTitles = new Set(
+                  existingItems.map((item) => item.title),
+                )
+
+                fallbackSubItems.forEach((title) => {
+                  // 숨겨진 폴백 항목 제외
+                  if (hiddenFallbacks[meta.id]?.[category]?.[title]) {
+                    return
+                  }
+
+                  // Firestore에 없는 폴백 항목만 카운트
+                  if (!existingTitles.has(title)) {
+                    totalFallbackItems++
+                    // 로컬에서 체크된 폴백 항목은 완료로 카운트
+                    if (
+                      fallbackCheckedStates[meta.id]?.[category]?.[title] ===
+                      true
+                    ) {
+                      completedFallbackItems++
+                    }
+                  }
+                })
+              }
+            })
+          }
+
+          // Firestore 항목 상태
+          const firestoreStatus = getCompletionStatus(items)
+
+          // 전체 상태 (Firestore + 폴백)
+          const status = {
+            completedCount:
+              firestoreStatus.completedCount + completedFallbackItems,
+            totalCount: firestoreStatus.totalCount + totalFallbackItems,
+            requiredCompletedCount:
+              firestoreStatus.requiredCompletedCount + completedFallbackItems,
+            requiredTotalCount:
+              firestoreStatus.requiredTotalCount + totalFallbackItems,
+            isAllCompleted:
+              firestoreStatus.totalCount + totalFallbackItems > 0 &&
+              firestoreStatus.completedCount + completedFallbackItems ===
+                firestoreStatus.totalCount + totalFallbackItems,
+            isAllRequiredCompleted:
+              firestoreStatus.requiredTotalCount + totalFallbackItems > 0 &&
+              firestoreStatus.requiredCompletedCount +
+                completedFallbackItems ===
+                firestoreStatus.requiredTotalCount + totalFallbackItems,
+          }
+
           const grouped = groupItemsByCategory(items)
 
           const IconComponent = meta.icon
@@ -1211,26 +1400,52 @@ export function FlightChecklistDashboard() {
                                     )
                                       return null
 
+                                    const categoryLabel = getLabel(catBase)
+                                    // 로컬 체크 상태 확인
+                                    const isCheckedLocally =
+                                      fallbackCheckedStates[meta.id]?.[
+                                        categoryLabel
+                                      ]?.[title] === true
+                                    // 이미 Firestore에 있는 항목인지 확인
+                                    const existingItems =
+                                      itemsByManual[meta.id] || []
+                                    const existingItem = existingItems.find(
+                                      (item) => item.title === title,
+                                    )
+                                    const isChecked = existingItem
+                                      ? existingItem.isCompleted === true
+                                      : isCheckedLocally
+
                                     return (
                                       <div
                                         key={title}
-                                        className="flex items-start gap-2 rounded-lg border p-2"
+                                        className={`flex items-start gap-2 rounded-lg border p-2 ${
+                                          isChecked
+                                            ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                                            : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                                        }`}
                                       >
                                         <Checkbox
                                           id={title}
-                                          checked={false}
+                                          checked={isChecked}
                                           onCheckedChange={(v) =>
                                             handleCreateFallbackItem(
                                               meta.id,
                                               title,
-                                              getLabel(catBase),
+                                              categoryLabel,
                                               Boolean(v),
                                             )
                                           }
                                           className="mt-1"
                                         />
                                         <div className="min-w-0 flex-1">
-                                          <label className="cursor-pointer font-medium text-gray-900">
+                                          <label
+                                            className={`cursor-pointer font-medium ${
+                                              isChecked
+                                                ? "text-green-700 line-through dark:text-green-400"
+                                                : "text-gray-900 dark:text-gray-100"
+                                            }`}
+                                          >
                                             {title}
                                           </label>
                                         </div>
@@ -1314,26 +1529,52 @@ export function FlightChecklistDashboard() {
                                     )
                                       return null
 
+                                    const categoryLabel = getLabel(catBase)
+                                    // 로컬 체크 상태 확인
+                                    const isCheckedLocally =
+                                      fallbackCheckedStates[meta.id]?.[
+                                        categoryLabel
+                                      ]?.[title] === true
+                                    // 이미 Firestore에 있는 항목인지 확인
+                                    const existingItems =
+                                      itemsByManual[meta.id] || []
+                                    const existingItem = existingItems.find(
+                                      (item) => item.title === title,
+                                    )
+                                    const isChecked = existingItem
+                                      ? existingItem.isCompleted === true
+                                      : isCheckedLocally
+
                                     return (
                                       <div
                                         key={title}
-                                        className="flex items-start gap-2 rounded-lg border p-2"
+                                        className={`flex items-start gap-2 rounded-lg border p-2 ${
+                                          isChecked
+                                            ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                                            : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                                        }`}
                                       >
                                         <Checkbox
                                           id={`${meta.id}-${title}`}
-                                          checked={false}
+                                          checked={isChecked}
                                           onCheckedChange={(v) =>
                                             handleCreateFallbackItem(
                                               meta.id,
                                               title,
-                                              getLabel(catBase),
+                                              categoryLabel,
                                               Boolean(v),
                                             )
                                           }
                                           className="mt-1"
                                         />
                                         <div className="min-w-0 flex-1">
-                                          <label className="cursor-pointer font-medium text-gray-900">
+                                          <label
+                                            className={`cursor-pointer font-medium ${
+                                              isChecked
+                                                ? "text-green-700 line-through dark:text-green-400"
+                                                : "text-gray-900 dark:text-gray-100"
+                                            }`}
+                                          >
                                             {title}
                                           </label>
                                         </div>
@@ -1366,10 +1607,7 @@ export function FlightChecklistDashboard() {
                       <div className="space-y-3">
                         {(() => {
                           const defaultStructure: Record<string, string[]> = {
-                            "주요 부품 교체 주기 점검": [
-                              "모터 교체 주기 확인",
-                              "프로펠러 마모 점검",
-                            ],
+                            "주요 부품 교체 주기 점검": [],
                             "펌웨어 및 설정 확인": [
                               "펌웨어 최신화 확인",
                               "설정 백업 및 복원 가능 여부 확인",
@@ -1397,31 +1635,59 @@ export function FlightChecklistDashboard() {
                                   </div>
                                 </div>
                                 <div className="space-y-2 bg-white p-3">
-                                  {subItems.map((title) => (
-                                    <div
-                                      key={title}
-                                      className="flex items-start gap-2 rounded-lg border p-2"
-                                    >
-                                      <Checkbox
-                                        id={`${meta.id}-${title}`}
-                                        checked={false}
-                                        onCheckedChange={(v) =>
-                                          handleCreateFallbackItem(
-                                            meta.id,
-                                            title,
-                                            getLabel(catBase),
-                                            Boolean(v),
-                                          )
-                                        }
-                                        className="mt-1"
-                                      />
-                                      <div className="min-w-0 flex-1">
-                                        <label className="cursor-pointer font-medium text-gray-900">
-                                          {title}
-                                        </label>
+                                  {subItems.map((title) => {
+                                    const categoryLabel = getLabel(catBase)
+                                    // 로컬 체크 상태 확인
+                                    const isCheckedLocally =
+                                      fallbackCheckedStates[meta.id]?.[
+                                        categoryLabel
+                                      ]?.[title] === true
+                                    // 이미 Firestore에 있는 항목인지 확인
+                                    const existingItems =
+                                      itemsByManual[meta.id] || []
+                                    const existingItem = existingItems.find(
+                                      (item) => item.title === title,
+                                    )
+                                    const isChecked = existingItem
+                                      ? existingItem.isCompleted === true
+                                      : isCheckedLocally
+
+                                    return (
+                                      <div
+                                        key={title}
+                                        className={`flex items-start gap-2 rounded-lg border p-2 ${
+                                          isChecked
+                                            ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                                            : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                                        }`}
+                                      >
+                                        <Checkbox
+                                          id={`${meta.id}-${title}`}
+                                          checked={isChecked}
+                                          onCheckedChange={(v) =>
+                                            handleCreateFallbackItem(
+                                              meta.id,
+                                              title,
+                                              categoryLabel,
+                                              Boolean(v),
+                                            )
+                                          }
+                                          className="mt-1"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                          <label
+                                            className={`cursor-pointer font-medium ${
+                                              isChecked
+                                                ? "text-green-700 line-through dark:text-green-400"
+                                                : "text-gray-900 dark:text-gray-100"
+                                            }`}
+                                          >
+                                            {title}
+                                          </label>
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               </div>
                             ),
@@ -1441,6 +1707,42 @@ export function FlightChecklistDashboard() {
                         const catStatus = getCompletionStatus(catItems)
                         const isCollapsed = !!collapsedCategories[category]
 
+                        // 폴백 항목 개수 계산 (Firestore에 없는 기본 항목들)
+                        const defaultStructure = getDefaultStructureFor(meta.id)
+                        const strip = (s: string) =>
+                          s.replace(/^[\d.\s]+/, "").trim()
+                        const catStripped = strip(category)
+                        const matchKey =
+                          defaultStructure &&
+                          Object.keys(defaultStructure).find((k) => {
+                            const kStripped = strip(k)
+                            return (
+                              catStripped === kStripped ||
+                              category.includes(k) ||
+                              k.includes(catStripped) ||
+                              catStripped.includes(k)
+                            )
+                          })
+                        const fallbackItems =
+                          matchKey && defaultStructure
+                            ? defaultStructure[matchKey].filter((title) => {
+                                // 숨겨진 폴백 항목 제외
+                                if (
+                                  hiddenFallbacks[meta.id] &&
+                                  hiddenFallbacks[meta.id][category] &&
+                                  hiddenFallbacks[meta.id][category][title]
+                                ) {
+                                  return false
+                                }
+                                // 이미 Firestore에 있는 항목 제외
+                                return !catItems.some(
+                                  (item) => item.title === title,
+                                )
+                              })
+                            : []
+                        const totalCountWithFallback =
+                          catStatus.totalCount + fallbackItems.length
+
                         return (
                           <div
                             key={category}
@@ -1456,7 +1758,7 @@ export function FlightChecklistDashboard() {
                                 </span>
                                 <span className="rounded-full border px-2 py-1 text-xs font-medium">
                                   {catStatus.completedCount}/
-                                  {catStatus.totalCount}
+                                  {totalCountWithFallback}
                                 </span>
                               </div>
                               <div className="flex items-center gap-2">
@@ -1478,15 +1780,20 @@ export function FlightChecklistDashboard() {
                                       const defaultStructure =
                                         getDefaultStructureFor(meta.id)
                                       const strip = (s: string) =>
-                                        s.replace(/^[\d.\s]+/, "")
+                                        s.replace(/^[\d.\s]+/, "").trim()
                                       const catStripped = strip(category)
                                       const matchKey =
                                         defaultStructure &&
                                         Object.keys(defaultStructure).find(
-                                          (k) =>
-                                            category.includes(k) ||
-                                            k.includes(catStripped) ||
-                                            catStripped.includes(k),
+                                          (k) => {
+                                            const kStripped = strip(k)
+                                            return (
+                                              catStripped === kStripped ||
+                                              category.includes(k) ||
+                                              k.includes(catStripped) ||
+                                              catStripped.includes(k)
+                                            )
+                                          },
                                         )
 
                                       const fallbackSubItems =
@@ -1513,14 +1820,32 @@ export function FlightChecklistDashboard() {
                                         )
                                           return null
 
+                                        // 로컬 체크 상태 확인 (Firestore 업데이트 전까지)
+                                        const isCheckedLocally =
+                                          fallbackCheckedStates[meta.id]?.[
+                                            category
+                                          ]?.[title] === true
+
+                                        // 이미 Firestore에 있는 항목인지 확인
+                                        const existingItem = catItems.find(
+                                          (item) => item.title === title,
+                                        )
+                                        const isChecked = existingItem
+                                          ? existingItem.isCompleted === true
+                                          : isCheckedLocally
+
                                         return (
                                           <div
                                             key={title}
-                                            className="flex items-start gap-2 rounded-lg border p-2"
+                                            className={`flex items-start gap-2 rounded-lg border p-2 ${
+                                              isChecked
+                                                ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                                                : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                                            }`}
                                           >
                                             <Checkbox
                                               id={`${meta.id}-${category}-${title}`}
-                                              checked={false}
+                                              checked={isChecked}
                                               onCheckedChange={(v) =>
                                                 handleCreateFallbackItem(
                                                   meta.id,
@@ -1532,7 +1857,13 @@ export function FlightChecklistDashboard() {
                                               className="mt-1"
                                             />
                                             <div className="min-w-0 flex-1">
-                                              <label className="cursor-pointer font-medium text-gray-900">
+                                              <label
+                                                className={`cursor-pointer font-medium ${
+                                                  isChecked
+                                                    ? "text-green-700 line-through dark:text-green-400"
+                                                    : "text-gray-900 dark:text-gray-100"
+                                                }`}
+                                              >
                                                 {title}
                                               </label>
                                             </div>
@@ -1558,7 +1889,7 @@ export function FlightChecklistDashboard() {
                                   : catItems.map((item) => {
                                       const itemId =
                                         item.id ?? `${meta.id}-temp`
-                                      const done = !!item.isCompleted
+                                      const done = item.isCompleted === true
                                       const desc = item.description ?? ""
                                       const title = item.title ?? ""
 
@@ -1699,7 +2030,19 @@ export function FlightChecklistDashboard() {
                   {manualMetas.map((meta) => {
                     const items = savedChecklist.items[meta.id] || []
                     if (items.length === 0) return null
-                    const grouped = groupItemsByCategory(items)
+
+                    // 중복 제거: 제목과 카테고리 조합으로 유니크한 항목만 표시
+                    const seen = new Set<string>()
+                    const uniqueItems: ChecklistItem[] = []
+                    for (const item of items) {
+                      const key = `${item.category || "기타"}|${item.title || ""}`
+                      if (!seen.has(key)) {
+                        seen.add(key)
+                        uniqueItems.push(item)
+                      }
+                    }
+
+                    const grouped = groupItemsByCategory(uniqueItems)
 
                     return (
                       <div

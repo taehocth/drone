@@ -78,10 +78,33 @@ async def qgc_ws(websocket: WebSocket):
                 latest["throttle"] = getattr(msg, "throttle", latest["throttle"])
                 latest["heading"] = getattr(msg, "heading", latest["heading"])
 
-            # ✅ 배터리 상태
+            # ✅ 자세 데이터 (Roll, Pitch, Yaw)
+            elif mtype == "ATTITUDE":
+                latest["roll"] = getattr(msg, "roll", latest["roll"]) * 180.0 / 3.14159  # rad → deg
+                latest["pitch"] = getattr(msg, "pitch", latest["pitch"]) * 180.0 / 3.14159  # rad → deg
+                latest["yaw"] = getattr(msg, "yaw", latest["yaw"]) * 180.0 / 3.14159  # rad → deg
+
+            # ✅ 배터리 상태 (BATTERY_STATUS 메시지에서 퍼센트 직접 가져오기)
+            elif mtype == "BATTERY_STATUS":
+                battery_remaining = getattr(msg, "battery_remaining", -1)
+                if battery_remaining >= 0:
+                    latest["battery"] = battery_remaining  # 이미 퍼센트 (0-100)
+                # 전압도 함께 저장 (참고용)
+                voltage = getattr(msg, "voltages", [0])[0] / 1000.0 if hasattr(msg, "voltages") and len(getattr(msg, "voltages", [])) > 0 else 0.0
+                if voltage > 0 and latest["battery"] == 0:
+                    # 전압 기반 폴백 계산 (4S LiPo 기준)
+                    cell_count = max(1, int(voltage / 4.2))
+                    cell_voltage = voltage / cell_count
+                    latest["battery"] = max(0, min(100, ((cell_voltage - 3.0) / (4.2 - 3.0)) * 100))
+
+            # ✅ 배터리 상태 (SYS_STATUS 폴백 - 전압만 있는 경우)
             elif mtype == "SYS_STATUS":
                 voltage = getattr(msg, "voltage_battery", 0.0) / 1000.0  # mV → V
-                latest["battery"] = voltage
+                if voltage > 0 and latest["battery"] == 0:
+                    # 전압 기반 폴백 계산 (4S LiPo 기준)
+                    cell_count = max(1, int(voltage / 4.2))
+                    cell_voltage = voltage / cell_count
+                    latest["battery"] = max(0, min(100, ((cell_voltage - 3.0) / (4.2 - 3.0)) * 100))
 
             # ✅ GPS 정보
             elif mtype == "GPS_RAW_INT":

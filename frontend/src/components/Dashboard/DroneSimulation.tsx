@@ -77,6 +77,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             altitude: msg.altitude ?? prev.altitude,
             speed: msg.speed ?? prev.speed,
             battery: msg.battery ?? prev.battery,
+            throttle: msg.throttle ?? prev.throttle,
+            roll: msg.roll ?? prev.roll,
+            pitch: msg.pitch ?? prev.pitch,
+            yaw: msg.yaw ?? prev.yaw,
             timestamp: msg.timestamp ?? new Date().toISOString(),
           }
 
@@ -171,6 +175,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           data={qgcData}
           connected={connected}
           onToggleConnect={handleToggleConnect}
+          wsRef={wsRef}
         />
       </div>
     </div>

@@ -1,22 +1,27 @@
 from fastapi import APIRouter, HTTPException, Query
 import httpx
 import xmltodict
+from datetime import datetime, timedelta
 
 router = APIRouter()
 
-@router.get("/")
-async def get_weather(
-    nx: int = Query(..., description="격자 X 좌표"),
-    ny: int = Query(..., description="격자 Y 좌표"),
-    base_date: str = Query(..., description="발표 일자 (YYYYMMDD)"),
-    base_time: str = Query(..., description="발표 시각 (HHMM)"),
-):
-    """
-    ✅ 기상청 초단기실황 (UltraSrtNcst) API 라우트
-    - XML 응답을 JSON으로 변환
-    - API 오류 / 데이터 없음 gracefully 처리
-    """
-    API_KEY = "bwKriB11TImCq4gddSyJ8g"  # TODO: .env에 옮겨서 os.getenv("KMA_API_KEY")로 불러도 됨
+def get_latest_base_time():
+    """기상청 초단기실황 발표 시각 자동 계산 (00 / 30 단위)"""
+    now = datetime.now()
+
+    # 기상청 데이터는 약 10~15분 지연됨
+    now -= timedelta(minutes=15)
+
+    minute = now.minute
+    if minute < 30:
+        return now.strftime("%Y%m%d"), now.strftime("%H00")
+    else:
+        return now.strftime("%Y%m%d"), now.strftime("%H30")
+
+
+async def call_kma_api(nx, ny, base_date, base_time):
+    """기상청 API 호출 함수"""
+    API_KEY = "bwKriB11TImCq4gddSyJ8g"
 
     url = (
         "https://apihub.kma.go.kr/api/typ02/openApi/"
@@ -27,55 +32,47 @@ async def get_weather(
         f"&authKey={API_KEY}"
     )
 
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            res = await client.get(url)
+    async with httpx.AsyncClient(timeout=10) as client:
+        res = await client.get(url)
 
-        if res.status_code != 200:
-            raise HTTPException(
-                status_code=500,
-                detail=f"❌ 기상청 API 요청 실패 (HTTP {res.status_code}): {res.text[:200]}"
-            )
+    return res
 
-        # ✅ XML → JSON 변환
-        parsed_data = xmltodict.parse(res.text)
 
-        # ✅ 응답 구조 검사
-        response = parsed_data.get("response", {})
-        header = response.get("header", {})
-        result_code = header.get("resultCode")
-        result_msg = header.get("resultMsg", "")
+@router.get("/")
+async def get_weather(
+    nx: int = Query(...),
+    ny: int = Query(...),
+    base_date: str = None,
+    base_time: str = None,
+):
+    """
+    기상청 초단기실황 API (자동 base_time 보정 + NO_DATA fallback)
+    """
 
-        # ✅ 기상청이 오류 코드 반환 시
-        if result_code != "00":
-            print(f"⚠️ 기상청 응답 오류: {result_msg}")
-            return {
-                "response": {
-                    "header": {"resultCode": result_code, "resultMsg": result_msg},
-                    "body": None,
-                }
-            }
+    # 1) 서버에서 base_date/base_time 자동 계산
+    if not base_date or not base_time:
+        base_date, base_time = get_latest_base_time()
 
-        # ✅ body 존재 여부 확인
-        body = response.get("body", {})
-        items = body.get("items")
+    # 2) API 호출 (최신 발표 시각)
+    res = await call_kma_api(nx, ny, base_date, base_time)
 
-        if not body or not items:
-            print("⚠️ 기상청 데이터 없음: body나 items가 비어 있음")
-            return {
-                "response": {
-                    "header": {"resultCode": "99", "resultMsg": "데이터 없음"},
-                    "body": None,
-                }
-            }
+    parsed = xmltodict.parse(res.text)
+    header = parsed.get("response", {}).get("header", {})
+    result_code = header.get("resultCode")
 
-        # ✅ 정상 응답 반환
-        return parsed_data
+    # 3) NO_DATA 발생 시 → 30분 이전 시각으로 한번 더 요청
+    if result_code != "00":
+        print(f"⚠️ NO_DATA 발생 → 30분 전으로 재시도")
 
-    except httpx.RequestError as e:
-        print(f"❌ 네트워크 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"네트워크 오류: {str(e)}")
+        # 30분 재계산
+        dt = datetime.strptime(base_date + base_time, "%Y%m%d%H%M")
+        dt -= timedelta(minutes=30)
 
-    except Exception as e:
-        print(f"❌ 날씨 API 내부 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"서버 내부 오류: {str(e)}")
+        fallback_date = dt.strftime("%Y%m%d")
+        fallback_time = dt.strftime("%H%M")
+
+        res = await call_kma_api(nx, ny, fallback_date, fallback_time)
+        parsed = xmltodict.parse(res.text)
+
+    # 4) 최종 응답 반환
+    return parsed
