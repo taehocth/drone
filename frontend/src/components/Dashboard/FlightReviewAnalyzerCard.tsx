@@ -6,8 +6,23 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card"
-import { Upload, Brain, FileChartColumn } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Upload,
+  Brain,
+  FileChartColumn,
+  Loader2,
+  Sparkles,
+  Send,
+  MessageSquare,
+  GraduationCap,
+  User,
+  Users,
+} from "lucide-react"
 import Papa from "papaparse"
+
+type ExplanationLevel = "beginner" | "normal" | "expert"
 
 interface ParsedLog {
   time: number
@@ -76,10 +91,21 @@ export function FlightReviewAnalyzerCard({
 }: FlightReviewAnalyzerCardProps = {}) {
   const [data, setData] = useState<ParsedLog[]>([])
   const [summary, setSummary] = useState<string>("")
+  const [aiSummary, setAiSummary] = useState<string>("")
+  const [isLoadingAI, setIsLoadingAI] = useState(false)
   const [fileName, setFileName] = useState<string>("")
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
     null,
   )
+
+  // 대화형 AI 기능
+  const [explanationLevel, setExplanationLevel] =
+    useState<ExplanationLevel>("normal")
+  const [question, setQuestion] = useState<string>("")
+  const [isAskingQuestion, setIsAskingQuestion] = useState(false)
+  const [conversationHistory, setConversationHistory] = useState<
+    Array<{ role: "user" | "ai"; content: string }>
+  >([])
 
   // 📁 파일 업로드 핸들러
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,6 +113,10 @@ export function FlightReviewAnalyzerCard({
     if (!file) return
     setFileName(file.name)
     setSummary("")
+    setAiSummary("")
+    setIsLoadingAI(false)
+    setQuestion("")
+    setConversationHistory([])
     setAnalysisResult(null)
     onAnalysisChange?.(null)
 
@@ -227,6 +257,7 @@ export function FlightReviewAnalyzerCard({
     if (rapidDesc) summaryText += ` 급하강 구간이 감지되었습니다.`
 
     setSummary(summaryText)
+    setAiSummary("") // AI 요약 초기화
     const result: AnalysisResult = {
       totalTimeMinutes: totalTime,
       maxAltitude: maxAlt,
@@ -237,10 +268,13 @@ export function FlightReviewAnalyzerCard({
     }
     setAnalysisResult(result)
     onAnalysisChange?.(result)
+
+    // AI 요약 요청
+    setIsLoadingAI(true)
     fetch("http://api.localhost/api/v1/gemini/cbm/ai-summary", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(result),
+      body: JSON.stringify({ data: result, level: explanationLevel }),
     })
       .then((res) => {
         if (!res.ok) {
@@ -250,15 +284,107 @@ export function FlightReviewAnalyzerCard({
       })
       .then((data) => {
         console.log("🧠 AI 응답 전체:", data)
-        const summaryText =
+        const aiText =
           data?.summary || data?.detail || "AI 해석을 가져오지 못했습니다."
-        console.log("🧠 AI 요약 텍스트:", summaryText)
-        setSummary((prev) => prev + "\n\n🧠 AI 해석: " + summaryText)
+        console.log("🧠 AI 요약 텍스트:", aiText)
+        setAiSummary(aiText)
+        // 대화 히스토리에 초기 응답 추가 (레벨 정보 포함)
+        setConversationHistory([
+          {
+            role: "ai",
+            content: aiText,
+          },
+        ])
       })
       .catch((err) => {
         console.error("AI 요약 실패:", err)
-        setSummary((prev) => prev + "\n\n⚠️ AI 해석 실패: " + err.message)
+        setAiSummary(`⚠️ AI 해석 실패: ${err.message}`)
       })
+      .finally(() => {
+        setIsLoadingAI(false)
+      })
+  }
+
+  // 💬 추가 질문 요청
+  const askQuestion = async () => {
+    if (!question.trim() || !analysisResult) return
+
+    const userQuestion = question.trim()
+    setIsAskingQuestion(true)
+    setQuestion("") // 입력 필드 초기화
+
+    // 대화 히스토리에 사용자 질문 추가
+    const updatedHistory = [
+      ...conversationHistory,
+      { role: "user" as const, content: userQuestion },
+    ]
+    setConversationHistory(updatedHistory)
+
+    try {
+      const res = await fetch(
+        "http://api.localhost/api/v1/gemini/cbm/ask-question",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            analysisData: analysisResult,
+            question: userQuestion,
+            level: explanationLevel,
+            history: conversationHistory,
+          }),
+        },
+      )
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
+
+      const data = await res.json()
+      const answer =
+        data?.answer || data?.summary || "답변을 가져오지 못했습니다."
+
+      // 대화 히스토리에 AI 답변 추가
+      setConversationHistory([
+        ...updatedHistory,
+        { role: "ai", content: answer },
+      ])
+    } catch (err: any) {
+      console.error("질문 실패:", err)
+      setConversationHistory([
+        ...updatedHistory,
+        { role: "ai", content: `⚠️ 질문 처리 실패: ${err.message}` },
+      ])
+    } finally {
+      setIsAskingQuestion(false)
+    }
+  }
+
+  // 📚 설명 레벨 변경 시 재요청
+  const handleLevelChange = (level: ExplanationLevel) => {
+    if (level === explanationLevel || !analysisResult) return
+    setExplanationLevel(level)
+    // 레벨 변경 시 자동으로 재요청
+    if (analysisResult) {
+      setIsLoadingAI(true)
+      fetch("http://api.localhost/api/v1/gemini/cbm/ai-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: analysisResult, level }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          const aiText =
+            data?.summary || data?.detail || "AI 해석을 가져오지 못했습니다."
+          setAiSummary(aiText)
+          setConversationHistory([{ role: "ai", content: aiText }])
+        })
+        .catch((err) => {
+          console.error("레벨 변경 후 재요청 실패:", err)
+        })
+        .finally(() => {
+          setIsLoadingAI(false)
+        })
+    }
   }
 
   return (
@@ -291,12 +417,192 @@ export function FlightReviewAnalyzerCard({
           />
         </label>
 
+        {/* 기본 분석 결과 */}
         {summary && (
-          <div className="flex items-start gap-3 rounded-lg bg-indigo-50 p-3 dark:bg-indigo-900/10">
-            <FileChartColumn className="mt-0.5 h-5 w-5 text-indigo-500" />
-            <p className="text-sm text-gray-800 dark:text-gray-300">
-              {summary}
-            </p>
+          <div className="rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 dark:border-blue-800 dark:from-blue-950/30 dark:to-indigo-950/30">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-blue-500 p-2">
+                <FileChartColumn className="h-4 w-4 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="mb-2 text-base font-semibold text-gray-900 dark:text-gray-100">
+                  📊 기본 분석 결과
+                </h3>
+                <p className="text-base leading-relaxed text-gray-700 dark:text-gray-300">
+                  {summary}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AI 해석 섹션 */}
+        {(isLoadingAI || aiSummary || conversationHistory.length > 0) && (
+          <div className="rounded-lg border-2 border-purple-200 bg-gradient-to-br from-purple-50 via-pink-50 to-indigo-50 p-5 shadow-md dark:border-purple-800 dark:from-purple-950/40 dark:via-pink-950/20 dark:to-indigo-950/40">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-gradient-to-br from-purple-500 to-pink-500 p-2.5 shadow-lg">
+                {isLoadingAI || isAskingQuestion ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-white" />
+                ) : (
+                  <Sparkles className="h-5 w-5 text-white" />
+                )}
+              </div>
+              <div className="flex-1 space-y-4">
+                {/* 헤더 및 설명 레벨 선택 */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                      🧠 AI 해석
+                    </h3>
+                    {(isLoadingAI || isAskingQuestion) && (
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {isLoadingAI ? "분석 중..." : "답변 중..."}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 설명 레벨 선택 버튼 */}
+                  {!isLoadingAI && analysisResult && (
+                    <div className="flex gap-1 rounded-lg bg-white/50 p-1 dark:bg-gray-800/50">
+                      <Button
+                        variant={
+                          explanationLevel === "beginner" ? "default" : "ghost"
+                        }
+                        size="sm"
+                        onClick={() => handleLevelChange("beginner")}
+                        className="h-8 text-xs"
+                        title="초보자용 설명"
+                      >
+                        <GraduationCap className="mr-1 h-3 w-3" />
+                        초보자
+                      </Button>
+                      <Button
+                        variant={
+                          explanationLevel === "normal" ? "default" : "ghost"
+                        }
+                        size="sm"
+                        onClick={() => handleLevelChange("normal")}
+                        className="h-8 text-xs"
+                        title="일반 설명"
+                      >
+                        <Users className="mr-1 h-3 w-3" />
+                        일반
+                      </Button>
+                      <Button
+                        variant={
+                          explanationLevel === "expert" ? "default" : "ghost"
+                        }
+                        size="sm"
+                        onClick={() => handleLevelChange("expert")}
+                        className="h-8 text-xs"
+                        title="전문가용 설명"
+                      >
+                        <User className="mr-1 h-3 w-3" />
+                        전문가
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 로딩 상태 */}
+                {isLoadingAI ? (
+                  <div className="space-y-2">
+                    <div className="h-4 w-3/4 animate-pulse rounded bg-purple-200 dark:bg-purple-800"></div>
+                    <div className="h-4 w-full animate-pulse rounded bg-purple-200 dark:bg-purple-800"></div>
+                    <div className="h-4 w-5/6 animate-pulse rounded bg-purple-200 dark:bg-purple-800"></div>
+                  </div>
+                ) : (
+                  <>
+                    {/* 대화 히스토리 표시 */}
+                    <div className="space-y-3">
+                      {conversationHistory.map((msg, idx) => (
+                        <div
+                          key={idx}
+                          className={`rounded-lg p-3 ${
+                            msg.role === "user"
+                              ? "ml-8 bg-blue-100 dark:bg-blue-900/30"
+                              : "mr-8 bg-white/80 dark:bg-gray-800/80"
+                          }`}
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            {msg.role === "user" ? (
+                              <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            ) : (
+                              <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                            )}
+                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                              {msg.role === "user" ? "질문" : "AI 답변"}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                            {msg.content}
+                          </p>
+                        </div>
+                      ))}
+
+                      {/* 초기 AI 요약 (대화 히스토리가 없을 때) */}
+                      {conversationHistory.length === 0 && aiSummary && (
+                        <div className="rounded-lg bg-white/80 p-3 dark:bg-gray-800/80">
+                          <div className="mb-1 flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                              AI 해석
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                            {aiSummary}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 질문 입력 섹션 */}
+                    {analysisResult && (
+                      <div className="space-y-2 border-t border-purple-200 pt-4 dark:border-purple-800">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                          <label className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            추가 질문하기
+                          </label>
+                        </div>
+                        <div className="flex gap-2">
+                          <Textarea
+                            placeholder="예: 배터리 상태가 정상인가요? ESC 온도가 높은 이유는?"
+                            value={question}
+                            onChange={(e) => setQuestion(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (
+                                e.key === "Enter" &&
+                                (e.metaKey || e.ctrlKey)
+                              ) {
+                                askQuestion()
+                              }
+                            }}
+                            className="min-h-[80px] resize-none text-sm"
+                            disabled={isAskingQuestion}
+                          />
+                          <Button
+                            onClick={askQuestion}
+                            disabled={!question.trim() || isAskingQuestion}
+                            className="self-end"
+                            size="sm"
+                          >
+                            {isAskingQuestion ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          💡 Ctrl/Cmd + Enter로 빠르게 전송할 수 있습니다
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </CardContent>
