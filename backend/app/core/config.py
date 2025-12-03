@@ -39,7 +39,6 @@ class Settings(BaseSettings):
         """
         origins = []
         if self.BACKEND_CORS_ORIGINS:
-            # 공백, 중복 제거 및 ',' 구분 허용
             raw = self.BACKEND_CORS_ORIGINS.replace(" ", "").split(",")
             origins = [o for o in raw if o]
         if self.FRONTEND_HOST not in origins:
@@ -51,6 +50,11 @@ class Settings(BaseSettings):
     # ----------------------
     PROJECT_NAME: str = "Drone Management System"
     SENTRY_DSN: str | None = None
+
+    # ----------------------
+    # 🔥 Gemini API (추가)
+    # ----------------------
+    GEMINI_API_KEY: str | None = None  # <-- 추가됨
 
     # ----------------------
     # DB 설정

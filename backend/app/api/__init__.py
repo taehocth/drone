@@ -16,6 +16,7 @@ from app.api.routes import (
     logs_upload,
     cbm_ws,
     logs_convert,   # 👈 변환기 추가
+    gemini,
 )
 from app.core.config import settings
 
@@ -64,3 +65,6 @@ api_router.include_router(cbm_ws.router, prefix="/cbm", tags=["cbm"])
 # 개발 전용
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router, prefix="/private", tags=["private"])
+
+# Gemini AI
+api_router.include_router(gemini.router, prefix="/gemini", tags=["gemini"])

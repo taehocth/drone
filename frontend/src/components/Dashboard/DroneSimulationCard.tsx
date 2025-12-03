@@ -9,8 +9,9 @@ import {
   Activity,
   Zap,
   Ruler,
+  GaugeIcon,
 } from "lucide-react"
-import React, { useEffect } from "react"
+import React, { useEffect, useState } from "react"
 import type { DroneData } from "./DroneSimulation"
 
 interface Props {
@@ -26,6 +27,44 @@ export const DroneSimulationCard: React.FC<Props> = ({
   onToggleConnect,
   wsRef,
 }) => {
+  const [isCalibrating, setIsCalibrating] = useState(false)
+
+  // -----------------------------------------------------------
+  // 📩 WebSocket 메시지 수신 처리 (캘리브레이션 결과 받기)
+  // → 기존 onmessage 를 덮어쓰지 않음 (중요!!)
+  // -----------------------------------------------------------
+  useEffect(() => {
+    if (!wsRef?.current) return
+
+    const ws = wsRef.current
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data)
+
+        if (msg.type === "calibration_result") {
+          console.log("📩 캘리브레이션 결과:", msg)
+
+          setIsCalibrating(false)
+          alert(msg.message)
+
+          window.dispatchEvent(new Event("calibrationComplete"))
+        }
+
+        // 텔레메트리는 DroneSimulation.tsx에서 처리됨
+      } catch (e) {
+        console.error("⚠️ WebSocket 메시지 파싱 오류:", e)
+      }
+    }
+
+    // 기존 메시지 핸들러 제거 ❌ — 추가 방식으로 해야함
+    ws.addEventListener("message", handleMessage)
+
+    return () => {
+      ws.removeEventListener("message", handleMessage)
+    }
+  }, [wsRef, connected])
+
   // -----------------------------------------
   // 🚁 위치 업데이트 → 지도(NaverMap)에 전달
   // -----------------------------------------
@@ -40,7 +79,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
           detail: {
             lat: data.latitude,
             lng: data.longitude,
-            yaw: data?.yaw ?? 0, // yaw도 전달 가능
+            yaw: data?.yaw ?? 0,
           },
         }),
       )
@@ -48,7 +87,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
   }, [connected, data?.latitude, data?.longitude, data?.yaw])
 
   // -----------------------------------------------------------
-  // 🛰️ GNSS 위성 수 업데이트 → 지도 HUD로 전달하는 새 기능 (필수)
+  // 🛰️ GNSS 위성 수 업데이트 → HUD
   // -----------------------------------------------------------
   useEffect(() => {
     if (connected && data?.satellites !== undefined) {
@@ -61,7 +100,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
   }, [connected, data?.satellites])
 
   // -----------------------------------------------------------
-  // 🔌 드론 연결 해제 시 → 지도에서 마커 제거 (droneDisconnected)
+  // 🔌 연결 해제 시 → 지도 마커 제거
   // -----------------------------------------------------------
   useEffect(() => {
     if (!connected) {
@@ -90,7 +129,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
       </CardHeader>
 
       <CardContent className="space-y-4 p-5 text-sm text-gray-800 sm:p-6 sm:text-base dark:text-gray-200">
-        {/* 메인 데이터 그리드 */}
+        {/* 데이터 그리드 */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-2">
           {/* 고도 */}
           <div className="flex items-center justify-between">
@@ -144,7 +183,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
             </span>
           </div>
 
-          {/* 자세 (Roll/Pitch/Yaw) */}
+          {/* 자세 */}
           <div className="col-span-2 flex items-center justify-between">
             <span className="text-muted-foreground flex items-center gap-1">
               <Activity className="h-4 w-4 text-blue-500" /> 자세 (R/P/Y):
@@ -192,7 +231,45 @@ export const DroneSimulationCard: React.FC<Props> = ({
             <Ruler className="h-4 w-4 text-blue-500" /> 고도 기준 리셋
           </Button>
 
-          {/* 연결/해제 버튼 */}
+          {/* 수평 캘리브레이션 */}
+          <Button
+            onClick={() => {
+              if (connected && wsRef?.current?.readyState === WebSocket.OPEN) {
+                if (isCalibrating) {
+                  alert("수평 캘리브레이션이 진행 중입니다.")
+                  return
+                }
+
+                console.log("📐 수평 캘리브레이션 명령 전송 시도")
+                setIsCalibrating(true)
+
+                try {
+                  wsRef.current.send(
+                    JSON.stringify({ action: "calibrate_level" }),
+                  )
+                  console.log("✅ 수평 캘리브레이션 명령 전송")
+
+                  setTimeout(() => {
+                    setIsCalibrating(false)
+                  }, 15000)
+                } catch (error) {
+                  console.error("❌ 전송 실패:", error)
+                  setIsCalibrating(false)
+                }
+              } else {
+                alert("드론이 연결되지 않았습니다.")
+              }
+            }}
+            variant="secondary"
+            size="sm"
+            disabled={isCalibrating}
+            className="flex items-center gap-1 rounded-lg px-3 py-1 text-xs disabled:opacity-50 sm:text-sm"
+          >
+            <GaugeIcon className="h-4 w-4 text-green-500" />
+            {isCalibrating ? "캘리브레이션 중..." : "수평 캘리브레이션"}
+          </Button>
+
+          {/* 연결/해제 */}
           <Button
             onClick={onToggleConnect}
             variant={connected ? "outline" : "default"}

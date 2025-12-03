@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { convertGRID_GPS } from "@/utils/convertGrid"
+import { Maximize2, Minimize2 } from "lucide-react"
 
 interface NaverMapProps {
   lat?: number
@@ -47,6 +48,14 @@ export function NaverMap({
   // ⭐ GNSS 위성 수 State
   const [satellites, setSatellites] = useState<number | null>(null)
 
+  // ⭐ 전체화면 State
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const mapContainerRef = useRef<HTMLDivElement>(null)
+
+  // ⭐ 비행 계획 관련 State
+  const planPolylineRef = useRef<any>(null)
+  const planFileInputRef = useRef<HTMLInputElement>(null)
+
   const lastWeatherUpdateRef = useRef<{ lat: number; lng: number } | null>(null)
 
   // ================================
@@ -65,6 +74,81 @@ export function NaverMap({
     return () =>
       window.removeEventListener("droneSatelliteUpdate", handleSatelliteUpdate)
   }, [])
+
+  // ================================
+  // ⭐ 전체화면 상태 감지
+  // ================================
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+      // 전체화면 상태 변경 시 지도 크기 조정
+      if (mapInstance.current) {
+        setTimeout(() => {
+          const naver = (window as any).naver
+          if (naver && mapInstance.current) {
+            naver.maps.Event.trigger(mapInstance.current, "resize")
+          }
+        }, 100)
+      }
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange)
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange)
+    document.addEventListener("mozfullscreenchange", handleFullscreenChange)
+    document.addEventListener("MSFullscreenChange", handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange)
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        handleFullscreenChange,
+      )
+      document.removeEventListener(
+        "mozfullscreenchange",
+        handleFullscreenChange,
+      )
+      document.removeEventListener("MSFullscreenChange", handleFullscreenChange)
+    }
+  }, [])
+
+  // ================================
+  // ⭐ 전체화면 전환 함수
+  // ================================
+  const toggleFullscreen = async () => {
+    if (!mapContainerRef.current) return
+
+    try {
+      if (!document.fullscreenElement) {
+        // 전체화면 진입
+        const element = mapContainerRef.current
+        if (element.requestFullscreen) {
+          await element.requestFullscreen()
+        } else if ((element as any).webkitRequestFullscreen) {
+          // Safari
+          await (element as any).webkitRequestFullscreen()
+        } else if ((element as any).mozRequestFullScreen) {
+          // Firefox
+          await (element as any).mozRequestFullScreen()
+        } else if ((element as any).msRequestFullscreen) {
+          // IE/Edge
+          await (element as any).msRequestFullscreen()
+        }
+      } else {
+        // 전체화면 종료
+        if (document.exitFullscreen) {
+          await document.exitFullscreen()
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen()
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen()
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen()
+        }
+      }
+    } catch (error) {
+      console.error("전체화면 전환 실패:", error)
+    }
+  }
 
   // ================================
   // 날씨 정보 가져오기
@@ -414,11 +498,100 @@ export function NaverMap({
     }
   }
 
+  // ================================
+  // .plan 파일 파싱 및 경로 표시
+  // ================================
+  const handlePlanFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0]
+    if (!file || !file.name.endsWith(".plan")) {
+      alert("QGroundControl .plan 파일만 업로드 가능합니다.")
+      return
+    }
+
+    try {
+      const text = await file.text()
+      const planData = JSON.parse(text)
+
+      // mission.items에서 waypoint 추출 (command 16: WAYPOINT)
+      const waypoints: Array<{ lat: number; lng: number }> = []
+
+      if (
+        planData.mission &&
+        planData.mission.items &&
+        Array.isArray(planData.mission.items)
+      ) {
+        for (const item of planData.mission.items) {
+          // command 16 = MAV_CMD_NAV_WAYPOINT
+          if (item.command === 16 && item.params && item.params.length >= 6) {
+            const lat = item.params[4]
+            const lng = item.params[5]
+            if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+              waypoints.push({ lat, lng })
+            }
+          }
+        }
+      }
+
+      if (waypoints.length === 0) {
+        alert("비행 계획 파일에서 waypoint를 찾을 수 없습니다.")
+        return
+      }
+
+      // 기존 plan polyline 제거
+      if (planPolylineRef.current) {
+        planPolylineRef.current.setMap(null)
+      }
+
+      // 새로운 polyline 생성
+      if (!mapInstance.current) {
+        alert("지도가 초기화되지 않았습니다.")
+        return
+      }
+
+      const naver = (window as any).naver
+      const path = waypoints.map((wp) => new naver.maps.LatLng(wp.lat, wp.lng))
+
+      planPolylineRef.current = new naver.maps.Polyline({
+        map: mapInstance.current,
+        path: path,
+        strokeColor: "#FF6B6B", // 빨간색으로 비행 계획 표시
+        strokeWeight: 3,
+        strokeOpacity: 0.8,
+        zIndex: 100,
+      })
+
+      // 파일 입력 초기화
+      if (planFileInputRef.current) {
+        planFileInputRef.current.value = ""
+      }
+
+      alert(`비행 계획 경로가 추가되었습니다. (${waypoints.length}개 waypoint)`)
+    } catch (error) {
+      console.error("Plan 파일 파싱 오류:", error)
+      alert("Plan 파일을 읽는 중 오류가 발생했습니다.")
+    }
+  }
+
+  // ================================
+  // 비행 계획 경로 제거
+  // ================================
+  const removePlanPath = () => {
+    if (planPolylineRef.current) {
+      planPolylineRef.current.setMap(null)
+      planPolylineRef.current = null
+      alert("비행 계획 경로가 제거되었습니다.")
+    } else {
+      alert("표시된 비행 계획 경로가 없습니다.")
+    }
+  }
+
   // -------------------------------------------------------------------
   //                             UI 출력
   // -------------------------------------------------------------------
   return (
-    <div className="relative flex h-full w-full flex-col">
+    <div ref={mapContainerRef} className="relative flex h-full w-full flex-col">
       {/* 검색창 */}
       <div className="absolute left-1/2 top-3 z-50 w-[90%] max-w-md -translate-x-1/2">
         <div className="flex items-center rounded-full border border-gray-300 bg-white px-3 py-1 shadow-sm">
@@ -447,6 +620,26 @@ export function NaverMap({
         경로 초기화
       </button>
 
+      {/* Plan 넣기 버튼 */}
+      <div className="absolute left-4 top-4 z-50 flex gap-2">
+        <label className="cursor-pointer rounded bg-blue-500 px-3 py-1 text-xs text-white shadow hover:bg-blue-600">
+          Plan 넣기
+          <input
+            ref={planFileInputRef}
+            type="file"
+            accept=".plan"
+            onChange={handlePlanFileUpload}
+            className="hidden"
+          />
+        </label>
+        <button
+          onClick={removePlanPath}
+          className="rounded bg-orange-500 px-3 py-1 text-xs text-white shadow hover:bg-orange-600"
+        >
+          Plan 제거
+        </button>
+      </div>
+
       {/* 드론 추적 모드 */}
       {isDroneConnected && (
         <button
@@ -473,10 +666,23 @@ export function NaverMap({
         </div>
       )}
 
+      {/* ⭐ 전체화면 버튼 */}
+      <button
+        onClick={toggleFullscreen}
+        className="absolute bottom-4 right-4 z-[60] flex items-center justify-center rounded-full bg-blue-600 p-3 text-white shadow-lg transition-all hover:scale-110 hover:bg-blue-700"
+        title={isFullscreen ? "전체화면 종료" : "전체화면"}
+      >
+        {isFullscreen ? (
+          <Minimize2 className="h-5 w-5" />
+        ) : (
+          <Maximize2 className="h-5 w-5" />
+        )}
+      </button>
+
       {/* 클릭 패널 */}
       {showInfoPanel && clickedInfo && (
-        <div className="absolute bottom-0 left-0 right-0 z-50">
-          <div className="mx-4 mb-4 rounded-lg bg-black/80 px-3 py-2 text-white backdrop-blur-sm">
+        <div className="absolute bottom-0 left-0 right-0 z-40">
+          <div className="mb-4 ml-4 mr-20 rounded-lg bg-black/80 px-3 py-2 text-white backdrop-blur-sm">
             <div className="flex items-center justify-between">
               <div className="flex-1 text-xs">
                 <div className="flex flex-wrap items-center gap-3">

@@ -68,6 +68,28 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
+
+        // ✅ 수평 캘리브레이션 결과 처리
+        if (msg.type === "calibration_result") {
+          console.log("📬 수평 캘리브레이션 결과 수신:", msg)
+          // DroneSimulationCard의 isCalibrating 상태를 리셋하기 위해 이벤트 전송
+          window.dispatchEvent(
+            new CustomEvent("calibrationComplete", {
+              detail: { success: msg.success },
+            }),
+          )
+
+          if (msg.success) {
+            alert("✅ " + (msg.message || "수평 캘리브레이션이 완료되었습니다"))
+          } else {
+            alert(
+              "❌ " +
+                (msg.message || "수평 캘리브레이션이 작동이 안 되었습니다"),
+            )
+          }
+          return
+        }
+
         if (msg.status === "connected") return
 
         setQgcData((prev) => {

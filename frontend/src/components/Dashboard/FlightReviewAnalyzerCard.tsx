@@ -237,6 +237,28 @@ export function FlightReviewAnalyzerCard({
     }
     setAnalysisResult(result)
     onAnalysisChange?.(result)
+    fetch("http://api.localhost/api/v1/gemini/cbm/ai-summary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`)
+        }
+        return res.json()
+      })
+      .then((data) => {
+        console.log("🧠 AI 응답 전체:", data)
+        const summaryText =
+          data?.summary || data?.detail || "AI 해석을 가져오지 못했습니다."
+        console.log("🧠 AI 요약 텍스트:", summaryText)
+        setSummary((prev) => prev + "\n\n🧠 AI 해석: " + summaryText)
+      })
+      .catch((err) => {
+        console.error("AI 요약 실패:", err)
+        setSummary((prev) => prev + "\n\n⚠️ AI 해석 실패: " + err.message)
+      })
   }
 
   return (

@@ -99,7 +99,7 @@ export function FlightChecklistDashboard() {
         description: "드론 정기 점검 및 종합 유지보수 절차",
         icon: Shield,
         color: "red",
-        categories: ["1. Main body 점검", "2. Arm 점검", "3. 비행점검"],
+        categories: ["주기 점검"],
       },
     ],
     [],
@@ -197,11 +197,10 @@ export function FlightChecklistDashboard() {
 
     if (manualId === "periodic-maintenance") {
       return {
-        "주요 부품 교체 주기 점검": [
+        "주기 점검": [
+          // ✅ 하나의 카테고리로 통합
           "모터 교체 주기 확인",
           "프로펠러 마모 점검",
-        ],
-        "펌웨어 및 설정 확인": [
           "펌웨어 최신화 확인",
           "설정 백업 및 복원 가능 여부 확인",
         ],
@@ -462,7 +461,7 @@ export function FlightChecklistDashboard() {
             )
           })
           if (matchKey) {
-            const subItems = defaultStructure[matchKey]
+            const subItems = defaultStructure[matchKey] || []
             const label =
               meta?.categories?.find((d) => {
                 const dStripped = strip(d)
@@ -1607,8 +1606,10 @@ export function FlightChecklistDashboard() {
                       <div className="space-y-3">
                         {(() => {
                           const defaultStructure: Record<string, string[]> = {
-                            "주요 부품 교체 주기 점검": [],
-                            "펌웨어 및 설정 확인": [
+                            "주기 점검": [
+                              // ✅ 하나의 카테고리로 통합
+                              "모터 교체 주기 확인",
+                              "프로펠러 마모 점검",
                               "펌웨어 최신화 확인",
                               "설정 백업 및 복원 가능 여부 확인",
                             ],
