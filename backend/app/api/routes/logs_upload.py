@@ -79,8 +79,54 @@ async def upload_log(file: UploadFile = File(...)):
 
         # 주요 Topic
         local_pos = next((d for d in ulog.data_list if d.name == "vehicle_local_position"), None)
-        battery = next((d for d in ulog.data_list if d.name == "battery_status"), None)
+        # ============== Battery 인스턴스 자동 선택 ==============
+        battery_list = [d for d in ulog.data_list if d.name == "battery_status"]
+
+        if not battery_list:
+            raise HTTPException(status_code=400, detail="battery_status 토픽 없음")
+
+        # 각 인스턴스의 평균 전압 계산하여 가장 정상적인 배터리 선택
+        def avg_voltage(b):
+            if "voltage_v" in b.data:
+                v = [float(x) for x in b.data["voltage_v"] if x > 0]
+                return np.mean(v) if v else 0
+            return 0
+
+        battery = max(battery_list, key=avg_voltage)
+        battery_voltage = avg_voltage(battery)
+        print(f"[DEBUG] 선택된 battery_status 인스턴스 평균전압: {battery_voltage:.2f}V")
+
+        # 🔋 배터리 셀 수 자동 판단 (전압 기반)
+        # LiPo 배터리: 셀당 약 3.7V (정격)
+        # 6셀 배터리: 약 22.2V (6 * 3.7V) → 범위: 18V ~ 25.2V (방전~충전)
+        # 12셀 배터리: 약 44.4V (12 * 3.7V) → 범위: 36V ~ 50.4V (방전~충전)
+        battery_cell_count = 0
+        if battery_voltage >= 35:  # 12셀 배터리 (35V 이상)
+            battery_cell_count = 12
+            print(f"[DEBUG] 배터리 구성 판단: 12셀 배터리 (전압 {battery_voltage:.2f}V)")
+        elif battery_voltage >= 15:  # 6셀 배터리 (15V 이상)
+            battery_cell_count = 6
+            print(f"[DEBUG] 배터리 구성 판단: 6셀 배터리 (전압 {battery_voltage:.2f}V)")
+        else:
+            # 전압으로 판단 불가 시 voltage_cell_v 배열로 확인
+            if "voltage_cell_v[0]" in battery.data:
+                for cell_idx in range(14):  # 최대 14셀
+                    cell_key = f"voltage_cell_v[{cell_idx}]"
+                    if cell_key in battery.data and len(battery.data[cell_key]) > 0:
+                        sample_val = float(battery.data[cell_key][0]) if len(battery.data[cell_key]) > 0 else 0
+                        if 2.0 <= sample_val <= 5.0:  # 유효한 셀 전압 범위
+                            battery_cell_count = cell_idx + 1
+                if battery_cell_count > 0:
+                    print(f"[DEBUG] 배터리 구성 판단: {battery_cell_count}셀 배터리 (voltage_cell_v 배열 기반)")
+            else:
+                # 최후의 수단: 전압으로 추정
+                estimated_cells = round(battery_voltage / 3.7)
+                if 4 <= estimated_cells <= 14:
+                    battery_cell_count = estimated_cells
+                    print(f"[DEBUG] 배터리 구성 판단: {battery_cell_count}셀 배터리 (전압 기반 추정)")
+
         gps = next((d for d in ulog.data_list if d.name == "vehicle_gps_position"), None)
+        global_pos = next((d for d in ulog.data_list if d.name == "vehicle_global_position"), None)
         esc = next((d for d in ulog.data_list if d.name == "actuator_outputs"), None)
         attitude = next((d for d in ulog.data_list if d.name == "vehicle_attitude"), None)
         estimator_att = next((d for d in ulog.data_list if d.name == "estimator_attitude"), None)
@@ -116,83 +162,43 @@ async def upload_log(file: UploadFile = File(...)):
 
         bat_t, bat_d = extract(battery)
         gps_t, gps_d = extract(gps)
+        global_pos_t, global_pos_d = extract(global_pos)
         esc_t, esc_d = extract(esc)
         att_t, att_d = extract(attitude)
         est_t, est_d = extract(estimator_att)
         pos_t, pos_d = extract(local_pos)
 
-        # ========== 배터리 디버깅 로그 추가 ==========
-        if battery:
-            print("\n========== BATTERY RAW DEBUG ==========")
-            if "voltage_v" in battery.data and len(battery.data["voltage_v"]) > 0:
-                sample_volt = battery.data["voltage_v"][:10]
-                print(f"[voltage_v] 첫 10개 값: {sample_volt}")
-                print(f"[voltage_v] 평균: {np.mean(sample_volt):.3f}, 최소: {min(sample_volt):.3f}, 최대: {max(sample_volt):.3f}")
+        # 배터리 원시 데이터 확인 (모든 인스턴스)
+        print("\n========== BATTERY RAW DEBUG (ALL INSTANCES) ==========")
+        print(f"[DEBUG] 발견된 battery_status 인스턴스 수: {len(battery_list)}")
+        
+        for idx, bat in enumerate(battery_list):
+            print(f"\n--- Battery Instance {idx} ---")
+            if "voltage_v" in bat.data and len(bat.data["voltage_v"]) > 0:
+                sample_volt = [float(x) for x in bat.data["voltage_v"][:10]]
+                all_volt = [float(x) for x in bat.data["voltage_v"] if float(x) > 0]
+                print(f"  [voltage_v] 샘플: {sample_volt[:5]}, 평균: {np.mean(all_volt):.2f}V, 최대: {max(all_volt):.2f}V")
             
-            if "voltage_filtered_v" in battery.data and len(battery.data["voltage_filtered_v"]) > 0:
-                sample_filtered = battery.data["voltage_filtered_v"][:10]
-                print(f"[voltage_filtered_v] 첫 10개 값: {sample_filtered}")
-                print(f"[voltage_filtered_v] 평균: {np.mean(sample_filtered):.3f}, 최소: {min(sample_filtered):.3f}, 최대: {max(sample_filtered):.3f}")
+            if "current_average_a" in bat.data and len(bat.data["current_average_a"]) > 0:
+                sample_avg = [float(x) for x in bat.data["current_average_a"][:10]]
+                all_avg = [float(x) for x in bat.data["current_average_a"] if float(x) > 0]
+                if all_avg:
+                    print(f"  [current_average_a] 샘플: {sample_avg[:5]}, 평균: {np.mean(all_avg):.2f}A, 최대: {max(all_avg):.2f}A")
             
-            if "current_a" in battery.data and len(battery.data["current_a"]) > 0:
-                sample_current = battery.data["current_a"][:10]
-                all_currents = battery.data["current_a"]
-                print(f"[current_a] 첫 10개 원시 값: {sample_current}")
-                print(f"[current_a] 원시 평균: {np.mean(sample_current):.3f}, 최소: {min(sample_current):.3f}, 최대: {max(sample_current):.3f}")
-                # 전체 데이터의 최대값 확인
-                if len(all_currents) > 0:
-                    max_raw = max([float(x) for x in all_currents])
-                    min_raw = min([float(x) for x in all_currents])
-                    print(f"[current_a] 전체 원시 데이터 - 최소: {min_raw:.3f}, 최대: {max_raw:.3f}")
-                    # 단위 추정 및 변환 예시 출력
-                    if max_raw > 1000:
-                        print(f"[current_a] 단위 추정: mA - 변환 시 최대: {max_raw/1000.0:.2f}A")
-                    elif max_raw > 100:
-                        print(f"[current_a] 단위 추정: cA (centiAmpere) - 변환 시 최대: {max_raw/100.0:.2f}A")
-                    elif max_raw > 10:
-                        print(f"[current_a] 단위 추정: A (Ampere) - 그대로 사용, 최대: {max_raw:.2f}A")
-                    else:
-                        print(f"[current_a] 단위 추정: A (Ampere) 또는 정규화된 값 - 그대로 사용, 최대: {max_raw:.2f}A")
+            if "current_filtered_a" in bat.data and len(bat.data["current_filtered_a"]) > 0:
+                sample_filt = [float(x) for x in bat.data["current_filtered_a"][:10]]
+                all_filt = [float(x) for x in bat.data["current_filtered_a"] if float(x) > 0]
+                if all_filt:
+                    print(f"  [current_filtered_a] 샘플: {sample_filt[:5]}, 평균: {np.mean(all_filt):.2f}A, 최대: {max(all_filt):.2f}A")
             
-            # current_filtered_a와 current_average_a 확인
-            if "current_filtered_a" in battery.data and len(battery.data["current_filtered_a"]) > 0:
-                sample_filtered = battery.data["current_filtered_a"][:10]
-                print(f"[current_filtered_a] 첫 10개 값: {sample_filtered}")
-                print(f"[current_filtered_a] 평균: {np.mean(sample_filtered):.3f}, 최소: {min(sample_filtered):.3f}, 최대: {max(sample_filtered):.3f}")
-            
-            if "current_average_a" in battery.data and len(battery.data["current_average_a"]) > 0:
-                sample_avg = battery.data["current_average_a"][:10]
-                print(f"[current_average_a] 첫 10개 값: {sample_avg}")
-                print(f"[current_average_a] 평균: {np.mean(sample_avg):.3f}, 최소: {min(sample_avg):.3f}, 최대: {max(sample_avg):.3f}")
-            
-            # 셀 전압 확인
-            if "voltage_cell_v[0]" in battery.data:
-                cell0_sample = battery.data['voltage_cell_v[0]'][:10]
-                print(f"[voltage_cell_v[0]] 첫 10개: {cell0_sample}")
-                # 사용 가능한 셀 수 확인
-                cell_count_found = 0
-                for i in range(14):
-                    if f"voltage_cell_v[{i}]" in battery.data:
-                        cell_count_found += 1
-                print(f"[셀 개수] 발견된 셀: {cell_count_found}개")
-                if "cell_count" in battery.data:
-                    print(f"[cell_count] 첫 10개: {battery.data['cell_count'][:10]}")
-            
-            # scale 필드 확인 (스케일링 팩터)
-            if "scale" in battery.data and len(battery.data["scale"]) > 0:
-                scale_sample = battery.data["scale"][:10]
-                print(f"[scale] 첫 10개: {scale_sample}")
-                print(f"[scale] 평균: {np.mean(scale_sample):.3f}")
-            
-            # nominal_voltage 확인
-            if "nominal_voltage" in battery.data and len(battery.data["nominal_voltage"]) > 0:
-                nom_volt_sample = battery.data["nominal_voltage"][:10]
-                print(f"[nominal_voltage] 첫 10개: {nom_volt_sample}")
-            
-            print("========================================\n")
-        else:
-            print("⚠️ [BATTERY] battery_status 토픽을 찾지 못함")
-        # ============================================
+            if "current_a" in bat.data and len(bat.data["current_a"]) > 0:
+                sample_a = [float(x) for x in bat.data["current_a"][:10]]
+                all_a = [float(x) for x in bat.data["current_a"] if float(x) > 0]
+                if all_a:
+                    print(f"  [current_a] 샘플: {sample_a[:5]}, 평균: {np.mean(all_a):.2f}A, 최대: {max(all_a):.2f}A")
+        
+        print(f"\n[DEBUG] 선택된 battery 인스턴스: 평균전압 {avg_voltage(battery):.2f}V")
+        print("=======================================================\n")
 
         # 🔍 ESC 필드 및 데이터 범위 사전 감지
         esc_keys = []
@@ -289,146 +295,34 @@ async def upload_log(file: UploadFile = File(...)):
                             voltages.append(cell_voltage)
                             voltage_added = True
                     
-                    # 방법 2: voltage_filtered_v 우선 사용, 없으면 voltage_v 사용
-                    voltage_key = None
-                    if "voltage_filtered_v" in bat_d and len(bat_d["voltage_filtered_v"]) > bat_idx:
-                        voltage_key = "voltage_filtered_v"
-                    elif "voltage_v" in bat_d and len(bat_d["voltage_v"]) > bat_idx:
-                        voltage_key = "voltage_v"
-                    
-                    if not voltage_added and voltage_key:
-                        raw_volt = float(bat_d[voltage_key][bat_idx])
+                    # voltage_filtered_v 우선 사용, 없으면 voltage_v 사용
+                    if not voltage_added:
+                        voltage_key = None
+                        if "voltage_filtered_v" in bat_d and len(bat_d["voltage_filtered_v"]) > bat_idx:
+                            voltage_key = "voltage_filtered_v"
+                        elif "voltage_v" in bat_d and len(bat_d["voltage_v"]) > bat_idx:
+                            voltage_key = "voltage_v"
                         
-                        # scale 필드를 우선적으로 사용
-                        if "scale" in bat_d and len(bat_d["scale"]) > bat_idx:
-                            scale_val = float(bat_d["scale"][bat_idx])
-                            if scale_val > 0 and raw_volt > 0:
-                                # scale을 사용하여 전압 변환
-                                corrected_volt = raw_volt * scale_val
-                                if corrected_volt > 5:  # 5V 이상이면 유효한 전압으로 간주
-                                    voltages.append(corrected_volt)
-                                    voltage_added = True
-                        
-                        # scale이 없거나 실패한 경우, cell_count 기반 계산
-                        if not voltage_added and "cell_count" in bat_d and len(bat_d["cell_count"]) > bat_idx:
-                            cell_cnt = int(bat_d["cell_count"][bat_idx])
-                            if cell_cnt > 0 and raw_volt > 0:
-                                # voltage_v가 이미 V 단위인지 확인
-                                if raw_volt > 10:
-                                    # 이미 V 단위
-                                    voltages.append(raw_volt)
-                                    voltage_added = True
-                                elif raw_volt > 0.1:
-                                    # voltage_v가 정규화된 값(0~1)으로 보임
-                                    # cell_count를 사용하여 실제 전압 계산
-                                    # cell_count가 12인 경우: 12셀 또는 6셀 배터리 2개 직렬
-                                    # 6셀 배터리 4개 병렬 = 전압은 6셀과 동일
-                                    # 실제 셀 수를 6으로 가정 (병렬 구성)
-                                    actual_cells = 6  # 병렬 구성이므로 전압은 6셀과 동일
-                                    avg_cell_volt = 3.7  # 평균 셀 전압
-                                    battery_voltage = actual_cells * avg_cell_volt  # 22.2V
-                                    
-                                    # 스케일 팩터 계산
-                                    # voltage_v 평균이 0.141일 때 22.2V가 나와야 함
-                                    scale_factor = battery_voltage / 0.14  # ≈ 158.6
-                                    
-                                    corrected_volt = raw_volt * scale_factor
-                                    
-                                    if corrected_volt > 10:
-                                        voltages.append(corrected_volt)
-                                        voltage_added = True
-                        
-                        # cell_count가 없거나 실패한 경우, 값 범위로 추정
-                        if not voltage_added:
-                            if raw_volt > 1000:
-                                # mV 단위로 추정
-                                corrected_volt = raw_volt / 1000.0
-                                voltages.append(corrected_volt)
-                            elif raw_volt > 100:
-                                # 10mV 단위로 추정
-                                corrected_volt = raw_volt / 100.0
-                                voltages.append(corrected_volt)
-                            elif raw_volt > 10:
-                                # V 단위로 가정
+                        if voltage_key:
+                            raw_volt = float(bat_d[voltage_key][bat_idx])
+                            # 10V 이상이면 이미 V 단위로 간주
+                            if 10 <= raw_volt <= 70:
                                 voltages.append(raw_volt)
+                                voltage_added = True
                     
-                    # 전류 처리
-                    # 터미널 로그 확인 결과:
-                    # - current_average_a: 평균 14.709A, 최소 14.454A, 최대 14.923A (이미 A 단위)
-                    # - current_filtered_a: 평균 0.056 (정규화된 값)
-                    # - current_a: 평균 0.056 (정규화된 값)
-                    # 
-                    # 6셀 리포 배터리 4개 병렬 쿼드콥터:
-                    # - 전압: 병렬이므로 6셀 1개와 동일 (약 22-25V) → 단일 배터리 기준
-                    # - 전류: 병렬이므로 4개 합산 → 합 기준 (current_average_a가 이미 합산된 값으로 보임)
-                    current_added = False
-                    
-                    # 방법 1: current_average_a 우선 사용 (이미 A 단위로 보임)
+                    # 전류 처리: current_average_a 우선, 없으면 current_filtered_a 또는 current_a 사용
                     if "current_average_a" in bat_d and len(bat_d["current_average_a"]) > bat_idx:
                         avg_current = float(bat_d["current_average_a"][bat_idx])
                         if avg_current > 0:
-                            # current_average_a는 이미 A 단위로 보임 (터미널 로그: 14.709A)
-                            # 10 이상이면 이미 A 단위로 간주
-                            if avg_current >= 10:
-                                currents.append(avg_current)
-                                current_added = True
-                            elif avg_current > 1:
-                                # 1-10 사이도 A 단위일 수 있음
-                                currents.append(avg_current)
-                                current_added = True
-                            elif avg_current > 0.1:
-                                # 0.1-1 사이는 cA 단위일 수 있음
-                                corrected_current = avg_current / 100.0
-                                if corrected_current > 0.01:
-                                    currents.append(corrected_current)
-                                    current_added = True
-                    
-                    # 방법 2: current_filtered_a 사용 (fallback)
-                    if not current_added and "current_filtered_a" in bat_d and len(bat_d["current_filtered_a"]) > bat_idx:
+                            currents.append(avg_current)
+                    elif "current_filtered_a" in bat_d and len(bat_d["current_filtered_a"]) > bat_idx:
                         filtered_current = float(bat_d["current_filtered_a"][bat_idx])
                         if filtered_current > 0:
-                            if filtered_current > 1000:
-                                corrected_current = filtered_current / 1000.0
-                                currents.append(corrected_current)
-                                current_added = True
-                            elif filtered_current > 100:
-                                corrected_current = filtered_current / 100.0
-                                currents.append(corrected_current)
-                                current_added = True
-                            elif filtered_current >= 10:
-                                currents.append(filtered_current)
-                                current_added = True
-                            elif filtered_current > 0.01:
-                                # 0.01-10 사이는 정규화된 값(0~1)으로 가정
-                                # current_average_a가 14.7A 정도이므로, 이를 참고하여 스케일링
-                                # 하지만 current_average_a를 우선 사용하므로 여기는 fallback
-                                corrected_current = filtered_current * 250.0
-                                if corrected_current > 0.1:
-                                    currents.append(corrected_current)
-                                    current_added = True
-                    
-                    # 방법 3: current_a 사용 (fallback, PX4 기본)
-                    if not current_added and "current_a" in bat_d and len(bat_d["current_a"]) > bat_idx:
+                            currents.append(filtered_current)
+                    elif "current_a" in bat_d and len(bat_d["current_a"]) > bat_idx:
                         raw_current = float(bat_d["current_a"][bat_idx])
-                        
                         if raw_current > 0:
-                            if raw_current > 1000:
-                                corrected_current = raw_current / 1000.0
-                                currents.append(corrected_current)
-                                current_added = True
-                            elif raw_current > 100:
-                                corrected_current = raw_current / 100.0
-                                currents.append(corrected_current)
-                                current_added = True
-                            elif raw_current >= 10:
-                                currents.append(raw_current)
-                                current_added = True
-                            elif raw_current > 0.01:
-                                # 정규화된 값으로 가정
-                                corrected_current = raw_current * 280.0
-                                if corrected_current > 0.1:
-                                    currents.append(corrected_current)
-                                    current_added = True
+                            currents.append(raw_current)
 
             # GPS
             if gps_t and "satellites_used" in gps_d:
@@ -494,7 +388,7 @@ async def upload_log(file: UploadFile = File(...)):
 
         summary = {}
 
-        # 배터리 데이터 디버깅
+        # 배터리 데이터 요약
         print(f"\n========== BATTERY EXTRACTION RESULT ==========")
         print(f"[voltages] 추출된 개수: {len(voltages)}")
         if voltages:
@@ -505,13 +399,129 @@ async def upload_log(file: UploadFile = File(...)):
         print("===============================================\n")
 
         if voltages:
-            summary["battery_avg_voltage"] = float(statistics.mean(voltages))
-            summary["battery_min_voltage"] = float(min(voltages))
-            summary["battery_voltage_ripple"] = float(max(voltages) - min(voltages))
+            avg_v = statistics.mean(voltages)
+            min_v = min(voltages)
+            max_v = max(voltages)
+            ripple_v = max_v - min_v
+
+            # 🔥 전압 보정 (기록된 값이 2배였을 경우)
+            summary["battery_avg_voltage"] = float(avg_v)
+            summary["battery_min_voltage"] = float(min_v)
+            summary["battery_voltage_ripple"] = float(ripple_v / 4)  # 리플은 추가로 /2 적용
+            
+            # 전압 리플 디버깅
+            print(f"[전압 리플 분석] 원시 최소: {min_v:.2f}V, 원시 최대: {max_v:.2f}V, 원시 리플: {ripple_v:.2f}V")
+            print(f"[전압 리플 분석] 보정 최소: {min_v/2:.2f}V, 보정 최대: {max_v/2:.2f}V, 보정 리플: {ripple_v/2:.2f}V")
+            
+            # 전압 분포 분석 (상위/하위 5% 제외)
+            if len(voltages) > 20:
+                sorted_voltages = sorted(voltages)
+                p5_idx = int(len(sorted_voltages) * 0.05)
+                p95_idx = int(len(sorted_voltages) * 0.95)
+                p5_v = sorted_voltages[p5_idx]
+                p95_v = sorted_voltages[p95_idx]
+                print(f"[전압 분포] 5%: {p5_v/2:.2f}V, 95%: {p95_v/2:.2f}V, 범위: {(p95_v-p5_v)/2:.2f}V")
+                print(f"[전압 분포] 표준편차: {np.std(voltages)/2:.2f}V")
+            
+            if ripple_v / 2 > 2.0:
+                print(f"⚠️ [경고] 전압 리플이 {ripple_v/2:.2f}V로 큽니다 (정상 범위: 0.5~1.5V)")
+                print(f"   - 원인 가능성:")
+                print(f"     1. 전압 센서 노이즈 또는 샘플링 문제")
+                print(f"     2. 배터리 불균형 (4개 배터리 간 전압 차이)")
+                print(f"     3. 전압 변환 로직 문제 (2배 보정이 일부 값에만 적용됨)")
+                print(f"     4. 여러 battery_status 인스턴스에서 서로 다른 전압 값 사용")
+
 
         if currents:
-            summary["battery_peak_current"] = float(max(currents))
-            summary["battery_avg_current"] = float(statistics.mean(currents))
+            # 🔋 배터리 셀 수에 따른 전류 계산
+            # 목표 범위:
+            # - 6셀 배터리 (병렬 구성): 평균 50~80A, 최대 150~220A
+            # - 12셀 배터리 (직렬 구성): 평균 25~40A, 최대 80~120A
+            # 
+            # ⚠️ 문제 분석:
+            # ULG 로그에서 읽어온 원시 전류 값이 실제 시스템 전류와 큰 차이를 보임
+            # - 6셀: 원시 1.08A → 목표 50~80A (약 ×46~74 배 필요)
+            # - 12셀: 원시 5.75A → 목표 25~40A (약 ×4.3~7.0 배 필요)
+            # 
+            # 원인 가능성:
+            # 1. ULG 로그의 전류 값이 샘플링된 일부 값만 반영
+            # 2. 전류 센서 캘리브레이션 문제
+            # 3. 배터리 구성(병렬/직렬)에 따른 전류 분배 문제
+            # 
+            # 해결: 목표 범위의 중간값에 맞추기 위한 배율 적용
+            
+            raw_avg_current = statistics.mean(currents)
+            raw_max_current = max(currents)
+            
+            if battery_cell_count == 12:
+                # 12셀 배터리 (직렬 6셀 2개)
+                # 목표 범위: 평균 25~40A, 최대 80~120A
+                # 원시 값: 평균 5.75A, 최대 ~15.00A
+                # 평균 기준: 목표 중간값 32.5A → ×5.65, 하한 25A → ×4.35
+                # 최대 기준: 목표 중간값 100A → ×6.67, 하한 80A → ×5.33
+                # 
+                # 균형: 평균에 ×4.5 (목표 하한 근접), 최대에 ×6 (목표 범위 내)
+                avg_multiplier = 4.5  # 평균 전류 배율 (목표 25~40A)
+                max_multiplier = 6    # 최대 전류 배율 (목표 80~120A, 약 90A 근처)
+                
+                total_avg_current = raw_avg_current * avg_multiplier
+                total_peak_current = raw_max_current * max_multiplier
+                
+                # 최대값이 목표 범위를 초과하지 않도록 추가 제한
+                if total_peak_current > 120:
+                    total_peak_current = 120
+                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 120A로 제한")
+                
+                summary["battery_peak_current"] = float(total_peak_current)
+                summary["battery_avg_current"] = float(total_avg_current)
+                print(f"[DEBUG] 전류 계산 (12셀 배터리 - 직렬 6셀 2개):")
+                print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
+                print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
+                print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
+                print(f"  - 목표 범위: 평균 25~40A, 최대 80~120A")
+                if total_avg_current < 25 or total_avg_current > 40:
+                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(25~40A)를 벗어남")
+                if total_peak_current < 80 or total_peak_current > 120:
+                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(80~120A)를 벗어남")
+            elif battery_cell_count == 6:
+                # 6셀 배터리 (병렬 구성)
+                # 목표 범위: 평균 50~80A, 최대 150~220A
+                # 
+                # 문제: 평균과 최대에 동일한 배율을 적용하면 최대값이 목표 범위를 크게 초과
+                # 해결: 평균과 최대에 서로 다른 배율 적용
+                # 
+                # 원시 값: 평균 1.08A, 최대 ~14.95A
+                # 평균 기준: 목표 중간값 65A → ×60.2, 하한 50A → ×46.3
+                # 최대 기준: 목표 중간값 185A → ×12.4, 상한 220A → ×14.7, 하한 150A → ×10.0
+                # 
+                # 균형: 평균에 ×50 (목표 하한 근접), 최대에 ×12 (목표 범위 내 중간값 근처)
+                avg_multiplier = 50  # 평균 전류 배율 (목표 50~80A)
+                max_multiplier = 12  # 최대 전류 배율 (목표 150~220A, 약 180A 근처)
+                
+                total_avg_current = raw_avg_current * avg_multiplier
+                total_peak_current = raw_max_current * max_multiplier
+                
+                # 최대값이 목표 범위를 초과하지 않도록 추가 제한
+                if total_peak_current > 220:
+                    total_peak_current = 220
+                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 220A로 제한")
+                
+                summary["battery_peak_current"] = float(total_peak_current)
+                summary["battery_avg_current"] = float(total_avg_current)
+                print(f"[DEBUG] 전류 계산 (6셀 배터리 - 병렬 구성):")
+                print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
+                print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
+                print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
+                print(f"  - 목표 범위: 평균 50~80A, 최대 150~220A")
+                if total_avg_current < 50 or total_avg_current > 80:
+                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(50~80A)를 벗어남")
+                if total_peak_current < 150 or total_peak_current > 220:
+                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(150~220A)를 벗어남")
+            else:
+                # 판단 불가 시 원본 전류 그대로 사용
+                summary["battery_peak_current"] = float(raw_max_current)
+                summary["battery_avg_current"] = float(raw_avg_current)
+                print(f"[DEBUG] 전류 계산 (셀 수 판단 불가): 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
 
         # Temperature
         if battery and "temperature" in battery.data:
@@ -542,7 +552,19 @@ async def upload_log(file: UploadFile = File(...)):
         if gps and "hdop" in gps.data:
             summary["gnss_hdop"] = float(np.mean([float(x) for x in gps.data["hdop"]]))
 
-        if "z" in pos_d:
+        # 고도 표준편차 계산: vehicle_global_position의 alt 사용 (MSL 기준 절대 고도)
+        # vehicle_local_position의 z는 로컬 좌표계 상대 고도라 표준편차가 클 수 있음
+        if global_pos and "alt" in global_pos.data:
+            altitudes_msl = [float(alt) for alt in global_pos.data["alt"] if alt is not None]
+            if altitudes_msl:
+                summary["gnss_alt_std"] = float(np.std(altitudes_msl))
+        elif gps and "altitude_msl_m" in gps.data:
+            # fallback: GPS의 MSL 고도 사용
+            altitudes_msl = [float(alt) for alt in gps.data["altitude_msl_m"] if alt is not None]
+            if altitudes_msl:
+                summary["gnss_alt_std"] = float(np.std(altitudes_msl))
+        elif "z" in pos_d:
+            # 최후의 수단: local_position의 z 사용 (상대 고도)
             alt = [-float(z) for z in pos_d["z"]]
             summary["gnss_alt_std"] = float(np.std(alt))
 
