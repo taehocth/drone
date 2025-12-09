@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import {
   Card,
@@ -57,6 +58,74 @@ type ExtendedManualChecklist = ManualChecklist & {
   color: "blue" | "green" | "orange" | "purple" | "red"
 }
 
+// 항목 추가 컴포넌트
+function AddItemToCategory({ onAdd }: { onAdd: (title: string) => void }) {
+  const [isAdding, setIsAdding] = useState(false)
+  const [newTitle, setNewTitle] = useState("")
+
+  const handleSubmit = () => {
+    if (newTitle.trim()) {
+      onAdd(newTitle.trim())
+      setNewTitle("")
+      setIsAdding(false)
+    }
+  }
+
+  if (!isAdding) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setIsAdding(true)}
+        className="mt-1 h-6 text-xs text-blue-600 hover:bg-blue-50"
+      >
+        <Plus className="mr-1 h-3 w-3" />
+        항목 추가
+      </Button>
+    )
+  }
+
+  return (
+    <div className="mt-1 flex items-center gap-1">
+      <Input
+        value={newTitle}
+        onChange={(e) => setNewTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            handleSubmit()
+          } else if (e.key === "Escape") {
+            setIsAdding(false)
+            setNewTitle("")
+          }
+        }}
+        placeholder="항목 제목 입력..."
+        className="h-7 text-xs"
+        autoFocus
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleSubmit}
+        disabled={!newTitle.trim()}
+        className="h-7 px-2 text-xs"
+      >
+        <Check className="h-3 w-3" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          setIsAdding(false)
+          setNewTitle("")
+        }}
+        className="h-7 px-2 text-xs"
+      >
+        <X className="h-3 w-3" />
+      </Button>
+    </div>
+  )
+}
+
 export function FlightChecklistDashboard() {
   // 1) 매뉴얼 메타(로컬 정의)
   const manualMetas: ExtendedManualChecklist[] = useMemo(
@@ -99,7 +168,7 @@ export function FlightChecklistDashboard() {
         description: "드론 정기 점검 및 종합 유지보수 절차",
         icon: Shield,
         color: "red",
-        categories: ["주기 점검"],
+        categories: ["1. Main body 점검", "2. Arm 점검", "3. 비행점검"],
       },
     ],
     [],
@@ -157,7 +226,7 @@ export function FlightChecklistDashboard() {
 
     if (manualId === "post-flight") {
       return {
-        "배터리 점검": [
+        배터리: [
           "배터리 잔량 체크",
           "기체 전원 케이블 분리",
           "배터리 사이클 표기",
@@ -197,10 +266,11 @@ export function FlightChecklistDashboard() {
 
     if (manualId === "periodic-maintenance") {
       return {
-        "주기 점검": [
-          // ✅ 하나의 카테고리로 통합
+        "주요 부품 교체 주기 점검": [
           "모터 교체 주기 확인",
           "프로펠러 마모 점검",
+        ],
+        "펌웨어 및 설정 확인": [
           "펌웨어 최신화 확인",
           "설정 백업 및 복원 가능 여부 확인",
         ],
@@ -397,10 +467,6 @@ export function FlightChecklistDashboard() {
       const existing = itemsByManual[manualId] || []
       const defaultStructure = getDefaultStructureFor(manualId)
 
-      // If there are no real items in Firestore yet and we have a default structure,
-      // seed the entire default set for this manual at once. Mark the clicked
-      // item as completed if requested so UI reflects the user's action and
-      // the remaining items remain visible.
       if (existing.length === 0 && defaultStructure) {
         const meta = manualMetas.find((m) => m.id === manualId)
         const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
@@ -440,9 +506,6 @@ export function FlightChecklistDashboard() {
         await Promise.all(ops)
         return
       }
-
-      // If there are existing items but this specific category is empty,
-      // seed only that category's default items so the rest of the manual isn't affected.
       if (existing.length > 0 && defaultStructure) {
         const hasCategoryItems = (existing || []).some(
           (it) => (it.category || "") === category,
@@ -484,8 +547,6 @@ export function FlightChecklistDashboard() {
           }
         }
       }
-
-      // Fallback: create only the clicked item
       // 기존 항목 중 같은 제목이 있는지 확인
       const existingItem = existing.find(
         (it) => (it.title || "").trim() === title.trim(),
@@ -504,7 +565,7 @@ export function FlightChecklistDashboard() {
         isCompleted: !!checked,
         category: category || "기타",
       })
-      // listenManualItems 구독이 있으므로 스냅샷이 업데이트되어 UI에 반영됩니다.
+      // UI 반영
     } catch (e) {
       console.error("createFallbackItem error", e)
     }
@@ -688,11 +749,33 @@ export function FlightChecklistDashboard() {
         return matched || cat // 매칭되면 번호가 있는 카테고리 사용, 아니면 원본 사용
       }
 
+      // 카테고리 이름 목록 생성 (번호 제거한 버전 포함)
+      const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+      const categoryNames = new Set<string>()
+      meta.categories?.forEach((cat) => {
+        categoryNames.add(cat) // 원본 카테고리 이름
+        categoryNames.add(strip(cat)) // 번호 제거한 카테고리 이름
+      })
+
       // 중복 제거: 제목과 정규화된 카테고리 조합으로 유니크한 항목만 저장
       const seen = new Set<string>()
       const uniqueItems: ChecklistItem[] = []
 
       for (const item of existing) {
+        // 카테고리 이름과 동일한 제목의 항목은 제외
+        const itemTitleStripped = strip(item.title || "")
+        const isCategoryName = Array.from(categoryNames).some((catName) => {
+          const catNameStripped = strip(catName)
+          return (
+            itemTitleStripped === catNameStripped ||
+            item.title === catName ||
+            itemTitleStripped === catName ||
+            item.title === catNameStripped
+          )
+        })
+
+        if (isCategoryName) continue // 카테고리 이름과 동일한 항목은 건너뛰기
+
         const normalizedCategory = normalizeCategory(item.category || "기타")
         const key = `${normalizedCategory}|${item.title || ""}`
         if (!seen.has(key)) {
@@ -703,6 +786,123 @@ export function FlightChecklistDashboard() {
             isCompleted: item.isCompleted, // 체크 상태 유지
           })
         }
+      }
+
+      // 2. 폴백 항목들도 포함 (Firestore에 없지만 로컬에서 체크된 항목들)
+      const defaultStructure = getDefaultStructureFor(meta.id)
+      if (defaultStructure) {
+        // UI에서 사용하는 getLabel 함수와 동일한 로직 (양방향 매칭)
+        const getLabel = (base: string) => {
+          // 먼저 정확히 포함하는 카테고리 찾기
+          const exactMatch = meta.categories?.find((d) => d.includes(base))
+          if (exactMatch) return exactMatch
+
+          // 역방향 매칭: base가 카테고리에 포함되는지 확인
+          const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+          const baseStripped = strip(base)
+          const reverseMatch = meta.categories?.find((d) => {
+            const dStripped = strip(d)
+            return (
+              baseStripped.includes(dStripped) ||
+              dStripped.includes(baseStripped)
+            )
+          })
+          if (reverseMatch) return reverseMatch
+
+          return base
+        }
+
+        // 모든 기본 구조의 항목들을 순회
+        Object.entries(defaultStructure).forEach(
+          ([catBase, fallbackSubItems]) => {
+            // UI와 동일한 방식으로 카테고리 매칭
+            const matchedCategory = getLabel(catBase) // "배터리 점검" -> "1. 배터리"
+
+            if (!matchedCategory) return
+
+            const normalizedCategory = matchedCategory
+            const existingTitles = new Set(
+              existing
+                .filter((item) => {
+                  const itemCatStripped = strip(item.category || "")
+                  const matchedCatStripped = strip(matchedCategory)
+                  return (
+                    item.category === matchedCategory ||
+                    itemCatStripped === matchedCatStripped ||
+                    item.category?.includes(matchedCategory) ||
+                    matchedCategory.includes(item.category || "")
+                  )
+                })
+                .map((item) => item.title),
+            )
+
+            fallbackSubItems.forEach((title) => {
+              // 카테고리 이름과 동일한 제목의 항목은 제외
+              const titleStripped = strip(title)
+              const isCategoryName = Array.from(categoryNames).some(
+                (catName) => {
+                  const catNameStripped = strip(catName)
+                  return (
+                    titleStripped === catNameStripped ||
+                    title === catName ||
+                    titleStripped === catName ||
+                    title === catNameStripped
+                  )
+                },
+              )
+
+              if (isCategoryName) return // 카테고리 이름과 동일한 항목은 건너뛰기
+
+              // 숨겨진 폴백 항목 제외
+              if (hiddenFallbacks[meta.id]?.[matchedCategory]?.[title]) {
+                return
+              }
+
+              // Firestore에 없는 폴백 항목만 추가
+              if (!existingTitles.has(title)) {
+                const key = `${normalizedCategory}|${title}`
+
+                // 이미 추가된 항목이 아니면 추가
+                if (!seen.has(key)) {
+                  seen.add(key)
+
+                  // 로컬 체크 상태 확인
+                  // matchedCategory는 UI에서 사용하는 카테고리 이름 (예: "1. 배터리")
+                  // fallbackCheckedStates[meta.id]["1. 배터리"][title] 형태로 저장되어 있음
+                  const isCheckedLocally =
+                    fallbackCheckedStates[meta.id]?.[matchedCategory]?.[
+                      title
+                    ] === true
+
+                  // 디버깅을 위한 콘솔 로그 (나중에 제거 가능)
+                  if (meta.id === "post-flight" && catBase === "배터리 점검") {
+                    console.log("Debug post-flight battery:", {
+                      metaId: meta.id,
+                      catBase,
+                      matchedCategory,
+                      title,
+                      isCheckedLocally,
+                      fallbackStates: fallbackCheckedStates[meta.id],
+                    })
+                  }
+
+                  // 체크된 항목만 저장
+                  if (isCheckedLocally) {
+                    uniqueItems.push({
+                      id: undefined, // 폴백 항목은 id가 없음
+                      title,
+                      description: "",
+                      isRequired: true,
+                      isCompleted: isCheckedLocally, // true로 저장
+                      category: normalizedCategory,
+                      createdAt: null,
+                    })
+                  }
+                }
+              }
+            })
+          },
+        )
       }
 
       itemsToSave[meta.id] = uniqueItems
@@ -743,11 +943,15 @@ export function FlightChecklistDashboard() {
         if (checklist.id === checklistId) {
           const updatedItems = { ...checklist.items }
           if (updatedItems[manualId]) {
-            updatedItems[manualId] = updatedItems[manualId].map((item) =>
-              item.id === itemId
-                ? { ...item, isCompleted: !item.isCompleted }
-                : item,
-            )
+            updatedItems[manualId] = updatedItems[manualId].map((item) => {
+              // itemId가 실제 id이거나 생성된 임시 id일 수 있음
+              const currentItemId =
+                item.id || `${checklistId}-${manualId}-${item.title}`
+              if (currentItemId === itemId) {
+                return { ...item, isCompleted: !item.isCompleted }
+              }
+              return item
+            })
           }
           return {
             ...checklist,
@@ -771,10 +975,59 @@ export function FlightChecklistDashboard() {
         if (checklist.id === checklistId) {
           const updatedItems = { ...checklist.items }
           if (updatedItems[manualId]) {
-            updatedItems[manualId] = updatedItems[manualId].filter(
-              (item) => item.id !== itemId,
-            )
+            updatedItems[manualId] = updatedItems[manualId].filter((item) => {
+              const currentItemId =
+                item.id || `${checklistId}-${manualId}-${item.title}`
+              return currentItemId !== itemId
+            })
           }
+
+          return {
+            ...checklist,
+            items: updatedItems,
+            lastModified: new Date().toLocaleString("ko-KR"),
+          }
+        }
+        return checklist
+      }),
+    )
+  }
+
+  // 저장된 체크리스트에 항목 추가
+  const handleAddItemToSavedChecklist = (
+    checklistId: string,
+    manualId: string,
+    category: string,
+    title: string,
+  ) => {
+    if (!title.trim()) return
+
+    setSavedChecklists((prev) =>
+      prev.map((checklist) => {
+        if (checklist.id === checklistId) {
+          const updatedItems = { ...checklist.items }
+          if (!updatedItems[manualId]) {
+            updatedItems[manualId] = []
+          }
+
+          // 중복 체크
+          const existingItem = updatedItems[manualId].find(
+            (item) => item.title === title.trim() && item.category === category,
+          )
+          if (existingItem) return checklist
+
+          // 새 항목 추가
+          const newItem: ChecklistItem = {
+            id: `${checklistId}-${manualId}-${Date.now()}-${title.trim()}`,
+            title: title.trim(),
+            description: "",
+            isRequired: true,
+            isCompleted: false,
+            category: category,
+            createdAt: new Date().toISOString(),
+          }
+
+          updatedItems[manualId] = [...updatedItems[manualId], newItem]
 
           return {
             ...checklist,
@@ -1001,6 +1254,9 @@ export function FlightChecklistDashboard() {
           <DialogContent className="sm:max-w-[480px]">
             <DialogHeader>
               <DialogTitle>새 체크리스트 추가</DialogTitle>
+              <DialogDescription>
+                새로운 체크리스트 항목을 추가합니다.
+              </DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-3 py-3">
@@ -1118,6 +1374,9 @@ export function FlightChecklistDashboard() {
           <DialogContent className="sm:max-w-[420px]">
             <DialogHeader>
               <DialogTitle>체크리스트 제목 입력</DialogTitle>
+              <DialogDescription>
+                체크리스트 제목을 입력하세요.
+              </DialogDescription>
             </DialogHeader>
             <Input
               placeholder="예: 2025년 10월 29일 비행 전 점검"
@@ -1606,10 +1865,8 @@ export function FlightChecklistDashboard() {
                       <div className="space-y-3">
                         {(() => {
                           const defaultStructure: Record<string, string[]> = {
-                            "주기 점검": [
-                              // ✅ 하나의 카테고리로 통합
-                              "모터 교체 주기 확인",
-                              "프로펠러 마모 점검",
+                            "주요 부품 교체 주기 점검": [],
+                            "펌웨어 및 설정 확인": [
                               "펌웨어 최신화 확인",
                               "설정 백업 및 복원 가능 여부 확인",
                             ],
@@ -2002,6 +2259,27 @@ export function FlightChecklistDashboard() {
                     </CardDescription>
                   </div>
                   <div className="flex gap-1">
+                    {editingChecklistId === savedChecklist.id ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleSaveEdit()}
+                        title="수정 완료"
+                        className="text-green-600 hover:bg-green-50"
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleToggleEditMode(savedChecklist.id)}
+                        title="수정"
+                        className="text-blue-600 hover:bg-blue-50"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -2030,7 +2308,7 @@ export function FlightChecklistDashboard() {
                 <CardContent className="space-y-2 p-4">
                   {manualMetas.map((meta) => {
                     const items = savedChecklist.items[meta.id] || []
-                    if (items.length === 0) return null
+                    const isEditing = editingChecklistId === savedChecklist.id
 
                     // 중복 제거: 제목과 카테고리 조합으로 유니크한 항목만 표시
                     const seen = new Set<string>()
@@ -2045,6 +2323,9 @@ export function FlightChecklistDashboard() {
 
                     const grouped = groupItemsByCategory(uniqueItems)
 
+                    // 수정 모드이거나 항목이 있을 때만 표시
+                    if (!isEditing && items.length === 0) return null
+
                     return (
                       <div
                         key={meta.id}
@@ -2056,26 +2337,107 @@ export function FlightChecklistDashboard() {
                             {meta.title}
                           </span>
                         </div>
-                        {Object.entries(grouped).map(
-                          ([category, categoryItems]) => (
-                            <div key={category} className="ml-4 space-y-1">
-                              <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                                {category}
-                              </div>
-                              {categoryItems.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className={`text-sm ${
-                                    item.isCompleted
-                                      ? "text-green-600 line-through"
-                                      : "text-gray-800 dark:text-gray-100"
-                                  }`}
-                                >
-                                  • {item.title}
+                        {items.length === 0 && isEditing ? (
+                          // 빈 매뉴얼일 때 카테고리별로 항목 추가 가능
+                          <div className="ml-4 space-y-2">
+                            {meta.categories?.map((category) => (
+                              <div key={category} className="space-y-1">
+                                <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                                  {category}
                                 </div>
-                              ))}
-                            </div>
-                          ),
+                                <AddItemToCategory
+                                  onAdd={(title) =>
+                                    handleAddItemToSavedChecklist(
+                                      savedChecklist.id,
+                                      meta.id,
+                                      category,
+                                      title,
+                                    )
+                                  }
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          Object.entries(grouped).map(
+                            ([category, categoryItems]) => (
+                              <div key={category} className="ml-4 space-y-1">
+                                <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                                  {category}
+                                </div>
+                                {categoryItems.map((item) => {
+                                  const itemId =
+                                    item.id ||
+                                    `${savedChecklist.id}-${meta.id}-${item.title}`
+
+                                  return (
+                                    <div
+                                      key={itemId}
+                                      className={`flex items-center gap-2 ${
+                                        item.isCompleted
+                                          ? "text-green-600 line-through"
+                                          : "text-gray-800 dark:text-gray-100"
+                                      }`}
+                                    >
+                                      {isEditing ? (
+                                        <>
+                                          <Checkbox
+                                            id={itemId}
+                                            checked={item.isCompleted}
+                                            onCheckedChange={() =>
+                                              handleToggleSavedItem(
+                                                savedChecklist.id,
+                                                itemId,
+                                                meta.id,
+                                              )
+                                            }
+                                            className="h-4 w-4"
+                                          />
+                                          <label
+                                            htmlFor={itemId}
+                                            className="flex-1 cursor-pointer text-sm"
+                                          >
+                                            {item.title}
+                                          </label>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleDeleteItemFromSavedChecklist(
+                                                savedChecklist.id,
+                                                itemId,
+                                                meta.id,
+                                              )
+                                            }
+                                            className="h-6 w-6 p-0 text-red-600 hover:bg-red-50"
+                                            title="삭제"
+                                          >
+                                            <X className="h-3 w-3" />
+                                          </Button>
+                                        </>
+                                      ) : (
+                                        <span className="text-sm">
+                                          • {item.title}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                                {isEditing && (
+                                  <AddItemToCategory
+                                    onAdd={(title) =>
+                                      handleAddItemToSavedChecklist(
+                                        savedChecklist.id,
+                                        meta.id,
+                                        category,
+                                        title,
+                                      )
+                                    }
+                                  />
+                                )}
+                              </div>
+                            ),
+                          )
                         )}
                       </div>
                     )

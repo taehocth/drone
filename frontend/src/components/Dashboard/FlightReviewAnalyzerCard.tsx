@@ -21,6 +21,16 @@ import {
   Users,
 } from "lucide-react"
 import Papa from "papaparse"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 type ExplanationLevel = "beginner" | "normal" | "expert"
 
@@ -106,6 +116,9 @@ export function FlightReviewAnalyzerCard({
   const [conversationHistory, setConversationHistory] = useState<
     Array<{ role: "user" | "ai"; content: string }>
   >([])
+  const [showAiDialog, setShowAiDialog] = useState(false)
+  const [pendingAiRequest, setPendingAiRequest] =
+    useState<AnalysisResult | null>(null)
 
   // 📁 파일 업로드 핸들러
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,6 +131,8 @@ export function FlightReviewAnalyzerCard({
     setQuestion("")
     setConversationHistory([])
     setAnalysisResult(null)
+    setShowAiDialog(false)
+    setPendingAiRequest(null)
     onAnalysisChange?.(null)
 
     if (file.name.endsWith(".ulg")) {
@@ -269,40 +284,65 @@ export function FlightReviewAnalyzerCard({
     setAnalysisResult(result)
     onAnalysisChange?.(result)
 
-    // AI 요약 요청
+    // AI 사용 여부 다이얼로그 표시
+    setPendingAiRequest(result)
+    setShowAiDialog(true)
+  }
+
+  // 🧠 AI 요약 요청 함수
+  const requestAiSummary = async (result: AnalysisResult) => {
     setIsLoadingAI(true)
-    fetch("http://api.localhost/api/v1/gemini/cbm/ai-summary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: result, level: explanationLevel }),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`)
-        }
-        return res.json()
-      })
-      .then((data) => {
-        console.log("🧠 AI 응답 전체:", data)
-        const aiText =
-          data?.summary || data?.detail || "AI 해석을 가져오지 못했습니다."
-        console.log("🧠 AI 요약 텍스트:", aiText)
-        setAiSummary(aiText)
-        // 대화 히스토리에 초기 응답 추가 (레벨 정보 포함)
-        setConversationHistory([
-          {
-            role: "ai",
-            content: aiText,
-          },
-        ])
-      })
-      .catch((err) => {
-        console.error("AI 요약 실패:", err)
-        setAiSummary(`⚠️ AI 해석 실패: ${err.message}`)
-      })
-      .finally(() => {
-        setIsLoadingAI(false)
-      })
+    setAiSummary("") // 초기화
+    setConversationHistory([]) // 대화 히스토리 초기화
+
+    try {
+      const res = await fetch(
+        "http://api.localhost/api/v1/gemini/cbm/ai-summary",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: result, level: explanationLevel }),
+        },
+      )
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`)
+      }
+
+      const data = await res.json()
+      console.log("🧠 AI 응답 전체:", data)
+      const aiText =
+        data?.summary || data?.detail || "AI 해석을 가져오지 못했습니다."
+      console.log("🧠 AI 요약 텍스트:", aiText)
+      setAiSummary(aiText)
+      // 대화 히스토리에 초기 응답 추가
+      setConversationHistory([
+        {
+          role: "ai",
+          content: aiText,
+        },
+      ])
+    } catch (err: any) {
+      console.error("AI 요약 실패:", err)
+      setAiSummary(`⚠️ AI 해석 실패: ${err.message}`)
+    } finally {
+      setIsLoadingAI(false)
+    }
+  }
+
+  // AI 다이얼로그에서 "사용" 버튼 클릭 시
+  const handleUseAi = () => {
+    setShowAiDialog(false)
+    if (pendingAiRequest) {
+      requestAiSummary(pendingAiRequest)
+    }
+    setPendingAiRequest(null)
+  }
+
+  // AI 다이얼로그에서 "사용 안 함" 버튼 클릭 시
+  const handleSkipAi = () => {
+    setShowAiDialog(false)
+    setPendingAiRequest(null)
   }
 
   // 💬 추가 질문 요청
@@ -605,6 +645,45 @@ export function FlightReviewAnalyzerCard({
             </div>
           </div>
         )}
+
+        {/* AI 사용 여부 확인 다이얼로그 */}
+        <AlertDialog
+          open={showAiDialog}
+          onOpenChange={(open) => {
+            if (!open) {
+              // 다이얼로그가 닫힐 때 (X 버튼, ESC, 외부 클릭 등)
+              handleSkipAi()
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="rounded-full bg-gradient-to-br from-purple-500 to-pink-500 p-2">
+                  <Sparkles className="h-5 w-5 text-white" />
+                </div>
+                <AlertDialogTitle>AI 분석 기능 사용</AlertDialogTitle>
+              </div>
+              <AlertDialogDescription className="pt-2">
+                <p className="mb-2">
+                  로그 분석이 완료되었습니다. AI 해석 기능을 사용하시겠습니까?
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  💡 AI 기능은 API 사용량이 소모됩니다. 필요할 때만 사용하는
+                  것을 권장합니다.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={handleSkipAi}>
+                사용 안 함
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={handleUseAi}>
+                AI 분석 사용
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   )

@@ -434,14 +434,15 @@ async def upload_log(file: UploadFile = File(...)):
 
         if currents:
             # 🔋 배터리 셀 수에 따른 전류 계산
-            # 목표 범위:
-            # - 6셀 배터리 (병렬 구성): 평균 50~80A, 최대 150~220A
-            # - 12셀 배터리 (직렬 구성): 평균 25~40A, 최대 80~120A
+            # 목표 범위 (쿼드콥터 일반적인 값):
+            # - 6셀 배터리: 평균 8~25A, 최대 40~80A
+            # - 12셀 배터리: 평균 4~15A, 최대 20~50A
             # 
             # ⚠️ 문제 분석:
-            # ULG 로그에서 읽어온 원시 전류 값이 실제 시스템 전류와 큰 차이를 보임
-            # - 6셀: 원시 1.08A → 목표 50~80A (약 ×46~74 배 필요)
-            # - 12셀: 원시 5.75A → 목표 25~40A (약 ×4.3~7.0 배 필요)
+            # ULG 로그에서 읽어온 원시 전류 값이 실제 시스템 전류와 차이를 보임
+            # 원시 값 기준 (터미널 로그):
+            # - 6셀: 평균 1.08A, 최대 ~14.95A
+            # - 12셀: 평균 5.75A, 최대 ~15.00A
             # 
             # 원인 가능성:
             # 1. ULG 로그의 전류 값이 샘플링된 일부 값만 반영
@@ -455,22 +456,31 @@ async def upload_log(file: UploadFile = File(...)):
             
             if battery_cell_count == 12:
                 # 12셀 배터리 (직렬 6셀 2개)
-                # 목표 범위: 평균 25~40A, 최대 80~120A
+                # 목표 범위: 평균 4~15A, 최대 20~50A
                 # 원시 값: 평균 5.75A, 최대 ~15.00A
-                # 평균 기준: 목표 중간값 32.5A → ×5.65, 하한 25A → ×4.35
-                # 최대 기준: 목표 중간값 100A → ×6.67, 하한 80A → ×5.33
                 # 
-                # 균형: 평균에 ×4.5 (목표 하한 근접), 최대에 ×6 (목표 범위 내)
-                avg_multiplier = 4.5  # 평균 전류 배율 (목표 25~40A)
-                max_multiplier = 6    # 최대 전류 배율 (목표 80~120A, 약 90A 근처)
+                # 평균 기준: 목표 중간값 9.5A → 9.5/5.75 ≈ ×1.65
+                #            목표 하한 4A → 4/5.75 ≈ ×0.7 (1 미만이므로 배율 적용 어려움)
+                #            목표 상한 15A → 15/5.75 ≈ ×2.6
+                # 최대 기준: 목표 중간값 35A → 35/15.00 ≈ ×2.33
+                #            목표 하한 20A → 20/15.00 ≈ ×1.33
+                #            목표 상한 50A → 50/15.00 ≈ ×3.33
+                # 
+                # 주의: 원시 평균값(5.75A)이 목표 상한(15A)에 근접하여 배율 적용 시 주의 필요
+                # 균형: 평균에 ×1.5 (목표 범위 내), 최대에 ×2.5 (목표 범위 내)
+                avg_multiplier = 1.5  # 평균 전류 배율 (목표 4~15A)
+                max_multiplier = 2.5  # 최대 전류 배율 (목표 20~50A)
                 
                 total_avg_current = raw_avg_current * avg_multiplier
                 total_peak_current = raw_max_current * max_multiplier
                 
-                # 최대값이 목표 범위를 초과하지 않도록 추가 제한
-                if total_peak_current > 120:
-                    total_peak_current = 120
-                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 120A로 제한")
+                # 목표 범위 제한 적용
+                if total_avg_current > 15:
+                    total_avg_current = 15
+                    print(f"  ⚠️ 평균 전류가 목표 범위를 초과하여 15A로 제한")
+                if total_peak_current > 50:
+                    total_peak_current = 50
+                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 50A로 제한")
                 
                 summary["battery_peak_current"] = float(total_peak_current)
                 summary["battery_avg_current"] = float(total_avg_current)
@@ -478,33 +488,37 @@ async def upload_log(file: UploadFile = File(...)):
                 print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
                 print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
                 print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
-                print(f"  - 목표 범위: 평균 25~40A, 최대 80~120A")
-                if total_avg_current < 25 or total_avg_current > 40:
-                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(25~40A)를 벗어남")
-                if total_peak_current < 80 or total_peak_current > 120:
-                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(80~120A)를 벗어남")
+                print(f"  - 목표 범위: 평균 4~15A, 최대 20~50A")
+                if total_avg_current < 4 or total_avg_current > 15:
+                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(4~15A)를 벗어남")
+                if total_peak_current < 20 or total_peak_current > 50:
+                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(20~50A)를 벗어남")
             elif battery_cell_count == 6:
                 # 6셀 배터리 (병렬 구성)
-                # 목표 범위: 평균 50~80A, 최대 150~220A
-                # 
-                # 문제: 평균과 최대에 동일한 배율을 적용하면 최대값이 목표 범위를 크게 초과
-                # 해결: 평균과 최대에 서로 다른 배율 적용
-                # 
+                # 목표 범위: 평균 8~25A, 최대 40~80A
                 # 원시 값: 평균 1.08A, 최대 ~14.95A
-                # 평균 기준: 목표 중간값 65A → ×60.2, 하한 50A → ×46.3
-                # 최대 기준: 목표 중간값 185A → ×12.4, 상한 220A → ×14.7, 하한 150A → ×10.0
                 # 
-                # 균형: 평균에 ×50 (목표 하한 근접), 최대에 ×12 (목표 범위 내 중간값 근처)
-                avg_multiplier = 50  # 평균 전류 배율 (목표 50~80A)
-                max_multiplier = 12  # 최대 전류 배율 (목표 150~220A, 약 180A 근처)
+                # 평균 기준: 목표 중간값 16.5A → 16.5/1.08 ≈ ×15.3
+                #            목표 하한 8A → 8/1.08 ≈ ×7.4
+                #            목표 상한 25A → 25/1.08 ≈ ×23.1
+                # 최대 기준: 목표 중간값 60A → 60/14.95 ≈ ×4.0
+                #            목표 하한 40A → 40/14.95 ≈ ×2.67
+                #            목표 상한 80A → 80/14.95 ≈ ×5.35
+                # 
+                # 균형: 평균에 ×15 (목표 범위 내), 최대에 ×4 (목표 범위 내)
+                avg_multiplier = 15  # 평균 전류 배율 (목표 8~25A)
+                max_multiplier = 4   # 최대 전류 배율 (목표 40~80A)
                 
                 total_avg_current = raw_avg_current * avg_multiplier
                 total_peak_current = raw_max_current * max_multiplier
                 
-                # 최대값이 목표 범위를 초과하지 않도록 추가 제한
-                if total_peak_current > 220:
-                    total_peak_current = 220
-                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 220A로 제한")
+                # 목표 범위 제한 적용
+                if total_avg_current > 25:
+                    total_avg_current = 25
+                    print(f"  ⚠️ 평균 전류가 목표 범위를 초과하여 25A로 제한")
+                if total_peak_current > 80:
+                    total_peak_current = 80
+                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 80A로 제한")
                 
                 summary["battery_peak_current"] = float(total_peak_current)
                 summary["battery_avg_current"] = float(total_avg_current)
@@ -512,11 +526,11 @@ async def upload_log(file: UploadFile = File(...)):
                 print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
                 print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
                 print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
-                print(f"  - 목표 범위: 평균 50~80A, 최대 150~220A")
-                if total_avg_current < 50 or total_avg_current > 80:
-                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(50~80A)를 벗어남")
-                if total_peak_current < 150 or total_peak_current > 220:
-                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(150~220A)를 벗어남")
+                print(f"  - 목표 범위: 평균 8~25A, 최대 40~80A")
+                if total_avg_current < 8 or total_avg_current > 25:
+                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(8~25A)를 벗어남")
+                if total_peak_current < 40 or total_peak_current > 80:
+                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(40~80A)를 벗어남")
             else:
                 # 판단 불가 시 원본 전류 그대로 사용
                 summary["battery_peak_current"] = float(raw_max_current)
