@@ -265,6 +265,7 @@ async def upload_log(file: UploadFile = File(...)):
             speed = math.sqrt(vx*vx + vy*vy)
 
             # Battery
+            battery_value = 0.0
             if bat_t and len(bat_t) > 0:
                 idx = bisect.bisect_left(bat_t, t)
                 # 인덱스 범위 조정 (idx가 0이면 0 사용, 그 외에는 idx-1 사용)
@@ -293,6 +294,7 @@ async def upload_log(file: UploadFile = File(...)):
                                     cell_count += 1
                         if cell_count > 0:
                             voltages.append(cell_voltage)
+                            battery_value = cell_voltage  # merged 배열에 추가하기 위해 저장
                             voltage_added = True
                     
                     # voltage_filtered_v 우선 사용, 없으면 voltage_v 사용
@@ -308,6 +310,7 @@ async def upload_log(file: UploadFile = File(...)):
                             # 10V 이상이면 이미 V 단위로 간주
                             if 10 <= raw_volt <= 70:
                                 voltages.append(raw_volt)
+                                battery_value = raw_volt  # merged 배열에 추가하기 위해 저장
                                 voltage_added = True
                     
                     # 전류 처리: current_average_a 우선, 없으면 current_filtered_a 또는 current_a 사용
@@ -382,7 +385,7 @@ async def upload_log(file: UploadFile = File(...)):
                     roll_vals.append(r)
                     pitch_vals.append(p)
 
-            merged.append({"time": t, "altitude": z, "speed": speed})
+            merged.append({"time": t, "altitude": z, "speed": speed, "battery": battery_value})
 
         merged.sort(key=lambda x: x["time"])
 

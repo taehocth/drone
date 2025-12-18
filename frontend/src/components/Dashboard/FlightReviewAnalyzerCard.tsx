@@ -180,7 +180,13 @@ export function FlightReviewAnalyzerCard({
       const formData = new FormData()
       formData.append("file", file)
 
-      const res = await fetch("http://localhost:8000/api/v1/logs/analyze", {
+      // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+        ? `${apiBaseUrl}/logs/analyze`
+        : `${apiBaseUrl}/api/v1/logs/analyze`
+      
+      const res = await fetch(apiUrl, {
         method: "POST",
         body: formData,
       })
@@ -296,14 +302,17 @@ export function FlightReviewAnalyzerCard({
     setConversationHistory([]) // 대화 히스토리 초기화
 
     try {
-      const res = await fetch(
-        "http://api.localhost/api/v1/gemini/cbm/ai-summary",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: result, level: explanationLevel }),
-        },
-      )
+      // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+        ? `${apiBaseUrl}/gemini/cbm/ai-summary`
+        : `${apiBaseUrl}/api/v1/gemini/cbm/ai-summary`
+      
+      const res = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: result, level: explanationLevel }),
+      })
 
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`)
@@ -361,19 +370,22 @@ export function FlightReviewAnalyzerCard({
     setConversationHistory(updatedHistory)
 
     try {
-      const res = await fetch(
-        "http://api.localhost/api/v1/gemini/cbm/ask-question",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            analysisData: analysisResult,
-            question: userQuestion,
-            level: explanationLevel,
-            history: conversationHistory,
-          }),
-        },
-      )
+      // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+        ? `${apiBaseUrl}/gemini/cbm/ask-question`
+        : `${apiBaseUrl}/api/v1/gemini/cbm/ask-question`
+      
+      const res = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisData: analysisResult,
+          question: userQuestion,
+          level: explanationLevel,
+          history: conversationHistory,
+        }),
+      })
 
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`)
@@ -406,7 +418,13 @@ export function FlightReviewAnalyzerCard({
     // 레벨 변경 시 자동으로 재요청
     if (analysisResult) {
       setIsLoadingAI(true)
-      fetch("http://api.localhost/api/v1/gemini/cbm/ai-summary", {
+      // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+        ? `${apiBaseUrl}/gemini/cbm/ai-summary`
+        : `${apiBaseUrl}/api/v1/gemini/cbm/ai-summary`
+      
+      fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data: analysisResult, level }),
