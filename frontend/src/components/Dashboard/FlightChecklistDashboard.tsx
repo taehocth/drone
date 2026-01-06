@@ -266,13 +266,37 @@ export function FlightChecklistDashboard() {
 
     if (manualId === "periodic-maintenance") {
       return {
-        "주요 부품 교체 주기 점검": [
-          "모터 교체 주기 확인",
-          "프로펠러 마모 점검",
+        "Main body 점검": [
+          "Main Frame 전체 크랙 및 변형 점검",
+          "카울 전체 크랙 및 마모 점검",
+          "LTE 안테나 연결 상태 및 손상 점검",
+          "RFD 안테나 연결 상태 및 손상 점검",
+          "카메라 고정 상태 및 렌즈 청소",
+          "Landing Gear 전체 크랙 및 마모 점검",
+          "그리퍼 작동 상태 및 마모 점검",
+          "전장품 고정 상태 및 배선 점검",
+          "배터리 케이스 고정 상태 점검",
         ],
-        "펌웨어 및 설정 확인": [
-          "펌웨어 최신화 확인",
-          "설정 백업 및 복원 가능 여부 확인",
+        "Arm 점검": [
+          "Arm Frame 전체 크랙 및 변형 점검",
+          "모터 베어링 마모 및 소음 점검",
+          "모터 고정 나사 풀림 점검",
+          "프로펠러 전체 마모 및 균형 점검",
+          "프로펠러 고정 상태 점검",
+          "ESC 작동 상태 및 온도 점검",
+          "ESC 배선 및 커넥터 점검",
+          "Arm 폴딩 메커니즘 작동 점검",
+          "Arm 폴딩 부분 나사 및 마모 점검",
+        ],
+        비행점검: [
+          "비행 전 수평 캘리브레이션 정확도 확인",
+          "GPS 수신 안정성 및 위성 수 확인",
+          "비행 안정성 테스트 (호버링)",
+          "모터 회전 방향 및 균형 확인",
+          "통신 시스템 안정성 확인",
+          "배터리 전압 및 전류 안정성 확인",
+          "비행 로그 기록 정상 작동 확인",
+          "비상 착륙 기능 테스트",
         ],
       }
     }
@@ -306,22 +330,22 @@ export function FlightChecklistDashboard() {
   const [errorByManual, setErrorByManual] = useState<Record<string, string>>({})
 
   // 3) 저장된 체크리스트 관리
-  const [savedChecklists, setSavedChecklists] = useState<
-    Array<{
-      id: string
-      title: string
-      timestamp: string
-      lastModified?: string
-      items: Record<string, ChecklistItem[]>
-    }>
-  >([])
-  const [editingChecklistId, setEditingChecklistId] = useState<string | null>(
-    null,
-  )
-  const [collapsedSavedChecklists, setCollapsedSavedChecklists] = useState<
-    Record<string, boolean>
-  >({})
-  const [isSavedChecklistsVisible, setIsSavedChecklistsVisible] = useState(true)
+  // const [savedChecklists, setSavedChecklists] = useState<
+  //   Array<{
+  //     id: string
+  //     title: string
+  //     timestamp: string
+  //     lastModified?: string
+  //     items: Record<string, ChecklistItem[]>
+  //   }>
+  // >([])
+  // const [editingChecklistId, setEditingChecklistId] = useState<string | null>(
+  //   null,
+  // )
+  // const [collapsedSavedChecklists, setCollapsedSavedChecklists] = useState<
+  //   Record<string, boolean>
+  // >({})
+  // const [isSavedChecklistsVisible, setIsSavedChecklistsVisible] = useState(true)
 
   // 카테고리 접힘 상태
   const [collapsedCategories, setCollapsedCategories] = useState<
@@ -586,34 +610,34 @@ export function FlightChecklistDashboard() {
       })
 
       // 저장된 체크리스트에도 자동으로 반영
-      const newItemForSaved: ChecklistItem = {
-        title: newItem.title,
-        description: newItem.description || "",
-        isRequired: newItem.isRequired ?? true,
-        isCompleted: false,
-        category: newItem.category || "기타",
-        createdAt: new Date().toISOString(),
-      }
+      // const newItemForSaved: ChecklistItem = {
+      //   title: newItem.title,
+      //   description: newItem.description || "",
+      //   isRequired: newItem.isRequired ?? true,
+      //   isCompleted: false,
+      //   category: newItem.category || "기타",
+      //   createdAt: new Date().toISOString(),
+      // }
 
-      setSavedChecklists((prev) =>
-        prev.map((checklist) => {
-          const updatedItems = { ...checklist.items }
-          if (!updatedItems[newItem.manualId]) {
-            updatedItems[newItem.manualId] = []
-          }
+      // setSavedChecklists((prev) =>
+      //   prev.map((checklist) => {
+      //     const updatedItems = { ...checklist.items }
+      //     if (!updatedItems[newItem.manualId]) {
+      //       updatedItems[newItem.manualId] = []
+      //     }
 
-          updatedItems[newItem.manualId] = [
-            ...updatedItems[newItem.manualId],
-            newItemForSaved,
-          ]
+      //     updatedItems[newItem.manualId] = [
+      //       ...updatedItems[newItem.manualId],
+      //       newItemForSaved,
+      //     ]
 
-          return {
-            ...checklist,
-            items: updatedItems,
-            lastModified: new Date().toLocaleString("ko-KR"),
-          }
-        }),
-      )
+      //     return {
+      //       ...checklist,
+      //       items: updatedItems,
+      //       lastModified: new Date().toLocaleString("ko-KR"),
+      //     }
+      //   }),
+      // )
 
       setNewItem({
         title: "",
@@ -667,11 +691,11 @@ export function FlightChecklistDashboard() {
   const toggleCategory = (c: string) =>
     setCollapsedCategories((prev) => ({ ...prev, [c]: !prev[c] }))
 
-  const toggleSavedChecklist = (checklistId: string) =>
-    setCollapsedSavedChecklists((prev) => ({
-      ...prev,
-      [checklistId]: !prev[checklistId],
-    }))
+  // const toggleSavedChecklist = (checklistId: string) =>
+  //   setCollapsedSavedChecklists((prev) => ({
+  //     ...prev,
+  //     [checklistId]: !prev[checklistId],
+  //   }))
 
   // PDF 내보내기 핸들러
   // PDF 내보내기 핸들러 (자동 페이지 분할 버전)
@@ -718,452 +742,452 @@ export function FlightChecklistDashboard() {
   }
 
   // ===== 저장 핸들러 수정본 =====
-  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false)
-  const [saveTitle, setSaveTitle] = useState("")
+  // const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false)
+  // const [saveTitle, setSaveTitle] = useState("")
 
-  const handleSaveChecklist = () => {
-    setIsSaveDialogOpen(true) // 제목 입력 다이얼로그 열기
-  }
+  // const handleSaveChecklist = () => {
+  //   setIsSaveDialogOpen(true) // 제목 입력 다이얼로그 열기
+  // }
 
-  const confirmSaveChecklist = () => {
-    const timestamp = new Date().toLocaleString("ko-KR")
-    const title = saveTitle.trim() || `체크리스트 저장 - ${timestamp}`
+  // const confirmSaveChecklist = () => {
+  //   const timestamp = new Date().toLocaleString("ko-KR")
+  //   const title = saveTitle.trim() || `체크리스트 저장 - ${timestamp}`
 
-    const itemsToSave: Record<string, ChecklistItem[]> = {}
-    for (const meta of manualMetas) {
-      const existing = itemsByManual[meta.id] || []
+  //   const itemsToSave: Record<string, ChecklistItem[]> = {}
+  //   for (const meta of manualMetas) {
+  //     const existing = itemsByManual[meta.id] || []
 
-      // 카테고리 이름 정규화 함수 (번호 제거 후 매칭)
-      const normalizeCategory = (cat: string): string => {
-        const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
-        const stripped = strip(cat)
-        // meta.categories에서 정확히 매칭되는 번호가 있는 카테고리 찾기
-        const matched = meta.categories?.find((c) => {
-          const cStripped = strip(c)
-          return (
-            cStripped === stripped ||
-            c.includes(stripped) ||
-            stripped.includes(cStripped)
-          )
-        })
-        return matched || cat // 매칭되면 번호가 있는 카테고리 사용, 아니면 원본 사용
-      }
+  //     // 카테고리 이름 정규화 함수 (번호 제거 후 매칭)
+  //     const normalizeCategory = (cat: string): string => {
+  //       const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+  //       const stripped = strip(cat)
+  //       // meta.categories에서 정확히 매칭되는 번호가 있는 카테고리 찾기
+  //       const matched = meta.categories?.find((c) => {
+  //         const cStripped = strip(c)
+  //         return (
+  //           cStripped === stripped ||
+  //           c.includes(stripped) ||
+  //           stripped.includes(cStripped)
+  //         )
+  //       })
+  //       return matched || cat // 매칭되면 번호가 있는 카테고리 사용, 아니면 원본 사용
+  //     }
 
-      // 카테고리 이름 목록 생성 (번호 제거한 버전 포함)
-      const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
-      const categoryNames = new Set<string>()
-      meta.categories?.forEach((cat) => {
-        categoryNames.add(cat) // 원본 카테고리 이름
-        categoryNames.add(strip(cat)) // 번호 제거한 카테고리 이름
-      })
+  //     // 카테고리 이름 목록 생성 (번호 제거한 버전 포함)
+  //     const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+  //     const categoryNames = new Set<string>()
+  //     meta.categories?.forEach((cat) => {
+  //       categoryNames.add(cat) // 원본 카테고리 이름
+  //       categoryNames.add(strip(cat)) // 번호 제거한 카테고리 이름
+  //     })
 
-      // 중복 제거: 제목과 정규화된 카테고리 조합으로 유니크한 항목만 저장
-      const seen = new Set<string>()
-      const uniqueItems: ChecklistItem[] = []
+  //     // 중복 제거: 제목과 정규화된 카테고리 조합으로 유니크한 항목만 저장
+  //     const seen = new Set<string>()
+  //     const uniqueItems: ChecklistItem[] = []
 
-      for (const item of existing) {
-        // 카테고리 이름과 동일한 제목의 항목은 제외
-        const itemTitleStripped = strip(item.title || "")
-        const isCategoryName = Array.from(categoryNames).some((catName) => {
-          const catNameStripped = strip(catName)
-          return (
-            itemTitleStripped === catNameStripped ||
-            item.title === catName ||
-            itemTitleStripped === catName ||
-            item.title === catNameStripped
-          )
-        })
+  //     for (const item of existing) {
+  //       // 카테고리 이름과 동일한 제목의 항목은 제외
+  //       const itemTitleStripped = strip(item.title || "")
+  //       const isCategoryName = Array.from(categoryNames).some((catName) => {
+  //         const catNameStripped = strip(catName)
+  //         return (
+  //           itemTitleStripped === catNameStripped ||
+  //           item.title === catName ||
+  //           itemTitleStripped === catName ||
+  //           item.title === catNameStripped
+  //         )
+  //       })
 
-        if (isCategoryName) continue // 카테고리 이름과 동일한 항목은 건너뛰기
+  //       if (isCategoryName) continue // 카테고리 이름과 동일한 항목은 건너뛰기
 
-        const normalizedCategory = normalizeCategory(item.category || "기타")
-        const key = `${normalizedCategory}|${item.title || ""}`
-        if (!seen.has(key)) {
-          seen.add(key)
-          uniqueItems.push({
-            ...item,
-            category: normalizedCategory, // 정규화된 카테고리로 통일
-            isCompleted: item.isCompleted, // 체크 상태 유지
-          })
-        }
-      }
+  //       const normalizedCategory = normalizeCategory(item.category || "기타")
+  //       const key = `${normalizedCategory}|${item.title || ""}`
+  //       if (!seen.has(key)) {
+  //         seen.add(key)
+  //         uniqueItems.push({
+  //           ...item,
+  //           category: normalizedCategory, // 정규화된 카테고리로 통일
+  //           isCompleted: item.isCompleted, // 체크 상태 유지
+  //         })
+  //       }
+  //     }
 
-      // 2. 폴백 항목들도 포함 (Firestore에 없지만 로컬에서 체크된 항목들)
-      const defaultStructure = getDefaultStructureFor(meta.id)
-      if (defaultStructure) {
-        // UI에서 사용하는 getLabel 함수와 동일한 로직 (양방향 매칭)
-        const getLabel = (base: string) => {
-          // 먼저 정확히 포함하는 카테고리 찾기
-          const exactMatch = meta.categories?.find((d) => d.includes(base))
-          if (exactMatch) return exactMatch
+  //     // 2. 폴백 항목들도 포함 (Firestore에 없지만 로컬에서 체크된 항목들)
+  //     const defaultStructure = getDefaultStructureFor(meta.id)
+  //     if (defaultStructure) {
+  //       // UI에서 사용하는 getLabel 함수와 동일한 로직 (양방향 매칭)
+  //       const getLabel = (base: string) => {
+  //         // 먼저 정확히 포함하는 카테고리 찾기
+  //         const exactMatch = meta.categories?.find((d) => d.includes(base))
+  //         if (exactMatch) return exactMatch
 
-          // 역방향 매칭: base가 카테고리에 포함되는지 확인
-          const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
-          const baseStripped = strip(base)
-          const reverseMatch = meta.categories?.find((d) => {
-            const dStripped = strip(d)
-            return (
-              baseStripped.includes(dStripped) ||
-              dStripped.includes(baseStripped)
-            )
-          })
-          if (reverseMatch) return reverseMatch
+  //         // 역방향 매칭: base가 카테고리에 포함되는지 확인
+  //         const strip = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
+  //         const baseStripped = strip(base)
+  //         const reverseMatch = meta.categories?.find((d) => {
+  //           const dStripped = strip(d)
+  //           return (
+  //             baseStripped.includes(dStripped) ||
+  //             dStripped.includes(baseStripped)
+  //           )
+  //         })
+  //         if (reverseMatch) return reverseMatch
 
-          return base
-        }
+  //         return base
+  //       }
 
-        // 모든 기본 구조의 항목들을 순회
-        Object.entries(defaultStructure).forEach(
-          ([catBase, fallbackSubItems]) => {
-            // UI와 동일한 방식으로 카테고리 매칭
-            const matchedCategory = getLabel(catBase) // "배터리 점검" -> "1. 배터리"
+  //       // 모든 기본 구조의 항목들을 순회
+  //       Object.entries(defaultStructure).forEach(
+  //         ([catBase, fallbackSubItems]) => {
+  //           // UI와 동일한 방식으로 카테고리 매칭
+  //           const matchedCategory = getLabel(catBase) // "배터리 점검" -> "1. 배터리"
 
-            if (!matchedCategory) return
+  //           if (!matchedCategory) return
 
-            const normalizedCategory = matchedCategory
-            const existingTitles = new Set(
-              existing
-                .filter((item) => {
-                  const itemCatStripped = strip(item.category || "")
-                  const matchedCatStripped = strip(matchedCategory)
-                  return (
-                    item.category === matchedCategory ||
-                    itemCatStripped === matchedCatStripped ||
-                    item.category?.includes(matchedCategory) ||
-                    matchedCategory.includes(item.category || "")
-                  )
-                })
-                .map((item) => item.title),
-            )
+  //           const normalizedCategory = matchedCategory
+  //           const existingTitles = new Set(
+  //             existing
+  //               .filter((item) => {
+  //                 const itemCatStripped = strip(item.category || "")
+  //                 const matchedCatStripped = strip(matchedCategory)
+  //                 return (
+  //                   item.category === matchedCategory ||
+  //                   itemCatStripped === matchedCatStripped ||
+  //                   item.category?.includes(matchedCategory) ||
+  //                   matchedCategory.includes(item.category || "")
+  //                 )
+  //               })
+  //               .map((item) => item.title),
+  //           )
 
-            fallbackSubItems.forEach((title) => {
-              // 카테고리 이름과 동일한 제목의 항목은 제외
-              const titleStripped = strip(title)
-              const isCategoryName = Array.from(categoryNames).some(
-                (catName) => {
-                  const catNameStripped = strip(catName)
-                  return (
-                    titleStripped === catNameStripped ||
-                    title === catName ||
-                    titleStripped === catName ||
-                    title === catNameStripped
-                  )
-                },
-              )
+  //           fallbackSubItems.forEach((title) => {
+  //             // 카테고리 이름과 동일한 제목의 항목은 제외
+  //             const titleStripped = strip(title)
+  //             const isCategoryName = Array.from(categoryNames).some(
+  //               (catName) => {
+  //                 const catNameStripped = strip(catName)
+  //                 return (
+  //                   titleStripped === catNameStripped ||
+  //                   title === catName ||
+  //                   titleStripped === catName ||
+  //                   title === catNameStripped
+  //                 )
+  //               },
+  //             )
 
-              if (isCategoryName) return // 카테고리 이름과 동일한 항목은 건너뛰기
+  //             if (isCategoryName) return // 카테고리 이름과 동일한 항목은 건너뛰기
 
-              // 숨겨진 폴백 항목 제외
-              if (hiddenFallbacks[meta.id]?.[matchedCategory]?.[title]) {
-                return
-              }
+  //             // 숨겨진 폴백 항목 제외
+  //             if (hiddenFallbacks[meta.id]?.[matchedCategory]?.[title]) {
+  //               return
+  //             }
 
-              // Firestore에 없는 폴백 항목만 추가
-              if (!existingTitles.has(title)) {
-                const key = `${normalizedCategory}|${title}`
+  //             // Firestore에 없는 폴백 항목만 추가
+  //             if (!existingTitles.has(title)) {
+  //               const key = `${normalizedCategory}|${title}`
 
-                // 이미 추가된 항목이 아니면 추가
-                if (!seen.has(key)) {
-                  seen.add(key)
+  //               // 이미 추가된 항목이 아니면 추가
+  //               if (!seen.has(key)) {
+  //                 seen.add(key)
 
-                  // 로컬 체크 상태 확인
-                  // matchedCategory는 UI에서 사용하는 카테고리 이름 (예: "1. 배터리")
-                  // fallbackCheckedStates[meta.id]["1. 배터리"][title] 형태로 저장되어 있음
-                  const isCheckedLocally =
-                    fallbackCheckedStates[meta.id]?.[matchedCategory]?.[
-                      title
-                    ] === true
+  //                 // 로컬 체크 상태 확인
+  //                 // matchedCategory는 UI에서 사용하는 카테고리 이름 (예: "1. 배터리")
+  //                 // fallbackCheckedStates[meta.id]["1. 배터리"][title] 형태로 저장되어 있음
+  //                 const isCheckedLocally =
+  //                   fallbackCheckedStates[meta.id]?.[matchedCategory]?.[
+  //                     title
+  //                   ] === true
 
-                  // 디버깅을 위한 콘솔 로그 (나중에 제거 가능)
-                  if (meta.id === "post-flight" && catBase === "배터리 점검") {
-                    console.log("Debug post-flight battery:", {
-                      metaId: meta.id,
-                      catBase,
-                      matchedCategory,
-                      title,
-                      isCheckedLocally,
-                      fallbackStates: fallbackCheckedStates[meta.id],
-                    })
-                  }
+  //                 // 디버깅을 위한 콘솔 로그 (나중에 제거 가능)
+  //                 if (meta.id === "post-flight" && catBase === "배터리 점검") {
+  //                   console.log("Debug post-flight battery:", {
+  //                     metaId: meta.id,
+  //                     catBase,
+  //                     matchedCategory,
+  //                     title,
+  //                     isCheckedLocally,
+  //                     fallbackStates: fallbackCheckedStates[meta.id],
+  //                   })
+  //                 }
 
-                  // 체크된 항목만 저장
-                  if (isCheckedLocally) {
-                    uniqueItems.push({
-                      id: undefined, // 폴백 항목은 id가 없음
-                      title,
-                      description: "",
-                      isRequired: true,
-                      isCompleted: isCheckedLocally, // true로 저장
-                      category: normalizedCategory,
-                      createdAt: null,
-                    })
-                  }
-                }
-              }
-            })
-          },
-        )
-      }
+  //                 // 체크된 항목만 저장
+  //                 if (isCheckedLocally) {
+  //                   uniqueItems.push({
+  //                     id: undefined, // 폴백 항목은 id가 없음
+  //                     title,
+  //                     description: "",
+  //                     isRequired: true,
+  //                     isCompleted: isCheckedLocally, // true로 저장
+  //                     category: normalizedCategory,
+  //                     createdAt: null,
+  //                   })
+  //                 }
+  //               }
+  //             }
+  //           })
+  //         },
+  //       )
+  //     }
 
-      itemsToSave[meta.id] = uniqueItems
-    }
+  //     itemsToSave[meta.id] = uniqueItems
+  //   }
 
-    const newSavedChecklist = {
-      id: Date.now().toString(),
-      title,
-      timestamp,
-      items: itemsToSave,
-    }
+  //   const newSavedChecklist = {
+  //     id: Date.now().toString(),
+  //     title,
+  //     timestamp,
+  //     items: itemsToSave,
+  //   }
 
-    setSavedChecklists((prev) => [newSavedChecklist, ...prev])
-    setSaveTitle("")
-    setIsSaveDialogOpen(false)
-  }
+  //   setSavedChecklists((prev) => [newSavedChecklist, ...prev])
+  //   setSaveTitle("")
+  //   setIsSaveDialogOpen(false)
+  // }
 
   // 저장된 체크리스트 삭제 핸들러
-  const handleDeleteSavedChecklist = (id: string) => {
-    setSavedChecklists((prev) =>
-      prev.filter((checklist) => checklist.id !== id),
-    )
-  }
+  // const handleDeleteSavedChecklist = (id: string) => {
+  //   setSavedChecklists((prev) =>
+  //     prev.filter((checklist) => checklist.id !== id),
+  //   )
+  // }
 
   // 저장된 체크리스트 수정 모드 토글
-  const handleToggleEditMode = (id: string) => {
-    setEditingChecklistId(editingChecklistId === id ? null : id)
-  }
+  // const handleToggleEditMode = (id: string) => {
+  //   setEditingChecklistId(editingChecklistId === id ? null : id)
+  // }
 
   // 저장된 체크리스트 항목 토글
-  const handleToggleSavedItem = (
-    checklistId: string,
-    itemId: string,
-    manualId: string,
-  ) => {
-    setSavedChecklists((prev) =>
-      prev.map((checklist) => {
-        if (checklist.id === checklistId) {
-          const updatedItems = { ...checklist.items }
-          if (updatedItems[manualId]) {
-            updatedItems[manualId] = updatedItems[manualId].map((item) => {
-              // itemId가 실제 id이거나 생성된 임시 id일 수 있음
-              const currentItemId =
-                item.id || `${checklistId}-${manualId}-${item.title}`
-              if (currentItemId === itemId) {
-                return { ...item, isCompleted: !item.isCompleted }
-              }
-              return item
-            })
-          }
-          return {
-            ...checklist,
-            items: updatedItems,
-            lastModified: new Date().toLocaleString("ko-KR"),
-          }
-        }
-        return checklist
-      }),
-    )
-  }
+  // const handleToggleSavedItem = (
+  //   checklistId: string,
+  //   itemId: string,
+  //   manualId: string,
+  // ) => {
+  //   setSavedChecklists((prev) =>
+  //     prev.map((checklist) => {
+  //       if (checklist.id === checklistId) {
+  //         const updatedItems = { ...checklist.items }
+  //         if (updatedItems[manualId]) {
+  //           updatedItems[manualId] = updatedItems[manualId].map((item) => {
+  //             // itemId가 실제 id이거나 생성된 임시 id일 수 있음
+  //             const currentItemId =
+  //               item.id || `${checklistId}-${manualId}-${item.title}`
+  //             if (currentItemId === itemId) {
+  //               return { ...item, isCompleted: !item.isCompleted }
+  //             }
+  //             return item
+  //           })
+  //         }
+  //         return {
+  //           ...checklist,
+  //           items: updatedItems,
+  //           lastModified: new Date().toLocaleString("ko-KR"),
+  //         }
+  //       }
+  //       return checklist
+  //     }),
+  //   )
+  // }
 
   // 저장된 체크리스트에서 항목 삭제
-  const handleDeleteItemFromSavedChecklist = (
-    checklistId: string,
-    itemId: string,
-    manualId: string,
-  ) => {
-    setSavedChecklists((prev) =>
-      prev.map((checklist) => {
-        if (checklist.id === checklistId) {
-          const updatedItems = { ...checklist.items }
-          if (updatedItems[manualId]) {
-            updatedItems[manualId] = updatedItems[manualId].filter((item) => {
-              const currentItemId =
-                item.id || `${checklistId}-${manualId}-${item.title}`
-              return currentItemId !== itemId
-            })
-          }
+  // const handleDeleteItemFromSavedChecklist = (
+  //   checklistId: string,
+  //   itemId: string,
+  //   manualId: string,
+  // ) => {
+  //   setSavedChecklists((prev) =>
+  //     prev.map((checklist) => {
+  //       if (checklist.id === checklistId) {
+  //         const updatedItems = { ...checklist.items }
+  //         if (updatedItems[manualId]) {
+  //           updatedItems[manualId] = updatedItems[manualId].filter((item) => {
+  //             const currentItemId =
+  //               item.id || `${checklistId}-${manualId}-${item.title}`
+  //             return currentItemId !== itemId
+  //           })
+  //         }
 
-          return {
-            ...checklist,
-            items: updatedItems,
-            lastModified: new Date().toLocaleString("ko-KR"),
-          }
-        }
-        return checklist
-      }),
-    )
-  }
+  //         return {
+  //           ...checklist,
+  //           items: updatedItems,
+  //           lastModified: new Date().toLocaleString("ko-KR"),
+  //         }
+  //       }
+  //       return checklist
+  //     }),
+  //   )
+  // }
 
   // 저장된 체크리스트에 항목 추가
-  const handleAddItemToSavedChecklist = (
-    checklistId: string,
-    manualId: string,
-    category: string,
-    title: string,
-  ) => {
-    if (!title.trim()) return
+  // const handleAddItemToSavedChecklist = (
+  //   checklistId: string,
+  //   manualId: string,
+  //   category: string,
+  //   title: string,
+  // ) => {
+  //   if (!title.trim()) return
 
-    setSavedChecklists((prev) =>
-      prev.map((checklist) => {
-        if (checklist.id === checklistId) {
-          const updatedItems = { ...checklist.items }
-          if (!updatedItems[manualId]) {
-            updatedItems[manualId] = []
-          }
+  //   setSavedChecklists((prev) =>
+  //     prev.map((checklist) => {
+  //       if (checklist.id === checklistId) {
+  //         const updatedItems = { ...checklist.items }
+  //         if (!updatedItems[manualId]) {
+  //           updatedItems[manualId] = []
+  //         }
 
-          // 중복 체크
-          const existingItem = updatedItems[manualId].find(
-            (item) => item.title === title.trim() && item.category === category,
-          )
-          if (existingItem) return checklist
+  //         // 중복 체크
+  //         const existingItem = updatedItems[manualId].find(
+  //           (item) => item.title === title.trim() && item.category === category,
+  //         )
+  //         if (existingItem) return checklist
 
-          // 새 항목 추가
-          const newItem: ChecklistItem = {
-            id: `${checklistId}-${manualId}-${Date.now()}-${title.trim()}`,
-            title: title.trim(),
-            description: "",
-            isRequired: true,
-            isCompleted: false,
-            category: category,
-            createdAt: new Date().toISOString(),
-          }
+  //         // 새 항목 추가
+  //         const newItem: ChecklistItem = {
+  //           id: `${checklistId}-${manualId}-${Date.now()}-${title.trim()}`,
+  //           title: title.trim(),
+  //           description: "",
+  //           isRequired: true,
+  //           isCompleted: false,
+  //           category: category,
+  //           createdAt: new Date().toISOString(),
+  //         }
 
-          updatedItems[manualId] = [...updatedItems[manualId], newItem]
+  //         updatedItems[manualId] = [...updatedItems[manualId], newItem]
 
-          return {
-            ...checklist,
-            items: updatedItems,
-            lastModified: new Date().toLocaleString("ko-KR"),
-          }
-        }
-        return checklist
-      }),
-    )
-  }
+  //         return {
+  //           ...checklist,
+  //           items: updatedItems,
+  //           lastModified: new Date().toLocaleString("ko-KR"),
+  //         }
+  //       }
+  //       return checklist
+  //     }),
+  //   )
+  // }
 
   // 저장된 체크리스트 PDF 내보내기
-  const handleExportSavedChecklistPDF = async (checklistId: string) => {
-    const element = document.getElementById(`saved-checklist-${checklistId}`)
-    if (!element) return
+  // const handleExportSavedChecklistPDF = async (checklistId: string) => {
+  //   const element = document.getElementById(`saved-checklist-${checklistId}`)
+  //   if (!element) return
 
-    // 원본 스타일 백업
-    const originalStyle = element.style.cssText
-    const originalClasses = element.className
+  //   // 원본 스타일 백업
+  //   const originalStyle = element.style.cssText
+  //   const originalClasses = element.className
 
-    // PDF용 임시 스타일 적용
-    element.style.backgroundColor = "#ffffff"
-    element.style.color = "#000000"
-    element.style.padding = "20px"
-    element.style.boxShadow = "none"
-    element.style.outline = "none"
+  //   // PDF용 임시 스타일 적용
+  //   element.style.backgroundColor = "#ffffff"
+  //   element.style.color = "#000000"
+  //   element.style.padding = "20px"
+  //   element.style.boxShadow = "none"
+  //   element.style.outline = "none"
 
-    // PDF 전용 클래스 추가
-    element.classList.add("pdf-export")
+  //   // PDF 전용 클래스 추가
+  //   element.classList.add("pdf-export")
 
-    // 모든 자식 요소의 스타일도 백업하고 수정
-    const allElements = element.querySelectorAll("*")
-    const originalStyles: { [key: string]: string } = {}
+  //   // 모든 자식 요소의 스타일도 백업하고 수정
+  //   const allElements = element.querySelectorAll("*")
+  //   const originalStyles: { [key: string]: string } = {}
 
-    // ✅ 모든 테두리 완전 제거 (Tailwind 내부 스타일 포함)
-    allElements.forEach((el) => {
-      const element = el as HTMLElement
-      const computed = window.getComputedStyle(element)
+  //   // ✅ 모든 테두리 완전 제거 (Tailwind 내부 스타일 포함)
+  //   allElements.forEach((el) => {
+  //     const element = el as HTMLElement
+  //     const computed = window.getComputedStyle(element)
 
-      if (computed.borderWidth !== "0px") {
-        element.style.border = "none"
-      }
-      if (computed.boxShadow !== "none") {
-        element.style.boxShadow = "none"
-      }
-      if (computed.backgroundClip === "border-box") {
-        element.style.backgroundClip = "padding-box"
-      }
-      // ✅ Tailwind 기본 border-color 제거
-      element.style.borderColor = "transparent !important"
-      element.style.borderWidth = "0 !important"
-      element.style.borderStyle = "none !important"
+  //     if (computed.borderWidth !== "0px") {
+  //       element.style.border = "none"
+  //     }
+  //     if (computed.boxShadow !== "none") {
+  //       element.style.boxShadow = "none"
+  //     }
+  //     if (computed.backgroundClip === "border-box") {
+  //       element.style.backgroundClip = "padding-box"
+  //     }
+  //     // ✅ Tailwind 기본 border-color 제거
+  //     element.style.borderColor = "transparent !important"
+  //     element.style.borderWidth = "0 !important"
+  //     element.style.borderStyle = "none !important"
 
-      // ✅ border-left/right/top/bottom 개별 제거
-      element.style.borderLeft = "none"
-      element.style.borderRight = "none"
-      element.style.borderTop = "none"
-      element.style.borderBottom = "none"
+  //     // ✅ border-left/right/top/bottom 개별 제거
+  //     element.style.borderLeft = "none"
+  //     element.style.borderRight = "none"
+  //     element.style.borderTop = "none"
+  //     element.style.borderBottom = "none"
 
-      // ✅ 회색 배경 잔상 제거
-      if (
-        computed.backgroundColor &&
-        computed.backgroundColor !== "rgba(0, 0, 0, 0)"
-      ) {
-        const bg = computed.backgroundColor
-        // 그라디언트나 흐린 색이면 흰색으로 강제 덮어씌움
-        if (bg.includes("rgb") && bg.match(/\d+/g)?.[0] !== "255") {
-          element.style.backgroundColor = "#ffffff"
-        }
-      }
-      // 카드형 컨테이너의 잔여 테두리 제거
-      if (
-        element.className.includes("Card") ||
-        element.className.includes("border") ||
-        element.className.includes("shadow")
-      ) {
-        element.style.backgroundColor = "#ffffff"
-        element.style.border = "none"
-        element.style.boxShadow = "none"
-      }
-    })
+  //     // ✅ 회색 배경 잔상 제거
+  //     if (
+  //       computed.backgroundColor &&
+  //       computed.backgroundColor !== "rgba(0, 0, 0, 0)"
+  //     ) {
+  //       const bg = computed.backgroundColor
+  //       // 그라디언트나 흐린 색이면 흰색으로 강제 덮어씌움
+  //       if (bg.includes("rgb") && bg.match(/\d+/g)?.[0] !== "255") {
+  //         element.style.backgroundColor = "#ffffff"
+  //       }
+  //     }
+  //     // 카드형 컨테이너의 잔여 테두리 제거
+  //     if (
+  //       element.className.includes("Card") ||
+  //       element.className.includes("border") ||
+  //       element.className.includes("shadow")
+  //     ) {
+  //       element.style.backgroundColor = "#ffffff"
+  //       element.style.border = "none"
+  //       element.style.boxShadow = "none"
+  //     }
+  //   })
 
-    try {
-      const dataUrl = await domtoimage.toPng(element, {
-        quality: 1.0,
-        bgcolor: "#ffffff",
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-        style: {
-          transform: "scale(1)",
-          transformOrigin: "top left",
-        },
-      })
+  //   try {
+  //     const dataUrl = await domtoimage.toPng(element, {
+  //       quality: 1.0,
+  //       bgcolor: "#ffffff",
+  //       width: element.offsetWidth,
+  //       height: element.offsetHeight,
+  //       style: {
+  //         transform: "scale(1)",
+  //         transformOrigin: "top left",
+  //       },
+  //     })
 
-      const pdf = new jsPDF("p", "mm", "a4")
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
+  //     const pdf = new jsPDF("p", "mm", "a4")
+  //     const pdfWidth = pdf.internal.pageSize.getWidth()
+  //     const pdfHeight = pdf.internal.pageSize.getHeight()
 
-      // 현재 날짜로 제목 생성
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = now.getMonth() + 1
-      const day = now.getDate()
-      const title = `Saved Flight Checklist - ${year}/${month}/${day}`
+  //     // 현재 날짜로 제목 생성
+  //     const now = new Date()
+  //     const year = now.getFullYear()
+  //     const month = now.getMonth() + 1
+  //     const day = now.getDate()
+  //     const title = `Saved Flight Checklist - ${year}/${month}/${day}`
 
-      // PDF에 제목 추가
-      pdf.setFontSize(16)
-      pdf.setFont("helvetica", "bold")
-      pdf.text(title, pdfWidth / 2, 20, { align: "center" })
+  //     // PDF에 제목 추가
+  //     pdf.setFontSize(16)
+  //     pdf.setFont("helvetica", "bold")
+  //     pdf.text(title, pdfWidth / 2, 20, { align: "center" })
 
-      // 이미지 추가 (제목 아래에)
-      const img = new Image()
-      img.src = dataUrl
-      pdf.addImage(img, "PNG", 0, 30, pdfWidth, pdfHeight - 30)
+  //     // 이미지 추가 (제목 아래에)
+  //     const img = new Image()
+  //     img.src = dataUrl
+  //     pdf.addImage(img, "PNG", 0, 30, pdfWidth, pdfHeight - 30)
 
-      // 파일명도 날짜 포함
-      const fileName = `Saved_Flight_Checklist_${year}${month}${day}_${checklistId}.pdf`
-      pdf.save(fileName)
-    } finally {
-      // 모든 스타일 복원
-      element.style.cssText = originalStyle
-      element.className = originalClasses
-      element.classList.remove("pdf-export")
+  //     // 파일명도 날짜 포함
+  //     const fileName = `Saved_Flight_Checklist_${year}${month}${day}_${checklistId}.pdf`
+  //     pdf.save(fileName)
+  //   } finally {
+  //     // 모든 스타일 복원
+  //     element.style.cssText = originalStyle
+  //     element.className = originalClasses
+  //     element.classList.remove("pdf-export")
 
-      allElements.forEach((el, index) => {
-        const element = el as HTMLElement
-        element.style.cssText = originalStyles[index] || ""
-      })
-    }
-  }
+  //     allElements.forEach((el, index) => {
+  //       const element = el as HTMLElement
+  //       element.style.cssText = originalStyles[index] || ""
+  //     })
+  //   }
+  // }
 
   // 저장된 체크리스트 수정 완료
-  const handleSaveEdit = () => {
-    setEditingChecklistId(null)
-  }
+  // const handleSaveEdit = () => {
+  //   setEditingChecklistId(null)
+  // }
 
   // ======= UI =======
   return (
@@ -1361,7 +1385,7 @@ export function FlightChecklistDashboard() {
 
         {/* 저장 버튼 */}
         {/* 저장 버튼 + 제목 입력 다이얼로그 */}
-        <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
+        {/* <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>
           <DialogTrigger asChild>
             <Button
               onClick={handleSaveChecklist}
@@ -1399,7 +1423,7 @@ export function FlightChecklistDashboard() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+        </Dialog> */}
 
         {/* PDF 저장 버튼 */}
         <Button
@@ -1865,10 +1889,37 @@ export function FlightChecklistDashboard() {
                       <div className="space-y-3">
                         {(() => {
                           const defaultStructure: Record<string, string[]> = {
-                            "주요 부품 교체 주기 점검": [],
-                            "펌웨어 및 설정 확인": [
-                              "펌웨어 최신화 확인",
-                              "설정 백업 및 복원 가능 여부 확인",
+                            "Main body 점검": [
+                              "Main Frame 전체 크랙 및 변형 점검",
+                              "카울 전체 크랙 및 마모 점검",
+                              "LTE 안테나 연결 상태 및 손상 점검",
+                              "RFD 안테나 연결 상태 및 손상 점검",
+                              "카메라 고정 상태 및 렌즈 청소",
+                              "Landing Gear 전체 크랙 및 마모 점검",
+                              "그리퍼 작동 상태 및 마모 점검",
+                              "전장품 고정 상태 및 배선 점검",
+                              "배터리 케이스 고정 상태 점검",
+                            ],
+                            "Arm 점검": [
+                              "Arm Frame 전체 크랙 및 변형 점검",
+                              "모터 베어링 마모 및 소음 점검",
+                              "모터 고정 나사 풀림 점검",
+                              "프로펠러 전체 마모 및 균형 점검",
+                              "프로펠러 고정 상태 점검",
+                              "ESC 작동 상태 및 온도 점검",
+                              "ESC 배선 및 커넥터 점검",
+                              "Arm 폴딩 메커니즘 작동 점검",
+                              "Arm 폴딩 부분 나사 및 마모 점검",
+                            ],
+                            비행점검: [
+                              "비행 전 수평 캘리브레이션 정확도 확인",
+                              "GPS 수신 안정성 및 위성 수 확인",
+                              "비행 안정성 테스트 (호버링)",
+                              "모터 회전 방향 및 균형 확인",
+                              "통신 시스템 안정성 확인",
+                              "배터리 전압 및 전류 안정성 확인",
+                              "비행 로그 기록 정상 작동 확인",
+                              "비상 착륙 기능 테스트",
                             ],
                           }
 
@@ -2228,7 +2279,7 @@ export function FlightChecklistDashboard() {
 
       {/* 저장된 체크리스트 섹션 */}
       {/* 저장된 체크리스트 섹션 */}
-      {savedChecklists.length > 0 && (
+      {/* {savedChecklists.length > 0 && (
         <div className="mt-10">
           <h2 className="mb-4 flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
             <FileText className="text-orange-500" /> 저장된 체크리스트
@@ -2447,7 +2498,7 @@ export function FlightChecklistDashboard() {
             ))}
           </div>
         </div>
-      )}
+      )} */}
     </div>
   )
 }

@@ -15,7 +15,9 @@ export function DroneNewsBanner() {
   const fetchNews = async () => {
     try {
       // 👉 백엔드에서 feedparser로 파싱한 최신 드론 뉴스 (7일 이내)
-      const res = await fetch("http://localhost:8000/api/v1/news/drone-news")
+      // 환경 변수에서 API URL 가져오기
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const res = await fetch(`${apiBaseUrl}/news/drone-news`)
       const data = await res.json()
 
       if (data.articles && data.articles.length > 0) {

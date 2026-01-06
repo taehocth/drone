@@ -19,7 +19,11 @@ export function CBMStatusCard() {
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
-    const wsUrl = "ws://api.localhost/api/v1/cbm/ws/cbm" // 또는 ws://api.localhost/... (Traefik 쓸 경우)
+    // 환경 변수에서 API URL 가져오기 (ws:// 또는 wss://)
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+    const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws"
+    const wsHost = apiBaseUrl.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
+    const wsUrl = `${wsProtocol}://${wsHost}/api/v1/cbm/ws/cbm`
     console.log("🔌 CBM WebSocket 연결 시도:", wsUrl)
 
     const ws = new WebSocket(wsUrl)

@@ -163,7 +163,9 @@ export function NaverMap({
       const day = String(now.getDate()).padStart(2, "0")
       const hour = String(now.getHours()).padStart(2, "0")
 
-      const url = `http://localhost:8000/api/v1/weather?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
+      // 환경 변수에서 API URL 가져오기
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const url = `${apiBaseUrl}/weather?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
       const res = await fetch(url)
 
       if (!res.ok) return
@@ -202,8 +204,10 @@ export function NaverMap({
     if (!mapInstance.current) return
 
     try {
+      // 환경 변수에서 API URL 가져오기
+      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
       const res = await fetch(
-        `http://localhost:8000/api/v1/naver/search-place?query=${encodeURIComponent(
+        `${apiBaseUrl}/naver/search-place?query=${encodeURIComponent(
           searchQuery,
         )}`,
       )

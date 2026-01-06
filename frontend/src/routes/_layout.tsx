@@ -8,13 +8,14 @@ import { AppSidebar } from "@/components/Common/AppSidebar"
 
 export const Route = createFileRoute("/_layout")({
   component: Layout,
-  beforeLoad: async () => {
-    if (!isLoggedIn()) {
-      throw redirect({
-        to: "/login",
-      })
-    }
-  },
+  // 🔓 로그인 비활성화: 더 이상 /login 으로 리다이렉트 하지 않음
+  // beforeLoad: async () => {
+  //   if (!isLoggedIn()) {
+  //     throw redirect({
+  //       to: "/login",
+  //     })
+  //   }
+  // },
 })
 
 function Layout() {

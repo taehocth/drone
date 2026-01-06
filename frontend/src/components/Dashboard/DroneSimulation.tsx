@@ -52,7 +52,11 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   useEffect(() => {
     if (!connected || wsRef.current) return
 
-    const wsUrl = "ws://localhost:8000/api/v1/qgc/ws/qgc"
+    // 환경 변수에서 API URL 가져오기 (ws:// 또는 wss://)
+    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+    const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws"
+    const wsHost = apiBaseUrl.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
+    const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
     console.log("🔌 WebSocket 연결 시도중:", wsUrl)
 
     const ws = new WebSocket(wsUrl)
