@@ -576,6 +576,7 @@ export function FlightChecklistDashboard() {
       console.error("deleteChecklistItem error", e)
     }
   }
+  const normalize = (s: string) => s.replace(/^[\d.\s]+/, "").trim()
 
   // 유틸
   const groupItemsByCategory = (items: ChecklistItem[]) =>
@@ -1682,7 +1683,11 @@ export function FlightChecklistDashboard() {
                                 }
                                 // 이미 Firestore에 있는 항목 제외
                                 return !catItems.some(
-                                  (item) => item.title === title,
+                                  (item) =>
+                                    normalize(item.title) ===
+                                      normalize(title) &&
+                                    normalize(item.category ?? "") ===
+                                      normalize(category),
                                 )
                               })
                             : []
