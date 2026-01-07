@@ -164,7 +164,8 @@ export function NaverMap({
       const hour = String(now.getHours()).padStart(2, "0")
 
       // 환경 변수에서 API URL 가져오기
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
       const url = `${apiBaseUrl}/weather?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
       const res = await fetch(url)
 
@@ -205,7 +206,8 @@ export function NaverMap({
 
     try {
       // 환경 변수에서 API URL 가져오기
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
       const res = await fetch(
         `${apiBaseUrl}/naver/search-place?query=${encodeURIComponent(
           searchQuery,
@@ -617,15 +619,15 @@ export function NaverMap({
       </div>
 
       {/* 경로 초기화 버튼 */}
-      <button
+      {/* <button
         onClick={clearPath}
         className="absolute right-4 top-4 z-50 rounded bg-red-500 px-3 py-1 text-xs text-white shadow hover:bg-red-600"
       >
         경로 초기화
-      </button>
+      </button> */}
 
       {/* Plan 넣기 버튼 */}
-      <div className="absolute left-4 top-4 z-50 flex gap-2">
+      {/* <div className="absolute left-4 top-4 z-50 flex gap-2">
         <label className="cursor-pointer rounded bg-blue-500 px-3 py-1 text-xs text-white shadow hover:bg-blue-600">
           Plan 넣기
           <input
@@ -642,7 +644,7 @@ export function NaverMap({
         >
           Plan 제거
         </button>
-      </div>
+      </div> */}
 
       {/* 드론 추적 모드 */}
       {isDroneConnected && (

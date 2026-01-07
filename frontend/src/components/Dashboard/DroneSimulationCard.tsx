@@ -216,7 +216,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
         {/* 버튼 그룹 */}
         <div className="flex justify-end gap-2 pt-4">
           {/* 고도 기준 리셋 */}
-          <Button
+          {/* <Button
             onClick={() => {
               if (connected && wsRef?.current?.readyState === WebSocket.OPEN) {
                 wsRef.current.send(
@@ -229,10 +229,10 @@ export const DroneSimulationCard: React.FC<Props> = ({
             className="flex items-center gap-1 rounded-lg px-3 py-1 text-xs sm:text-sm"
           >
             <Ruler className="h-4 w-4 text-blue-500" /> 고도 기준 리셋
-          </Button>
+          </Button> */}
 
           {/* 수평 캘리브레이션 */}
-          <Button
+          {/* <Button
             onClick={() => {
               if (connected && wsRef?.current?.readyState === WebSocket.OPEN) {
                 if (isCalibrating) {
@@ -267,7 +267,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
           >
             <GaugeIcon className="h-4 w-4 text-green-500" />
             {isCalibrating ? "캘리브레이션 중..." : "수평 캘리브레이션"}
-          </Button>
+          </Button> */}
 
           {/* 연결/해제 */}
           <Button
