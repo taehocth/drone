@@ -40,9 +40,21 @@ export type OpenAPIConfig = {
   }
 }
 
+/**
+ * 🔥 핵심 포인트
+ * - api.localhost fallback 완전 제거
+ * - 환경변수 없으면 즉시 에러 → 잘못된 요청 방지
+ */
+const BASE = import.meta.env.VITE_API_URL
+
+if (!BASE) {
+  throw new Error(
+    "VITE_API_URL is not defined. Please set it in .env or docker-compose environment.",
+  )
+}
+
 export const OpenAPI: OpenAPIConfig = {
-  // ✅ 환경변수 기반 API URL 사용 (docker 환경에 맞춰 조정)
-  BASE: import.meta.env.VITE_API_URL || "http://api.localhost/api/v1",
+  BASE,
 
   CREDENTIALS: "include",
   ENCODE_PATH: undefined,
@@ -54,9 +66,11 @@ export const OpenAPI: OpenAPIConfig = {
     const token = localStorage.getItem("access_token")
     return token ? `Bearer ${token}` : ""
   },
+
   USERNAME: undefined,
   VERSION: "0.1.0",
   WITH_CREDENTIALS: false,
+
   interceptors: {
     request: new Interceptors(),
     response: new Interceptors(),
