@@ -1,5 +1,3 @@
-# version: "3.9"
-
 services:
   db:
     image: postgres:12
@@ -29,48 +27,34 @@ services:
   backend:
     build: ./backend
     restart: always
-    ports:
-      - "8000:8000"
-      - "14445:14445/udp"
-
+    expose:
+      - "8000"
+      - "14445/udp"
     volumes:
       - ./backend/app:/app/app
       - ./backend/htmlcov:/app/htmlcov
-
     env_file:
       - .env
-
     environment:
       PYTHONPATH: /app
       SECRET_KEY: ${SECRET_KEY}
-
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_PORT: ${POSTGRES_PORT}
-
-      # ✅ 프론트 실제 접속 주소
-      FRONTEND_HOST: http://192.168.50.80:5173
-
-      # ✅ CORS — api.localhost 제거
-      BACKEND_CORS_ORIGINS: http://localhost:5173,http://192.168.50.80:5173
-
+      FRONTEND_HOST: ${FRONTEND_HOST}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
       NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
       NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
-
       SMTP_HOST: mailcatcher
       SMTP_PORT: 1025
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: noreply@example.com
-
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-
     depends_on:
       - db
-
     command: >
       uvicorn app.main:app --host 0.0.0.0 --port 8000
-
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
@@ -83,20 +67,16 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.dev
     working_dir: /app
-    ports:
-      - "5173:5173"
+    expose:
+      - "5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
-
     environment:
-      # ✅ 핵심 수정 — 모든 PC에서 접근 가능한 주소
-      VITE_API_URL: http://192.168.50.80:8000
-
+      VITE_API_URL: /api/v1
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
       WSL_USE_POLLING: "true"
-
     depends_on:
       - backend
 
@@ -106,6 +86,18 @@ services:
     ports:
       - "1080:1080"
       - "1025:1025"
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: drone-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend
+      - backend
 
 volumes:
   app-db-data:

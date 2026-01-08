@@ -164,8 +164,7 @@ export function NaverMap({
       const hour = String(now.getHours()).padStart(2, "0")
 
       // 환경 변수에서 API URL 가져오기
-      const apiBaseUrl =
-        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiBaseUrl = "http://192.168.50.80:8000/api/v1"
       const url = `${apiBaseUrl}/weather?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
       const res = await fetch(url)
 
@@ -206,8 +205,7 @@ export function NaverMap({
 
     try {
       // 환경 변수에서 API URL 가져오기
-      const apiBaseUrl =
-        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiBaseUrl = "http://192.168.50.80:8000/api/v1"
       const res = await fetch(
         `${apiBaseUrl}/naver/search-place?query=${encodeURIComponent(
           searchQuery,
