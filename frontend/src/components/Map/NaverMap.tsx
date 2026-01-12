@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react"
 import { convertGRID_GPS } from "@/utils/convertGrid"
 import { Maximize2, Minimize2 } from "lucide-react"
 
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
+
 interface NaverMapProps {
   lat?: number
   lng?: number
@@ -163,11 +165,9 @@ export function NaverMap({
       const day = String(now.getDate()).padStart(2, "0")
       const hour = String(now.getHours()).padStart(2, "0")
 
-      // 환경 변수에서 API URL 가져오기
-      const apiBaseUrl = "http://192.168.50.80:8000/api/v1"
-      const url = `${apiBaseUrl}/weather?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
+      // ✅ 상단에 선언된 API_BASE_URL 사용
+      const url = `${API_BASE_URL}/weather/?nx=${nx}&ny=${ny}&base_date=${year}${month}${day}&base_time=${hour}00`
       const res = await fetch(url)
-
       if (!res.ok) return
 
       const data = await res.json()
@@ -205,11 +205,8 @@ export function NaverMap({
 
     try {
       // 환경 변수에서 API URL 가져오기
-      const apiBaseUrl = "http://192.168.50.80:8000/api/v1"
       const res = await fetch(
-        `${apiBaseUrl}/naver/search-place?query=${encodeURIComponent(
-          searchQuery,
-        )}`,
+        `${API_BASE_URL}/naver/search-place?query=${encodeURIComponent(searchQuery)}`,
       )
 
       if (!res.ok) return alert("검색 실패")

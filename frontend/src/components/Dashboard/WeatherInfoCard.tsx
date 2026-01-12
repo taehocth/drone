@@ -82,9 +82,10 @@ async function fetchKpIndex() {
 }
 
 // 환경 변수에서 API URL 가져오기
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-).replace(/\/api\/v1$/, "")
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(
+  /\/api\/v1$/,
+  "",
+)
 
 interface WeatherInfoCardProps {
   clickedCoordinates?: { nx: number; ny: number } | null

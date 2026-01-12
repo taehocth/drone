@@ -1,112 +1,25 @@
 services:
-  # =====================
-  # Traefik (유지하되, api.localhost 제거)
-  # =====================
-  proxy:
-    image: traefik:3.0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "80:80"
-      - "8090:8080"
-    command:
-      - --providers.docker
-      - --providers.docker.exposedbydefault=false
-      - --entrypoints.http.address=:80
-      - --accesslog
-      - --log
-      - --log.level=INFO
-      - --api
-      - --api.insecure=true
-    labels:
-      - traefik.enable=true
-    networks:
-      - traefik-public
-      - default
-
-  # =====================
-  # Database
-  # =====================
   db:
-    image: postgres:12
-    restart: unless-stopped
+    # 개발 환경에서만 헬스체크 유지 (선택)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       retries: 5
       start_period: 30s
       timeout: 10s
-    volumes:
-      - app-db-data:/var/lib/postgresql/data/pgdata
-    env_file:
-      - .env
 
-  # =====================
-  # Adminer (옵션)
-  # =====================
-  adminer:
-    image: adminer
-    restart: always
-    depends_on:
-      - db
-    networks:
-      - traefik-public
-      - default
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=traefik-public
-      - traefik.http.routers.adminer-http.rule=PathPrefix(`/adminer`)
-      - traefik.http.routers.adminer-http.entrypoints=http
-      - traefik.http.services.adminer.loadbalancer.server.port=8080
-
-  # =====================
-  # Backend (IP 기반 접근)
-  # =====================
   backend:
-    build:
-      context: ./backend
-    image: drone-backend:latest
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"   # 🔥 Traefik 안 거쳐도 직접 접근 가능
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    labels:
-      - traefik.enable=false   # ❌ api.localhost 라우팅 완전 제거
-
-  # =====================
-  # Frontend (IP 기반 API 사용)
-  # =====================
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
-    command: npm run dev -- --host 0.0.0.0 --port 5173
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-    env_file:
-      - .env
     environment:
-      # 🔥 핵심 수정 — api.localhost 제거
-      VITE_API_URL: http://192.168.50.80:8000
-    labels:
-      - traefik.enable=false   # ❌ Traefik 우회
-    networks:
-      - default
+      # 개발 편의용 (필요 없으면 제거 가능)
+      LOG_LEVEL: debug
 
-volumes:
-  app-db-data:
-
-networks:
-  traefik-public:
-    external: false
+  frontend:
+    ports:
+      # 개발 중 직접 접근도 가능하게 열어둠 (선택)
+      - "5173:5173"
+    environment:
+      # nginx 기준 상대 경로
+      VITE_API_URL: /api/v1
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      WSL_USE_POLLING: "true"
