@@ -206,7 +206,7 @@ export function NaverMap({
     try {
       // 환경 변수에서 API URL 가져오기
       const res = await fetch(
-        `${API_BASE_URL}/naver/search-place?query=${encodeURIComponent(searchQuery)}`,
+        `${API_BASE_URL}/api/v1/naver/search-place?query=${encodeURIComponent(searchQuery)}`,
       )
 
       if (!res.ok) return alert("검색 실패")
