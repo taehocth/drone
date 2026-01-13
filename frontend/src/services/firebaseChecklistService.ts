@@ -11,9 +11,14 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  Unsubscribe,
+  FirestoreError,
 } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 
+/* =========================
+ * Types
+ * ========================= */
 export type ChecklistItem = {
   id?: string
   title: string
@@ -31,13 +36,17 @@ export type ManualChecklist = {
   categories?: string[]
 }
 
-// --- 경로 헬퍼 ---
+/* =========================
+ * Collection Helpers
+ * ========================= */
 const manualsCol = collection(db, "manuals")
 const manualDoc = (manualId: string) => doc(manualsCol, manualId)
 const manualItemsCol = (manualId: string) =>
   collection(db, "manuals", manualId, "items")
 
-// --- 매뉴얼 upsert (없으면 생성) ---
+/* =========================
+ * Manual (upsert)
+ * ========================= */
 export async function upsertManual(meta: ManualChecklist) {
   await setDoc(
     manualDoc(meta.id),
@@ -51,7 +60,9 @@ export async function upsertManual(meta: ManualChecklist) {
   )
 }
 
-// --- 아이템 생성 ---
+/* =========================
+ * Checklist Item CRUD
+ * ========================= */
 export async function createChecklistItem(
   manualId: string,
   item: Omit<ChecklistItem, "id" | "createdAt">,
@@ -63,7 +74,6 @@ export async function createChecklistItem(
   })
 }
 
-// --- 아이템 완료 토글 ---
 export async function toggleChecklistItem(
   manualId: string,
   itemId: string,
@@ -75,33 +85,64 @@ export async function toggleChecklistItem(
   })
 }
 
-// --- 아이템 삭제 ---
 export async function deleteChecklistItem(manualId: string, itemId: string) {
   await deleteDoc(doc(manualItemsCol(manualId), itemId))
 }
 
-// --- 특정 매뉴얼 아이템 실시간 구독 ---
+/* =========================
+ * One-shot fetch (비실시간)
+ * ========================= */
+export async function getManualItems(manualId: string) {
+  const q = query(manualItemsCol(manualId), orderBy("createdAt", "asc"))
+  const snap = await getDocs(q)
+
+  return snap.docs.map((d) => ({
+    id: d.id,
+    ...(d.data() as Omit<ChecklistItem, "id">),
+  })) as ChecklistItem[]
+}
+
+/* =========================
+ * Realtime listener (핵심)
+ * ========================= */
 export function listenManualItems(
   manualId: string,
   callback: (items: ChecklistItem[]) => void,
-) {
+  onError?: (error: FirestoreError) => void,
+): Unsubscribe {
+  if (!manualId) {
+    // 안전장치: 잘못된 호출 방지
+    console.warn("[Firestore] listenManualItems called without manualId")
+    return () => {}
+  }
+
   const q = query(manualItemsCol(manualId), orderBy("createdAt", "asc"))
-  return onSnapshot(q, (snap) => {
-    const items: ChecklistItem[] = snap.docs.map((d) => ({
-      id: d.id,
-      ...(d.data() as Omit<ChecklistItem, "id">),
-    }))
-    callback(items)
-  })
+
+  return onSnapshot(
+    q,
+    (snap) => {
+      const items: ChecklistItem[] = snap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<ChecklistItem, "id">),
+      }))
+      callback(items)
+    },
+    (error) => {
+      console.error("[Firestore listen error]", error)
+      onError?.(error)
+    },
+  )
 }
 
-// --- 최초 마이그레이션(선택): 초기 아이템을 한번에 넣고 싶을 때 ---
+/* =========================
+ * Initial Seed (선택)
+ * ========================= */
 export async function seedManual(
   manual: ManualChecklist,
   items: Omit<ChecklistItem, "id" | "createdAt">[],
 ) {
   await upsertManual(manual)
-  // 이미 존재하는지 체크 없이 단순 추가: 필요하면 중복 방지 로직 추가
+
   await Promise.all(
     items.map((it) =>
       addDoc(manualItemsCol(manual.id), {

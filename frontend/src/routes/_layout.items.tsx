@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { useEffect } from "react"
 import { z } from "zod"
 
@@ -7,18 +7,24 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ItemsService } from "../client"
 import Navbar from "@/components/Common/Navbar"
 import AddItemDialog from "@/components/Items/AddItemDialog"
-import { PaginationFooter } from "@/components/Common/PaginationFooter.tsx"
-import { Typography } from "@/components/Common/Typography.tsx"
-import { DataTable } from "@/components/ui/data-table.tsx"
-import { itemColumns } from "@/components/Items/ItemColumns.tsx"
+import { PaginationFooter } from "@/components/Common/PaginationFooter"
+import { Typography } from "@/components/Common/Typography"
+import { DataTable } from "@/components/ui/data-table"
+import { itemColumns } from "@/components/Items/ItemColumns"
 
+// =======================
+// Search Schema
+// =======================
 const itemsSearchSchema = z.object({
-  page: z.number().catch(1),
+  page: z.coerce.number().int().min(1).catch(1),
 })
 
+// =======================
+// Route
+// =======================
 export const Route = createFileRoute("/_layout/items")({
   component: Items,
-  validateSearch: (search) => itemsSearchSchema.parse(search),
+  validateSearch: (search) => itemsSearchSchema.parse(search ?? {}),
 })
 
 const PER_PAGE = 5
@@ -26,11 +32,17 @@ const PER_PAGE = 5
 function getItemsQueryOptions({ page }: { page: number }) {
   return {
     queryFn: () =>
-      ItemsService.readItems({ skip: (page - 1) * PER_PAGE, limit: PER_PAGE }),
+      ItemsService.readItems({
+        skip: (page - 1) * PER_PAGE,
+        limit: PER_PAGE,
+      }),
     queryKey: ["items", { page }],
   }
 }
 
+// =======================
+// Page Component
+// =======================
 function Items() {
   return (
     <>
@@ -46,12 +58,28 @@ function Items() {
   )
 }
 
+// =======================
+// Table Component
+// =======================
 function ItemsTable() {
   const queryClient = useQueryClient()
-  const { page } = Route.useSearch()
-  const navigate = useNavigate({ from: Route.fullPath })
-  const setPage = (page: number) =>
-    navigate({ search: (prev: { page: number }) => ({ ...prev, page }) })
+
+  // 🔹 search 안전 접근
+  const search = Route.useSearch() as { page?: number }
+  const page = typeof search.page === "number" ? search.page : 1
+
+  const navigate = Route.useNavigate()
+
+  // 🔹 핵심: reducer + 타입 우회 (admin과 동일)
+  const setPage = (page: number) => {
+    navigate({
+      search: ((prev: any) => ({
+        ...(prev ?? {}),
+        page,
+      })) as any,
+      replace: true,
+    } as any)
+  }
 
   const {
     data: items,
@@ -59,7 +87,7 @@ function ItemsTable() {
     isPlaceholderData,
   } = useQuery({
     ...getItemsQueryOptions({ page }),
-    placeholderData: (prevData) => prevData,
+    placeholderData: (prev) => prev,
   })
 
   const hasNextPage = !isPlaceholderData && items?.data.length === PER_PAGE
@@ -78,50 +106,7 @@ function ItemsTable() {
       ) : (
         <DataTable columns={itemColumns} data={items?.data ?? []} />
       )}
-      {/* <TableContainer>
-        <Table size={{ base: "sm", md: "md" }}>
-          <Thead>
-            <Tr>
-              <Th>ID</Th>
-              <Th>Title</Th>
-              <Th>Description</Th>
-              <Th>Actions</Th>
-            </Tr>
-          </Thead>
-          {isPending ? (
-            <Tbody>
-              <Tr>
-                {new Array(4).fill(null).map((_, index) => (
-                  <Td key={index}>
-                    <SkeletonText noOfLines={1} paddingBlock="16px" />
-                  </Td>
-                ))}
-              </Tr>
-            </Tbody>
-          ) : (
-            <Tbody>
-              {items?.data.map((item) => (
-                <Tr key={item.id} opacity={isPlaceholderData ? 0.5 : 1}>
-                  <Td>{item.id}</Td>
-                  <Td isTruncated maxWidth="150px">
-                    {item.title}
-                  </Td>
-                  <Td
-                    color={!item.description ? "ui.dim" : "inherit"}
-                    isTruncated
-                    maxWidth="150px"
-                  >
-                    {item.description || "N/A"}
-                  </Td>
-                  <Td>
-                    <RowActionsMenu type={"Item"} value={item} />
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          )}
-        </Table>
-      </TableContainer> */}
+
       <PaginationFooter
         page={page}
         onChangePage={setPage}
