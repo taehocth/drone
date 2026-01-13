@@ -15,17 +15,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ 루트 엔드포인트 (Render + 브라우저용)
+@app.get("/")
+async def root():
+    return {
+        "status": "ok",
+        "service": settings.PROJECT_NAME,
+        "message": "Backend is running"
+    }
+
 # ✅ 모든 v1 API 등록
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 # ✅ CBM 개별 라우터 (WebSocket 전용)
 app.include_router(cbm.router, prefix="/api/v1", tags=["cbm"])
 
-# ✅ 헬스체크
+# ✅ 헬스체크 (내부 / 모니터링용)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
 
 # ✅ 디버깅: 라우트 목록 출력
 @app.on_event("startup")
