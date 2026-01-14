@@ -54,12 +54,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   useEffect(() => {
     if (!connected || wsRef.current) return
 
-    /**
-     * ✅ 최종 정답 로직
-     * - REST API 기준 URL(VITE_API_URL)에서 WebSocket URL 생성
-     * - host 누락 문제 해결
-     * - http / https → ws / wss 자동 매핑
-     */
     const apiBaseUrl =
       import.meta.env.VITE_API_URL || "http://localhost:8000"
 
@@ -75,52 +69,48 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
-    // 🟢 연결 성공
     ws.onopen = () => {
       console.log("🟢 WebSocket 연결 성공")
       onConnectionChange?.(true)
     }
 
-    // 📡 메시지 수신
+    // ===============================
+    // 📡 메시지 수신 (최종 매핑 로직)
+    // ===============================
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
 
-        // 수평 캘리브레이션 결과 처리
-        if (msg.type === "calibration_result") {
-          window.dispatchEvent(
-            new CustomEvent("calibrationComplete", {
-              detail: { success: msg.success },
-            }),
-          )
-
-          alert(
-            msg.success
-              ? `✅ ${msg.message ?? "수평 캘리브레이션 완료"}`
-              : `❌ ${msg.message ?? "수평 캘리브레이션 실패"}`,
-          )
-          return
-        }
+        // 🔍 디버그용 (문제 생기면 바로 확인 가능)
+        console.log("📡 WS RAW DATA:", msg)
 
         if (msg.status === "connected") return
 
         setQgcData((prev) => {
           const updated: DroneData = {
             ...prev,
-            latitude: msg.latitude ?? prev.latitude,
-            longitude: msg.longitude ?? prev.longitude,
-            altitude: msg.altitude ?? prev.altitude,
+
+            // Render PUSH 구조 대응
+            latitude: msg.position?.lat ?? msg.latitude ?? prev.latitude,
+            longitude: msg.position?.lon ?? msg.longitude ?? prev.longitude,
+            altitude: msg.position?.alt ?? msg.altitude ?? prev.altitude,
+
+            battery:
+              msg.battery?.remaining ??
+              msg.battery ??
+              prev.battery,
+
             speed: msg.speed ?? prev.speed,
-            battery: msg.battery ?? prev.battery,
             throttle: msg.throttle ?? prev.throttle,
             roll: msg.roll ?? prev.roll,
             pitch: msg.pitch ?? prev.pitch,
             yaw: msg.yaw ?? prev.yaw,
             satellites: msg.satellites ?? prev.satellites,
+
             timestamp: msg.timestamp ?? new Date().toISOString(),
           }
 
-          // 지도 위치 업데이트
+          // 지도 업데이트 이벤트
           if (updated.latitude && updated.longitude) {
             window.dispatchEvent(
               new CustomEvent("dronePositionUpdate", {
@@ -148,7 +138,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       }
     }
 
-    // 🔴 연결 종료
     ws.onclose = (event) => {
       console.warn(
         "🔴 WebSocket 연결 종료:",
@@ -164,7 +153,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       )
     }
 
-    // ⚠️ 에러
     ws.onerror = (err) => {
       console.error("⚠️ WebSocket 에러:", err)
       setConnected(false)
@@ -176,7 +164,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       )
     }
 
-    // cleanup
     return () => {
       if (wsRef.current) {
         try {
