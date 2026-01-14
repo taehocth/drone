@@ -48,23 +48,36 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
-  // ✅ WebSocket 관리
+  // ===============================
+  // WebSocket 연결 관리
+  // ===============================
   useEffect(() => {
     if (!connected || wsRef.current) return
 
-    // 환경 변수에서 API URL 가져오기 (ws:// 또는 wss://)
-    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+    /**
+     * ✅ 최종 정답 로직
+     * - REST API 기준 URL(VITE_API_URL)에서 WebSocket URL 생성
+     * - host 누락 문제 해결
+     * - http / https → ws / wss 자동 매핑
+     */
+    const apiBaseUrl =
+      import.meta.env.VITE_API_URL || "http://localhost:8000"
+
     const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws"
-    const wsHost = apiBaseUrl.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
+    const wsHost = apiBaseUrl
+      .replace(/^https?:\/\//, "")
+      .replace(/\/api\/v1$/, "")
+
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
-    console.log("🔌 WebSocket 연결 시도중:", wsUrl)
+
+    console.log("🔌 WebSocket 연결 시도:", wsUrl)
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     // 🟢 연결 성공
     ws.onopen = () => {
-      console.log("🟢 WebSocket 연결 성공!")
+      console.log("🟢 WebSocket 연결 성공")
       onConnectionChange?.(true)
     }
 
@@ -73,24 +86,19 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       try {
         const msg = JSON.parse(event.data)
 
-        // ✅ 수평 캘리브레이션 결과 처리
+        // 수평 캘리브레이션 결과 처리
         if (msg.type === "calibration_result") {
-          console.log("📬 수평 캘리브레이션 결과 수신:", msg)
-          // DroneSimulationCard의 isCalibrating 상태를 리셋하기 위해 이벤트 전송
           window.dispatchEvent(
             new CustomEvent("calibrationComplete", {
               detail: { success: msg.success },
             }),
           )
 
-          if (msg.success) {
-            alert("✅ " + (msg.message || "수평 캘리브레이션이 완료되었습니다"))
-          } else {
-            alert(
-              "❌ " +
-                (msg.message || "수평 캘리브레이션이 작동이 안 되었습니다"),
-            )
-          }
+          alert(
+            msg.success
+              ? `✅ ${msg.message ?? "수평 캘리브레이션 완료"}`
+              : `❌ ${msg.message ?? "수평 캘리브레이션 실패"}`,
+          )
           return
         }
 
@@ -108,33 +116,27 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             roll: msg.roll ?? prev.roll,
             pitch: msg.pitch ?? prev.pitch,
             yaw: msg.yaw ?? prev.yaw,
-            satellites: msg.satellites ?? prev.satellites, // ✅ GPS 위성 개수
+            satellites: msg.satellites ?? prev.satellites,
             timestamp: msg.timestamp ?? new Date().toISOString(),
           }
 
-          // ✅ 디버깅: GPS 위성 개수 로그
-          if (
-            msg.satellites !== undefined &&
-            msg.satellites !== prev.satellites
-          )
-            if (updated.latitude && updated.longitude) {
-              // ✅ 지도 위치 업데이트용 이벤트
-              window.dispatchEvent(
-                new CustomEvent("dronePositionUpdate", {
-                  detail: {
-                    lat: updated.latitude,
-                    lng: updated.longitude,
-                    alt: updated.altitude,
-                    speed: updated.speed,
-                    battery: updated.battery,
-                    yaw: updated.yaw, // ✅ 헤딩 방향 추가
-                    satellites: updated.satellites, // ✅ GPS 위성 개수 추가
-                  },
-                }),
-              )
-            }
+          // 지도 위치 업데이트
+          if (updated.latitude && updated.longitude) {
+            window.dispatchEvent(
+              new CustomEvent("dronePositionUpdate", {
+                detail: {
+                  lat: updated.latitude,
+                  lng: updated.longitude,
+                  alt: updated.altitude,
+                  speed: updated.speed,
+                  battery: updated.battery,
+                  yaw: updated.yaw,
+                  satellites: updated.satellites,
+                },
+              }),
+            )
+          }
 
-          // ✅ React 렌더링 안전하게 처리 (경고 방지)
           queueMicrotask(() => {
             onDataChange?.(updated)
           })
@@ -142,98 +144,85 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           return updated
         })
       } catch (err) {
-        console.error("❌ WebSocket 데이터 파싱 실패:", err, event.data)
+        console.error("❌ WebSocket 메시지 파싱 실패:", err, event.data)
       }
     }
 
     // 🔴 연결 종료
     ws.onclose = (event) => {
       console.warn(
-        "🔴 WebSocket 연결 종료됨 →",
+        "🔴 WebSocket 연결 종료:",
         event.code,
-        event.reason || "No reason",
+        event.reason || "no reason",
       )
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
 
-      // ✅ 연결 종료 시 드론 마커 제거 이벤트 발생
       window.dispatchEvent(
-        new CustomEvent("droneDisconnected", {
-          detail: {},
-        }),
+        new CustomEvent("droneDisconnected", { detail: {} }),
       )
     }
 
-    // ⚠️ 에러 처리
+    // ⚠️ 에러
     ws.onerror = (err) => {
-      console.error("⚠️ WebSocket 에러 발생:", err)
+      console.error("⚠️ WebSocket 에러:", err)
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
 
-      // ✅ 에러 발생 시 드론 마커 제거 이벤트 발생
       window.dispatchEvent(
-        new CustomEvent("droneDisconnected", {
-          detail: {},
-        }),
+        new CustomEvent("droneDisconnected", { detail: {} }),
       )
     }
 
-    // 🧹 cleanup
+    // cleanup
     return () => {
-      console.log("🧹 cleanup → WebSocket 연결 종료 중...")
       if (wsRef.current) {
         try {
           wsRef.current.close()
-        } catch (_) {
-          /* ignore */
-        }
+        } catch {}
         wsRef.current = null
       }
       onConnectionChange?.(false)
     }
   }, [connected])
 
-  // 🔘 연결 버튼 클릭 핸들러
+  // ===============================
+  // 연결 버튼
+  // ===============================
   const handleToggleConnect = () => {
     if (connected) {
-      console.log("🔌 연결 해제 버튼 클릭")
+      console.log("🔌 연결 해제")
       setConnected(false)
-      onConnectionChange?.(false)
+
       if (wsRef.current) {
         try {
-          if (wsRef.current.readyState === WebSocket.OPEN) wsRef.current.close()
-        } catch (_) {
-          /* ignore */
-        }
+          wsRef.current.close()
+        } catch {}
         wsRef.current = null
       }
+
       setQgcData(initialData)
       onDataChange?.(initialData)
 
-      // ✅ 연결 해제 시 드론 마커 제거 이벤트 발생
       window.dispatchEvent(
-        new CustomEvent("droneDisconnected", {
-          detail: {},
-        }),
+        new CustomEvent("droneDisconnected", { detail: {} }),
       )
     } else {
-      console.log("🔌 연결 버튼 클릭 → 연결 시작")
+      console.log("🔌 연결 시작")
       setConnected(true)
     }
   }
 
   return (
     <div className="space-y-6 p-6">
-      <div className="grid grid-cols-1 gap-6">
-        <DroneSimulationCard
-          data={qgcData}
-          connected={connected}
-          onToggleConnect={handleToggleConnect}
-          wsRef={wsRef}
-        />
-      </div>
+      <DroneSimulationCard
+        data={qgcData}
+        connected={connected}
+        onToggleConnect={handleToggleConnect}
+        wsRef={wsRef}
+      />
     </div>
   )
 }

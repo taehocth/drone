@@ -1,6 +1,7 @@
 import secrets
 import warnings
-from typing import Literal
+from typing import Literal, Optional
+
 from pydantic import PostgresDsn, computed_field, model_validator
 from pydantic_core import MultiHostUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,15 +29,12 @@ class Settings(BaseSettings):
     # CORS 설정
     # ----------------------
     BACKEND_CORS_ORIGINS: str = (
-        "http://localhost:5173,http://127.0.0.1:5173,http://api.localhost"
+        "http://localhost:5173,http://127.0.0.1:5173"
     )
 
     @computed_field
     @property
     def all_cors_origins(self) -> list[str]:
-        """
-        ✅ 최종적으로 허용할 CORS Origins (.env 문자열 기반)
-        """
         origins = []
         if self.BACKEND_CORS_ORIGINS:
             raw = self.BACKEND_CORS_ORIGINS.replace(" ", "").split(",")
@@ -52,9 +50,9 @@ class Settings(BaseSettings):
     SENTRY_DSN: str | None = None
 
     # ----------------------
-    # 🔥 Gemini API (추가)
+    # Gemini API
     # ----------------------
-    GEMINI_API_KEY: str | None = None  # <-- 추가됨
+    GEMINI_API_KEY: str | None = None
 
     # ----------------------
     # DB 설정
@@ -78,11 +76,20 @@ class Settings(BaseSettings):
         )
 
     # ----------------------
-    # MAVLink 설정
+    # 🚁 MAVLink 설정 (QGC 스타일)
     # ----------------------
-    MAVLINK_CONNECTION: str = "/dev/ttyUSB0"
+
+    # ✅ [추가] 명시적 단일 연결 (qgc_ws.py 등에서 사용)
+    MAVLINK_CONNECTION: Optional[str] = None
+    # 예:
+    #   COM3
+    #   /dev/ttyUSB0
+    #   udp:127.0.0.1:14550
+
+    MAVLINK_MODE: Literal["auto", "serial", "udp"] = "auto"
     MAVLINK_BAUD: int = 57600
-    MAVLINK_SIMULATION: bool = False
+    MAVLINK_UDP_ENDPOINT: str = "udp:0.0.0.0:14550"
+    MAVLINK_SERIAL_AUTO: bool = True
 
     # ----------------------
     # Naver API
