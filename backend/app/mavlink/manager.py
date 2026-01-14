@@ -5,10 +5,24 @@ import time
 import threading
 from typing import Optional, Dict
 
+import requests
 from pymavlink import mavutil
 from serial.tools import list_ports
 
 from app.core.config import settings
+
+
+# =====================================================
+# 🔴 Render Telemetry PUSH 설정
+# =====================================================
+
+RENDER_TELEMETRY_PUSH_URL = getattr(
+    settings,
+    "RENDER_TELEMETRY_PUSH_URL",
+    "https://drone-5-2qlc.onrender.com/api/v1/qgc/telemetry/push",
+)
+
+PUSH_INTERVAL_SEC = 0.2  # 5Hz
 
 
 # =====================================================
@@ -69,15 +83,31 @@ class VehicleRegistry:
             }
 
     def snapshot(self) -> Dict[int, dict]:
-        """
-        외부(API)에서 조회용으로 사용하는 read-only 스냅샷
-        """
         with self._lock:
             return dict(self._vehicles)
 
+    def latest_flattened(self) -> Optional[dict]:
+        """
+        Cloud / Web 전송용 단일 기체 스냅샷
+        (현재는 첫 번째 활성 기체 기준)
+        """
+        with self._lock:
+            if not self._vehicles:
+                return None
+
+            v = next(iter(self._vehicles.values()))
+
+            return {
+                "sysid": v["sysid"],
+                "heartbeat": v["heartbeat"],
+                "position": v["position"],
+                "battery": v["battery"],
+                "last_seen": v["last_seen"],
+            }
+
 
 # =====================================================
-# ⭐ Singleton Registry (중요)
+# ⭐ Singleton Registry
 # =====================================================
 
 _registry = VehicleRegistry()
@@ -173,6 +203,38 @@ def _discovery_loop() -> None:
         time.sleep(2)
 
 
+# =====================================================
+# 🔴 Render Telemetry PUSH Loop
+# =====================================================
+
+def _push_telemetry_loop() -> None:
+    registry = get_vehicle_registry()
+    last_push = 0.0
+
+    while True:
+        now = time.time()
+
+        if now - last_push >= PUSH_INTERVAL_SEC:
+            payload = registry.latest_flattened()
+            if payload:
+                try:
+                    requests.post(
+                        RENDER_TELEMETRY_PUSH_URL,
+                        json=payload,
+                        timeout=1,
+                    )
+                except Exception as e:
+                    print(f"[Telemetry PUSH] Failed: {e}")
+
+            last_push = now
+
+        time.sleep(0.05)
+
+
+# =====================================================
+# Public Entry Point
+# =====================================================
+
 def start_mavlink_background() -> None:
     global _threads_started
 
@@ -181,4 +243,8 @@ def start_mavlink_background() -> None:
             return
         _threads_started = True
 
+    # MAVLink 포트 탐색 + 수신
     threading.Thread(target=_discovery_loop, daemon=True).start()
+
+    # 🔴 실데이터 → Render PUSH
+    threading.Thread(target=_push_telemetry_loop, daemon=True).start()
