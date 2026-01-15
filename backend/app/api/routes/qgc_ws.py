@@ -1,50 +1,46 @@
+# app/api/routes/qgc_ws.py
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body
 from datetime import datetime, timezone, timedelta
 import asyncio
+import time
 
 router = APIRouter()
 
-# =====================================================
-# 🔴 실데이터 저장소 (PUSH로만 갱신됨)
-# =====================================================
 latest_telemetry: dict | None = None
+latest_telemetry_ts: float | None = None
+
+STALE_THRESHOLD_SEC = 1.0
 
 
-# =====================================================
-# 1️⃣ 실데이터 수신 API (로컬 → Render)
-# =====================================================
 @router.post("/telemetry/push")
 async def push_telemetry(data: dict = Body(...)):
-    """
-    드론이 연결된 로컬 PC에서
-    실제 MAVLink 텔레메트리를 PUSH
-    """
-    global latest_telemetry
+    global latest_telemetry, latest_telemetry_ts
     latest_telemetry = data
+    latest_telemetry_ts = time.time()
     return {"ok": True}
 
 
-# =====================================================
-# 2️⃣ WebSocket (프론트엔드용 중계)
-# =====================================================
 @router.websocket("/ws/qgc")
 async def qgc_ws(websocket: WebSocket):
-    print("🚀 /api/v1/qgc/ws/qgc (Render) 연결")
     await websocket.accept()
 
     try:
         while True:
-            if latest_telemetry is not None:
+            if (
+                latest_telemetry
+                and latest_telemetry_ts
+                and time.time() - latest_telemetry_ts < STALE_THRESHOLD_SEC
+            ):
                 await websocket.send_json({
                     "timestamp": datetime.now(
                         timezone(timedelta(hours=9))
                     ).isoformat(),
                     **latest_telemetry,
                 })
-            await asyncio.sleep(0.1)  # 10Hz
+            # ❌ 기체 없으면 아무 것도 안 보냄
+
+            await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
-        print("🔌 WebSocket 종료")
-
-    except Exception as e:
-        print(f"⚠️ WebSocket 오류: {e}")
+        pass

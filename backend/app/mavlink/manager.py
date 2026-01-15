@@ -12,30 +12,21 @@ from serial.tools import list_ports
 from app.core.config import settings
 
 
-# =====================================================
-# 🔴 Render Telemetry PUSH 설정
-# =====================================================
-
 RENDER_TELEMETRY_PUSH_URL = getattr(
     settings,
     "RENDER_TELEMETRY_PUSH_URL",
     "https://drone-5-2qlc.onrender.com/api/v1/qgc/telemetry/push",
 )
 
-PUSH_INTERVAL_SEC = 0.2  # 5Hz
+PUSH_INTERVAL_SEC = 0.2   # 5Hz
+STALE_THRESHOLD_SEC = 1.0  # 🔴 1초 이상이면 끊긴 기체로 판단
 
 
 # =====================================================
-# Vehicle Registry (Singleton)
+# Vehicle Registry
 # =====================================================
 
 class VehicleRegistry:
-    """
-    QGC VehicleManager와 동일한 개념
-    - SYSID 기준으로 기체 상태 관리
-    - MAVLink 메시지를 누적 상태로 보관
-    """
-
     def __init__(self):
         self._vehicles: Dict[int, dict] = {}
         self._lock = threading.Lock()
@@ -47,6 +38,8 @@ class VehicleRegistry:
                     "sysid": sysid,
                     "heartbeat": None,
                     "position": None,
+                    "velocity": None,
+                    "attitude": None,
                     "battery": None,
                     "last_seen": None,
                 }
@@ -75,6 +68,20 @@ class VehicleRegistry:
                 "alt": msg.relative_alt / 1000,
             }
 
+        elif msg_type == "LOCAL_POSITION_NED":
+            vehicle["velocity"] = {
+                "vx": msg.vx,
+                "vy": msg.vy,
+                "vz": msg.vz,
+            }
+
+        elif msg_type == "ATTITUDE":
+            vehicle["attitude"] = {
+                "roll": msg.roll,
+                "pitch": msg.pitch,
+                "yaw": msg.yaw,
+            }
+
         elif msg_type == "SYS_STATUS":
             vehicle["battery"] = {
                 "voltage": msg.voltage_battery / 1000,
@@ -82,46 +89,37 @@ class VehicleRegistry:
                 "remaining": msg.battery_remaining,
             }
 
-    def snapshot(self) -> Dict[int, dict]:
-        with self._lock:
-            return dict(self._vehicles)
-
     def latest_flattened(self) -> Optional[dict]:
-        """
-        Cloud / Web 전송용 단일 기체 스냅샷
-        (현재는 첫 번째 활성 기체 기준)
-        """
         with self._lock:
             if not self._vehicles:
                 return None
 
             v = next(iter(self._vehicles.values()))
 
+            # 🔴 기체 살아있는지 검증
+            if not v["last_seen"] or time.time() - v["last_seen"] > STALE_THRESHOLD_SEC:
+                return None
+
             return {
                 "sysid": v["sysid"],
                 "heartbeat": v["heartbeat"],
                 "position": v["position"],
+                "velocity": v["velocity"],
+                "attitude": v["attitude"],
                 "battery": v["battery"],
                 "last_seen": v["last_seen"],
             }
 
 
-# =====================================================
-# ⭐ Singleton Registry
-# =====================================================
-
 _registry = VehicleRegistry()
 
 
 def get_vehicle_registry() -> VehicleRegistry:
-    """
-    ❗ 반드시 이 함수로만 registry에 접근
-    """
     return _registry
 
 
 # =====================================================
-# MAVLink Connection Management
+# MAVLink Discovery / Listen
 # =====================================================
 
 _connected_ports: set[str] = set()
@@ -132,15 +130,10 @@ _lock = threading.Lock()
 def _is_candidate_port(device: str) -> bool:
     if sys.platform.startswith("win"):
         return device.upper().startswith("COM")
-
-    return (
-        device.startswith("/dev/ttyUSB")
-        or device.startswith("/dev/ttyACM")
-        or device.startswith("/dev/serial/")
-    )
+    return device.startswith("/dev/ttyUSB") or device.startswith("/dev/ttyACM")
 
 
-def _try_connect_mavlink(device: str, baud: int) -> Optional[mavutil.mavfile]:
+def _try_connect_mavlink(device: str, baud: int):
     try:
         mav = mavutil.mavlink_connection(device, baud=baud, timeout=3)
         mav.wait_heartbeat(timeout=3)
@@ -149,102 +142,56 @@ def _try_connect_mavlink(device: str, baud: int) -> Optional[mavutil.mavfile]:
         return None
 
 
-def _listen_loop(mav: mavutil.mavfile, device: str) -> None:
-    print(f"[MAVLink] Listening on {device}")
-
+def _listen_loop(mav, device: str):
     registry = get_vehicle_registry()
-
     while True:
-        try:
-            msg = mav.recv_match(blocking=True, timeout=3)
-            if msg:
-                registry.handle_message(msg)
-        except Exception as e:
-            print(f"[MAVLink] Disconnected {device}: {e}")
-            with _lock:
-                _connected_ports.discard(device)
-            break
+        msg = mav.recv_match(blocking=True, timeout=3)
+        if msg:
+            registry.handle_message(msg)
 
 
-def _discovery_loop() -> None:
+def _discovery_loop():
     baud = settings.MAVLINK_BAUD
-
     while True:
-        ports = list_ports.comports()
-
-        for p in ports:
+        for p in list_ports.comports():
             device = p.device
-
             if not _is_candidate_port(device):
                 continue
-
-            with _lock:
-                if device in _connected_ports:
-                    continue
+            if device in _connected_ports:
+                continue
 
             mav = _try_connect_mavlink(device, baud)
             if not mav:
                 continue
 
-            with _lock:
-                _connected_ports.add(device)
-
-            print(
-                f"[MAVLink] Connected on {device} "
-                f"(SYSID={mav.target_system}, COMPID={mav.target_component})"
-            )
-
+            _connected_ports.add(device)
             threading.Thread(
                 target=_listen_loop,
                 args=(mav, device),
                 daemon=True,
             ).start()
-
         time.sleep(2)
 
 
-# =====================================================
-# 🔴 Render Telemetry PUSH Loop
-# =====================================================
-
-def _push_telemetry_loop() -> None:
+def _push_telemetry_loop():
     registry = get_vehicle_registry()
     last_push = 0.0
 
     while True:
         now = time.time()
-
         if now - last_push >= PUSH_INTERVAL_SEC:
             payload = registry.latest_flattened()
             if payload:
-                try:
-                    requests.post(
-                        RENDER_TELEMETRY_PUSH_URL,
-                        json=payload,
-                        timeout=1,
-                    )
-                except Exception as e:
-                    print(f"[Telemetry PUSH] Failed: {e}")
-
+                requests.post(RENDER_TELEMETRY_PUSH_URL, json=payload, timeout=1)
             last_push = now
-
         time.sleep(0.05)
 
 
-# =====================================================
-# Public Entry Point
-# =====================================================
-
-def start_mavlink_background() -> None:
+def start_mavlink_background():
     global _threads_started
+    if _threads_started:
+        return
+    _threads_started = True
 
-    with _lock:
-        if _threads_started:
-            return
-        _threads_started = True
-
-    # MAVLink 포트 탐색 + 수신
     threading.Thread(target=_discovery_loop, daemon=True).start()
-
-    # 🔴 실데이터 → Render PUSH
     threading.Thread(target=_push_telemetry_loop, daemon=True).start()
