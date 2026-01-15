@@ -2,19 +2,23 @@
 import React, { useState, useEffect, useRef } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
+/* =========================
+ * Types
+ * ========================= */
+
 export interface DroneData {
-  altitude: number
-  speed: number
+  altitude: number          // meters
+  speed: number             // km/h
   throttle: number
-  battery: number
+  battery: number           // %
   latitude?: number
   longitude?: number
-  roll?: number
-  pitch?: number
-  yaw?: number
-  vx?: number
-  vy?: number
-  vz?: number
+  roll?: number             // degrees
+  pitch?: number            // degrees
+  yaw?: number              // degrees
+  vx?: number               // m/s
+  vy?: number               // m/s
+  vz?: number               // m/s
   timestamp: string
   satellites?: number
 }
@@ -24,8 +28,6 @@ const initialData: DroneData = {
   throttle: 0,
   speed: 0,
   battery: 0,
-  latitude: 0,
-  longitude: 0,
   roll: 0,
   pitch: 0,
   yaw: 0,
@@ -34,6 +36,17 @@ const initialData: DroneData = {
   vz: 0,
   timestamp: new Date().toISOString(),
 }
+
+/* =========================
+ * Utils
+ * ========================= */
+
+const radToDeg = (v?: number) =>
+  typeof v === "number" ? (v * 180) / Math.PI : undefined
+
+/* =========================
+ * Component
+ * ========================= */
 
 interface DroneSimulationProps {
   onConnectionChange?: (connected: boolean) => void
@@ -48,9 +61,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
-  // ===============================
-  // WebSocket 연결 관리
-  // ===============================
+  /* =========================
+   * WebSocket 연결
+   * ========================= */
+
   useEffect(() => {
     if (!connected || wsRef.current) return
 
@@ -64,67 +78,65 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
 
-    console.log("🔌 WebSocket 연결 시도:", wsUrl)
+    console.log("🔌 WebSocket 연결:", wsUrl)
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log("🟢 WebSocket 연결 성공")
       onConnectionChange?.(true)
     }
 
-    // ===============================
-    // 📡 메시지 수신 (최종 매핑 로직)
-    // ===============================
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
 
-        // 🔍 디버그용 (문제 생기면 바로 확인 가능)
-        console.log("📡 WS RAW DATA:", msg)
-
-        if (msg.status === "connected") return
-
         setQgcData((prev) => {
+          /* -------- Velocity -------- */
+          const vx = typeof msg.velocity?.vx === "number" ? msg.velocity.vx : prev.vx ?? 0
+          const vy = typeof msg.velocity?.vy === "number" ? msg.velocity.vy : prev.vy ?? 0
+          const vz = typeof msg.velocity?.vz === "number" ? msg.velocity.vz : prev.vz ?? 0
+
+          // m/s → km/h (아주 작은 값도 유지)
+          const speedKmh = Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
+
           const updated: DroneData = {
             ...prev,
 
-            // Render PUSH 구조 대응
-            latitude: msg.position?.lat ?? msg.latitude ?? prev.latitude,
-            longitude: msg.position?.lon ?? msg.longitude ?? prev.longitude,
-            altitude: msg.position?.alt ?? msg.altitude ?? prev.altitude,
+            /* Position */
+            latitude:
+              typeof msg.position?.lat === "number"
+                ? msg.position.lat
+                : prev.latitude,
 
+            longitude:
+              typeof msg.position?.lon === "number"
+                ? msg.position.lon
+                : prev.longitude,
+
+            altitude:
+              typeof msg.position?.alt === "number"
+                ? Number(msg.position.alt.toFixed(2))
+                : prev.altitude,
+
+            /* Battery */
             battery:
-              msg.battery?.remaining ??
-              msg.battery ??
-              prev.battery,
+              typeof msg.battery?.remaining === "number"
+                ? msg.battery.remaining
+                : prev.battery,
 
-            speed: msg.speed ?? prev.speed,
-            throttle: msg.throttle ?? prev.throttle,
-            roll: msg.roll ?? prev.roll,
-            pitch: msg.pitch ?? prev.pitch,
-            yaw: msg.yaw ?? prev.yaw,
-            satellites: msg.satellites ?? prev.satellites,
+            /* Attitude (deg) */
+            roll: radToDeg(msg.attitude?.roll) ?? prev.roll,
+            pitch: radToDeg(msg.attitude?.pitch) ?? prev.pitch,
+            yaw: radToDeg(msg.attitude?.yaw) ?? prev.yaw,
 
-            timestamp: msg.timestamp ?? new Date().toISOString(),
-          }
+            /* Velocity */
+            vx,
+            vy,
+            vz,
+            speed: Number(speedKmh.toFixed(3)),
 
-          // 지도 업데이트 이벤트
-          if (updated.latitude && updated.longitude) {
-            window.dispatchEvent(
-              new CustomEvent("dronePositionUpdate", {
-                detail: {
-                  lat: updated.latitude,
-                  lng: updated.longitude,
-                  alt: updated.altitude,
-                  speed: updated.speed,
-                  battery: updated.battery,
-                  yaw: updated.yaw,
-                  satellites: updated.satellites,
-                },
-              }),
-            )
+            timestamp: msg.timestamp ?? prev.timestamp,
           }
 
           queueMicrotask(() => {
@@ -134,70 +146,41 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           return updated
         })
       } catch (err) {
-        console.error("❌ WebSocket 메시지 파싱 실패:", err, event.data)
+        console.error("❌ WS 파싱 실패:", err)
       }
     }
 
-    ws.onclose = (event) => {
-      console.warn(
-        "🔴 WebSocket 연결 종료:",
-        event.code,
-        event.reason || "no reason",
-      )
+    ws.onclose = () => {
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
-
-      window.dispatchEvent(
-        new CustomEvent("droneDisconnected", { detail: {} }),
-      )
     }
 
-    ws.onerror = (err) => {
-      console.error("⚠️ WebSocket 에러:", err)
+    ws.onerror = () => {
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
-
-      window.dispatchEvent(
-        new CustomEvent("droneDisconnected", { detail: {} }),
-      )
     }
 
     return () => {
-      if (wsRef.current) {
-        try {
-          wsRef.current.close()
-        } catch {}
-        wsRef.current = null
-      }
+      wsRef.current?.close()
+      wsRef.current = null
       onConnectionChange?.(false)
     }
   }, [connected])
 
-  // ===============================
-  // 연결 버튼
-  // ===============================
+  /* =========================
+   * 연결 버튼
+   * ========================= */
+
   const handleToggleConnect = () => {
     if (connected) {
-      console.log("🔌 연결 해제")
+      wsRef.current?.close()
+      wsRef.current = null
       setConnected(false)
-
-      if (wsRef.current) {
-        try {
-          wsRef.current.close()
-        } catch {}
-        wsRef.current = null
-      }
-
       setQgcData(initialData)
       onDataChange?.(initialData)
-
-      window.dispatchEvent(
-        new CustomEvent("droneDisconnected", { detail: {} }),
-      )
     } else {
-      console.log("🔌 연결 시작")
       setConnected(true)
     }
   }

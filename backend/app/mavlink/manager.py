@@ -1,16 +1,18 @@
 # app/mavlink/manager.py
 
-import sys
 import time
 import threading
 from typing import Optional, Dict
 
 import requests
 from pymavlink import mavutil
-from serial.tools import list_ports
 
 from app.core.config import settings
 
+
+# =====================================================
+# Render Telemetry PUSH 설정
+# =====================================================
 
 RENDER_TELEMETRY_PUSH_URL = getattr(
     settings,
@@ -18,8 +20,12 @@ RENDER_TELEMETRY_PUSH_URL = getattr(
     "https://drone-5-2qlc.onrender.com/api/v1/qgc/telemetry/push",
 )
 
-PUSH_INTERVAL_SEC = 0.2   # 5Hz
-STALE_THRESHOLD_SEC = 1.0  # 🔴 1초 이상이면 끊긴 기체로 판단
+PUSH_INTERVAL_SEC = 0.2      # 5Hz
+STALE_THRESHOLD_SEC = 1.0    # 1초 이상이면 끊긴 기체로 판단
+
+# 🔴 고정 MAVLink 포트 (Windows)
+MAVLINK_PORT = getattr(settings, "MAVLINK_PORT", "COM5")
+MAVLINK_BAUD = getattr(settings, "MAVLINK_BAUD", 115200)
 
 
 # =====================================================
@@ -37,10 +43,11 @@ class VehicleRegistry:
                 self._vehicles[sysid] = {
                     "sysid": sysid,
                     "heartbeat": None,
-                    "position": None,
-                    "velocity": None,
-                    "attitude": None,
+                    "position": None,     # lat/lon/alt (최종 위치)
+                    "velocity": None,     # NED velocity
+                    "attitude": None,     # roll/pitch/yaw
                     "battery": None,
+                    "gps": None,          # 🔴 GPS_RAW_INT 상태
                     "last_seen": None,
                 }
             return self._vehicles[sysid]
@@ -52,6 +59,9 @@ class VehicleRegistry:
 
         msg_type = msg.get_type()
 
+        # -------------------------
+        # HEARTBEAT
+        # -------------------------
         if msg_type == "HEARTBEAT":
             vehicle["heartbeat"] = {
                 "type": msg.type,
@@ -61,6 +71,9 @@ class VehicleRegistry:
                 "system_status": msg.system_status,
             }
 
+        # -------------------------
+        # GLOBAL POSITION (GPS + EKF 완료 후)
+        # -------------------------
         elif msg_type == "GLOBAL_POSITION_INT":
             vehicle["position"] = {
                 "lat": msg.lat / 1e7,
@@ -68,6 +81,29 @@ class VehicleRegistry:
                 "alt": msg.relative_alt / 1000,
             }
 
+        # -------------------------
+        # GPS RAW (GPS FIX 단계)
+        # -------------------------
+        elif msg_type == "GPS_RAW_INT":
+            vehicle["gps"] = {
+                "fix_type": msg.fix_type,
+                "satellites": msg.satellites_visible,
+                "lat": msg.lat / 1e7 if msg.lat != 0 else None,
+                "lon": msg.lon / 1e7 if msg.lon != 0 else None,
+                "alt": msg.alt / 1000 if msg.alt != 0 else None,
+            }
+
+            # 🔴 GLOBAL_POSITION_INT가 아직 없을 때 fallback
+            if vehicle["position"] is None and msg.fix_type >= 3:
+                vehicle["position"] = {
+                    "lat": msg.lat / 1e7,
+                    "lon": msg.lon / 1e7,
+                    "alt": msg.alt / 1000,
+                }
+
+        # -------------------------
+        # LOCAL VELOCITY
+        # -------------------------
         elif msg_type == "LOCAL_POSITION_NED":
             vehicle["velocity"] = {
                 "vx": msg.vx,
@@ -75,6 +111,9 @@ class VehicleRegistry:
                 "vz": msg.vz,
             }
 
+        # -------------------------
+        # ATTITUDE (R/P/Y)
+        # -------------------------
         elif msg_type == "ATTITUDE":
             vehicle["attitude"] = {
                 "roll": msg.roll,
@@ -82,12 +121,26 @@ class VehicleRegistry:
                 "yaw": msg.yaw,
             }
 
+        # -------------------------
+        # BATTERY
+        # -------------------------
         elif msg_type == "SYS_STATUS":
             vehicle["battery"] = {
                 "voltage": msg.voltage_battery / 1000,
                 "current": msg.current_battery / 100,
                 "remaining": msg.battery_remaining,
             }
+
+        # -------------------------
+        # ALTITUDE fallback (실내 / 무GPS)
+        # -------------------------
+        elif msg_type == "ALTITUDE":
+            if vehicle["position"] is None:
+                vehicle["position"] = {
+                    "lat": None,
+                    "lon": None,
+                    "alt": msg.altitude_relative,
+                }
 
     def latest_flattened(self) -> Optional[dict]:
         with self._lock:
@@ -96,7 +149,7 @@ class VehicleRegistry:
 
             v = next(iter(self._vehicles.values()))
 
-            # 🔴 기체 살아있는지 검증
+            # 🔴 최근에 살아있는 기체만 유효
             if not v["last_seen"] or time.time() - v["last_seen"] > STALE_THRESHOLD_SEC:
                 return None
 
@@ -107,6 +160,7 @@ class VehicleRegistry:
                 "velocity": v["velocity"],
                 "attitude": v["attitude"],
                 "battery": v["battery"],
+                "gps": v["gps"],          # 🔴 프론트에서 GPS 상태 표시 가능
                 "last_seen": v["last_seen"],
             }
 
@@ -119,58 +173,61 @@ def get_vehicle_registry() -> VehicleRegistry:
 
 
 # =====================================================
-# MAVLink Discovery / Listen
+# MAVLink Listen / PUSH
 # =====================================================
 
-_connected_ports: set[str] = set()
-_threads_started = False
+_connected = False
 _lock = threading.Lock()
 
 
-def _is_candidate_port(device: str) -> bool:
-    if sys.platform.startswith("win"):
-        return device.upper().startswith("COM")
-    return device.startswith("/dev/ttyUSB") or device.startswith("/dev/ttyACM")
-
-
-def _try_connect_mavlink(device: str, baud: int):
-    try:
-        mav = mavutil.mavlink_connection(device, baud=baud, timeout=3)
-        mav.wait_heartbeat(timeout=3)
-        return mav
-    except Exception:
-        return None
-
-
-def _listen_loop(mav, device: str):
+def _listen_loop(mav: mavutil.mavfile):
+    print(f"[MAVLink] Listening on {MAVLINK_PORT}")
     registry = get_vehicle_registry()
+
     while True:
-        msg = mav.recv_match(blocking=True, timeout=3)
-        if msg:
-            registry.handle_message(msg)
+        try:
+            msg = mav.recv_match(blocking=True, timeout=3)
+            if msg:
+                registry.handle_message(msg)
+        except Exception as e:
+            print(f"[MAVLink] Disconnected: {e}")
+            break
 
 
-def _discovery_loop():
-    baud = settings.MAVLINK_BAUD
+def _mavlink_connect_loop():
+    global _connected
+
     while True:
-        for p in list_ports.comports():
-            device = p.device
-            if not _is_candidate_port(device):
-                continue
-            if device in _connected_ports:
+        with _lock:
+            if _connected:
+                time.sleep(2)
                 continue
 
-            mav = _try_connect_mavlink(device, baud)
-            if not mav:
-                continue
+        try:
+            mav = mavutil.mavlink_connection(
+                MAVLINK_PORT,
+                baud=MAVLINK_BAUD,
+                timeout=5,
+            )
+            mav.wait_heartbeat(timeout=5)
 
-            _connected_ports.add(device)
+            with _lock:
+                _connected = True
+
+            print(
+                f"[MAVLink] Connected on {MAVLINK_PORT} "
+                f"(SYSID={mav.target_system}, COMPID={mav.target_component})"
+            )
+
             threading.Thread(
                 target=_listen_loop,
-                args=(mav, device),
+                args=(mav,),
                 daemon=True,
             ).start()
-        time.sleep(2)
+
+        except Exception as e:
+            print(f"[MAVLink] Connection failed on {MAVLINK_PORT}: {e}")
+            time.sleep(2)
 
 
 def _push_telemetry_loop():
@@ -179,12 +236,29 @@ def _push_telemetry_loop():
 
     while True:
         now = time.time()
+
         if now - last_push >= PUSH_INTERVAL_SEC:
             payload = registry.latest_flattened()
             if payload:
-                requests.post(RENDER_TELEMETRY_PUSH_URL, json=payload, timeout=1)
+                try:
+                    requests.post(
+                        RENDER_TELEMETRY_PUSH_URL,
+                        json=payload,
+                        timeout=1,
+                    )
+                except Exception as e:
+                    print(f"[Telemetry PUSH] Failed: {e}")
+
             last_push = now
+
         time.sleep(0.05)
+
+
+# =====================================================
+# Public Entry Point
+# =====================================================
+
+_threads_started = False
 
 
 def start_mavlink_background():
@@ -193,5 +267,5 @@ def start_mavlink_background():
         return
     _threads_started = True
 
-    threading.Thread(target=_discovery_loop, daemon=True).start()
+    threading.Thread(target=_mavlink_connect_loop, daemon=True).start()
     threading.Thread(target=_push_telemetry_loop, daemon=True).start()
