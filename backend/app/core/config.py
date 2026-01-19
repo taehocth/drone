@@ -23,9 +23,10 @@ class Settings(BaseSettings):
     # ==================================================
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Drone Management System"
+    ENVIRONMENT: Literal["local", "staging", "production"] = "local"
+
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
-    ENVIRONMENT: Literal["local", "staging", "production"] = "local"
 
     FRONTEND_HOST: str = "http://localhost:5173"
 
@@ -69,40 +70,38 @@ class Settings(BaseSettings):
         )
 
     # ==================================================
-    # 🚁 MAVLink 설정 (가장 중요)
+    # 🚁 MAVLink 설정 (핵심)
     # ==================================================
 
     # 🔴 MAVLink 백그라운드 스레드 활성화 여부
-    # - Render: false
+    # - Render Backend: false
     # - Local Telemetry Agent: true
     MAVLINK_ENABLED: bool = False
 
-    # 연결 방식
     # serial | udp
     MAVLINK_MODE: Literal["serial", "udp"] = "udp"
 
     # 명시적 연결 문자열 (있으면 최우선)
-    # 예:
-    #   udp:127.0.0.1:14550
-    #   COM5
+    # 예: udp:127.0.0.1:14550 / COM5
     MAVLINK_CONNECTION: Optional[str] = None
 
-    # UDP 기본 엔드포인트 (QGC / SITL / Telemetry Radio)
+    # UDP 기본 엔드포인트 (QGC / Telemetry Radio / SITL)
     MAVLINK_UDP_ENDPOINT: str = "udp:0.0.0.0:14550"
 
     # Serial Baudrate
     MAVLINK_BAUD: int = 57600
 
     # ==================================================
-    # 📡 Telemetry PUSH (Local Agent → Render Backend)
+    # 📡 Telemetry PUSH (Local → Render)
     # ==================================================
-    # 🔴 이 필드가 없어서 Render가 크래시 났었음
+    # ⚠️ 반드시 필드 선언 필요 (Render 크래시 원인)
+    # Render에서는 Environment Variable로 override 권장
     RENDER_TELEMETRY_PUSH_URL: str = (
         "https://drone-5-2qlc.onrender.com/api/v1/qgc/telemetry/push"
     )
 
     # ==================================================
-    # 기타 외부 API
+    # 외부 API
     # ==================================================
     GEMINI_API_KEY: str | None = None
     NAVER_CLIENT_ID: str | None = None
