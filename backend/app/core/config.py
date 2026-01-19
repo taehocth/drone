@@ -9,7 +9,9 @@ from typing_extensions import Self
 
 
 class Settings(BaseSettings):
-    # ✅ .env 자동 로드
+    # ----------------------
+    # .env 자동 로드
+    # ----------------------
     model_config = SettingsConfigDict(
         env_file=".env",
         env_ignore_empty=True,
@@ -20,10 +22,12 @@ class Settings(BaseSettings):
     # 기본 서비스 설정
     # ----------------------
     API_V1_STR: str = "/api/v1"
+    PROJECT_NAME: str = "Drone Management System"
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
-    FRONTEND_HOST: str = "http://localhost:5173"
     ENVIRONMENT: Literal["local", "staging", "production"] = "local"
+
+    FRONTEND_HOST: str = "http://localhost:5173"
 
     # ----------------------
     # CORS 설정
@@ -42,17 +46,6 @@ class Settings(BaseSettings):
         if self.FRONTEND_HOST not in origins:
             origins.append(self.FRONTEND_HOST)
         return origins
-
-    # ----------------------
-    # 프로젝트 / 모니터링
-    # ----------------------
-    PROJECT_NAME: str = "Drone Management System"
-    SENTRY_DSN: str | None = None
-
-    # ----------------------
-    # Gemini API
-    # ----------------------
-    GEMINI_API_KEY: str | None = None
 
     # ----------------------
     # DB 설정
@@ -75,31 +68,35 @@ class Settings(BaseSettings):
             path=self.POSTGRES_DB,
         )
 
-    # ----------------------
-    # 🚁 MAVLink 설정 (QGC 스타일)
-    # ----------------------
+    # ==================================================
+    # 🚁 MAVLink 설정 (★ 가장 중요)
+    # ==================================================
 
-    # ✅ [추가] 명시적 단일 연결 (qgc_ws.py 등에서 사용)
+    # 🔴 실제 MAVLink 스레드 ON/OFF
+    MAVLINK_ENABLED: bool = False
+
+    # 연결 방식
+    # serial | udp
+    MAVLINK_MODE: Literal["serial", "udp"] = "udp"
+
+    # 명시적 연결 문자열 (우선)
+    # 예: udp:127.0.0.1:14550
+    #     COM5
     MAVLINK_CONNECTION: Optional[str] = None
-    # 예:
-    #   COM3
-    #   /dev/ttyUSB0
-    #   udp:127.0.0.1:14550
 
-    MAVLINK_MODE: Literal["auto", "serial", "udp"] = "auto"
-    MAVLINK_BAUD: int = 57600
+    # UDP 기본 엔드포인트 (QGC 연동용)
     MAVLINK_UDP_ENDPOINT: str = "udp:0.0.0.0:14550"
-    MAVLINK_SERIAL_AUTO: bool = True
+
+    # Serial 설정
+    MAVLINK_BAUD: int = 57600
 
     # ----------------------
-    # Naver API
+    # 기타
     # ----------------------
+    GEMINI_API_KEY: str | None = None
     NAVER_CLIENT_ID: str | None = None
     NAVER_CLIENT_SECRET: str | None = None
 
-    # ----------------------
-    # 초기 슈퍼유저
-    # ----------------------
     FIRST_SUPERUSER: str = "admin@example.com"
     FIRST_SUPERUSER_PASSWORD: str = "changethis"
 
@@ -110,7 +107,7 @@ class Settings(BaseSettings):
         if value == "changethis":
             message = (
                 f'The value of {var_name} is "changethis", '
-                "for security, please change it, at least for deployments."
+                "for security, please change it."
             )
             if self.ENVIRONMENT == "local":
                 warnings.warn(message, stacklevel=1)
