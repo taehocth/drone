@@ -9,19 +9,22 @@ import {
   Activity,
   Zap,
 } from "lucide-react"
-import React, { useEffect } from "react"
+import React, { useEffect, MutableRefObject } from "react"
 import type { DroneData } from "./DroneSimulation"
 
 interface Props {
   data: DroneData
   connected: boolean
   onToggleConnect: () => void
+  // 🔴 중요: 부모에서 내려주는 wsRef 타입 선언 (사용하지 않아도 됨)
+  wsRef?: MutableRefObject<WebSocket | null>
 }
 
 export const DroneSimulationCard: React.FC<Props> = ({
   data,
   connected,
   onToggleConnect,
+  wsRef, // ← 현재는 사용 안 하지만 Props 일치를 위해 반드시 필요
 }) => {
   /* -----------------------------------------
    * GPS → 지도 이벤트 (GPS 있을 때만)
@@ -92,8 +95,8 @@ export const DroneSimulationCard: React.FC<Props> = ({
                   data.battery > 20
                     ? "text-green-500"
                     : data.battery > 10
-                      ? "text-yellow-500"
-                      : "text-red-500"
+                    ? "text-yellow-500"
+                    : "text-red-500"
                 }`}
               />
               {data.battery.toFixed(0)} %

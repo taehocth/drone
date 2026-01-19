@@ -7,18 +7,18 @@ import { DroneSimulationCard } from "./DroneSimulationCard"
  * ========================= */
 
 export interface DroneData {
-  altitude: number          // meters
-  speed: number             // km/h
+  altitude: number
+  speed: number
   throttle: number
-  battery: number           // %
+  battery: number
   latitude?: number
   longitude?: number
-  roll?: number             // degrees
-  pitch?: number            // degrees
-  yaw?: number              // degrees
-  vx?: number               // m/s
-  vy?: number               // m/s
-  vz?: number               // m/s
+  roll?: number
+  pitch?: number
+  yaw?: number
+  vx?: number
+  vy?: number
+  vz?: number
   timestamp: string
   satellites?: number
 }
@@ -78,8 +78,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
 
-    console.log("🔌 WebSocket 연결:", wsUrl)
-
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
@@ -92,51 +90,26 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         const msg = JSON.parse(event.data)
 
         setQgcData((prev) => {
-          /* -------- Velocity -------- */
           const vx = typeof msg.velocity?.vx === "number" ? msg.velocity.vx : prev.vx ?? 0
           const vy = typeof msg.velocity?.vy === "number" ? msg.velocity.vy : prev.vy ?? 0
           const vz = typeof msg.velocity?.vz === "number" ? msg.velocity.vz : prev.vz ?? 0
 
-          // m/s → km/h (아주 작은 값도 유지)
           const speedKmh = Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
 
           const updated: DroneData = {
             ...prev,
-
-            /* Position */
-            latitude:
-              typeof msg.position?.lat === "number"
-                ? msg.position.lat
-                : prev.latitude,
-
-            longitude:
-              typeof msg.position?.lon === "number"
-                ? msg.position.lon
-                : prev.longitude,
-
-            altitude:
-              typeof msg.position?.alt === "number"
-                ? Number(msg.position.alt.toFixed(2))
-                : prev.altitude,
-
-            /* Battery */
-            battery:
-              typeof msg.battery?.remaining === "number"
-                ? msg.battery.remaining
-                : prev.battery,
-
-            /* Attitude (deg) */
+            latitude: typeof msg.position?.lat === "number" ? msg.position.lat : prev.latitude,
+            longitude: typeof msg.position?.lon === "number" ? msg.position.lon : prev.longitude,
+            altitude: typeof msg.position?.alt === "number" ? msg.position.alt : prev.altitude,
+            battery: typeof msg.battery?.remaining === "number" ? msg.battery.remaining : prev.battery,
             roll: radToDeg(msg.attitude?.roll) ?? prev.roll,
             pitch: radToDeg(msg.attitude?.pitch) ?? prev.pitch,
             yaw: radToDeg(msg.attitude?.yaw) ?? prev.yaw,
-
-            /* Velocity */
             vx,
             vy,
             vz,
             speed: Number(speedKmh.toFixed(3)),
-
-            timestamp: msg.timestamp ?? prev.timestamp,
+            timestamp: msg.server_ts ?? prev.timestamp,
           }
 
           queueMicrotask(() => {
@@ -146,17 +119,11 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           return updated
         })
       } catch (err) {
-        console.error("❌ WS 파싱 실패:", err)
+        console.error("WS parse error:", err)
       }
     }
 
-    ws.onclose = () => {
-      setConnected(false)
-      onConnectionChange?.(false)
-      wsRef.current = null
-    }
-
-    ws.onerror = () => {
+    ws.onclose = ws.onerror = () => {
       setConnected(false)
       onConnectionChange?.(false)
       wsRef.current = null
@@ -168,10 +135,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       onConnectionChange?.(false)
     }
   }, [connected])
-
-  /* =========================
-   * 연결 버튼
-   * ========================= */
 
   const handleToggleConnect = () => {
     if (connected) {
