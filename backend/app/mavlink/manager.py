@@ -263,8 +263,15 @@ _threads_started = False
 
 def start_mavlink_background():
     global _threads_started
+
+    # 🔴 Render 보호 장치 (가장 중요)
+    if not getattr(settings, "MAVLINK_ENABLED", False):
+        print("[MAVLink] Disabled (Render mode)")
+        return
+
     if _threads_started:
         return
+
     _threads_started = True
 
     threading.Thread(target=_mavlink_connect_loop, daemon=True).start()
