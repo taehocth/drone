@@ -5,49 +5,54 @@ from datetime import datetime, timezone, timedelta
 import asyncio
 import time
 
+from app.mavlink.manager import get_vehicle_registry
+
 router = APIRouter()
-
-# =====================================================
-# 최신 텔레메트리 저장소
-# =====================================================
-
-latest_telemetry: dict | None = None
-latest_telemetry_ts: float | None = None
 
 STALE_THRESHOLD_SEC = 1.0
 
 
 # =====================================================
-# 1️⃣ 로컬 → 서버 텔레메트리 PUSH
+# 1️⃣ Local Agent → Render Backend Telemetry PUSH
 # =====================================================
 
 @router.post("/telemetry/push")
 async def push_telemetry(data: dict = Body(...)):
-    global latest_telemetry, latest_telemetry_ts
-    latest_telemetry = data
-    latest_telemetry_ts = time.time()
+    """
+    Local Telemetry Agent가 실제 기체 데이터를 PUSH
+    """
+    registry = get_vehicle_registry()
+
+    sysid = data.get("sysid")
+    if sysid is None:
+        return {"ok": False, "error": "missing sysid"}
+
+    # 🔴 registry에 직접 저장 (단일 진실 소스)
+    registry._vehicles[sysid] = {
+        **data,
+        "last_seen": time.time(),
+    }
+
     return {"ok": True}
 
 
 # =====================================================
-# 2️⃣ WebSocket (프론트엔드 중계)
+# 2️⃣ WebSocket → Frontend (QGC-style stream)
 # =====================================================
 
 @router.websocket("/ws/qgc")
 async def qgc_ws(websocket: WebSocket):
     await websocket.accept()
 
+    registry = get_vehicle_registry()
+
     try:
         while True:
-            now = time.time()
+            payload = registry.latest_flattened()
 
-            if (
-                latest_telemetry
-                and latest_telemetry_ts
-                and now - latest_telemetry_ts < STALE_THRESHOLD_SEC
-            ):
-                # 🔴 기존 timestamp 덮어쓰기 문제 해결
-                payload = dict(latest_telemetry)
+            if payload:
+                # 🔴 서버 기준 타임스탬프 추가
+                payload = dict(payload)
                 payload["server_ts"] = datetime.now(
                     timezone(timedelta(hours=9))
                 ).isoformat()
@@ -55,7 +60,6 @@ async def qgc_ws(websocket: WebSocket):
                 await websocket.send_json(payload)
 
             else:
-                # 🔴 데이터 없을 때도 상태 패킷 전송 (React 리렌더 유도)
                 await websocket.send_json({
                     "status": "waiting",
                     "server_ts": datetime.now(
