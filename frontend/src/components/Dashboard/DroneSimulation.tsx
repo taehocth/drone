@@ -1,4 +1,6 @@
-import React, { useState, useRef } from "react"
+// frontend/src/components/Dashboard/DroneSimulation.tsx
+
+import React, { useState, useRef, useEffect } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
 /* =========================
@@ -23,13 +25,6 @@ export interface DroneData {
   sysid?: number
 }
 
-interface DroneSimulationProps {
-  onConnectionChange?: (connected: boolean) => void
-  onDataChange?: (data: DroneData | null) => void
-}
-
-const initialData: DroneData = {}
-
 /* =========================
  * Utils
  * ========================= */
@@ -41,13 +36,21 @@ const radToDeg = (v?: number) =>
  * Component
  * ========================= */
 
-const DroneSimulation: React.FC<DroneSimulationProps> = ({
-  onConnectionChange,
-  onDataChange,
-}) => {
-  const [qgcData, setQgcData] = useState<DroneData>(initialData)
+const DroneSimulation: React.FC = () => {
+  /**
+   * renderData
+   * - 실제로 화면에 그릴 데이터
+   * - requestAnimationFrame 기준으로만 갱신됨
+   */
+  const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
+
+  /**
+   * refs
+   */
   const wsRef = useRef<WebSocket | null>(null)
+  const latestDataRef = useRef<DroneData | null>(null)
+  const rafRef = useRef<number | null>(null)
 
   /* =========================
    * Connect / Disconnect
@@ -69,46 +72,46 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
 
-      // 🔹 실제 연결 판단 기준
-      if (typeof msg.sysid === "number") {
-        setConnected(true)
-        onConnectionChange?.(true)
+      // 🔴 waiting 패킷은 무시
+      if (typeof msg.sysid !== "number") return
+
+      // 🔹 실제 연결 상태
+      setConnected(true)
+
+      const vx = msg.velocity?.vx
+      const vy = msg.velocity?.vy
+      const vz = msg.velocity?.vz
+
+      const speed =
+        typeof vx === "number" &&
+        typeof vy === "number" &&
+        typeof vz === "number"
+          ? Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
+          : undefined
+
+      /**
+       * 🔴 최신 데이터는 ref에만 저장
+       * - 여기서는 setState ❌
+       */
+      latestDataRef.current = {
+        sysid: msg.sysid,
+        latitude: msg.position?.lat,
+        longitude: msg.position?.lon,
+        altitude: msg.position?.alt,
+        battery: msg.battery?.remaining,
+        roll: radToDeg(msg.attitude?.roll),
+        pitch: radToDeg(msg.attitude?.pitch),
+        yaw: radToDeg(msg.attitude?.yaw),
+        vx,
+        vy,
+        vz,
+        speed,
+        timestamp: msg.server_ts,
       }
-
-      setQgcData((prev) => {
-        const vx = msg.velocity?.vx ?? prev.vx
-        const vy = msg.velocity?.vy ?? prev.vy
-        const vz = msg.velocity?.vz ?? prev.vz
-
-        const speed =
-          vx !== undefined && vy !== undefined && vz !== undefined
-            ? Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
-            : prev.speed
-
-        const next: DroneData = {
-          sysid: msg.sysid ?? prev.sysid,
-          latitude: msg.position?.lat ?? prev.latitude,
-          longitude: msg.position?.lon ?? prev.longitude,
-          altitude: msg.position?.alt ?? prev.altitude,
-          battery: msg.battery?.remaining ?? prev.battery,
-          roll: radToDeg(msg.attitude?.roll) ?? prev.roll,
-          pitch: radToDeg(msg.attitude?.pitch) ?? prev.pitch,
-          yaw: radToDeg(msg.attitude?.yaw) ?? prev.yaw,
-          vx,
-          vy,
-          vz,
-          speed,
-          timestamp: msg.server_ts ?? prev.timestamp,
-        }
-
-        onDataChange?.(next)
-        return next
-      })
     }
 
     ws.onclose = ws.onerror = () => {
       setConnected(false)
-      onConnectionChange?.(false)
       wsRef.current = null
     }
   }
@@ -117,8 +120,32 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     wsRef.current?.close()
     wsRef.current = null
     setConnected(false)
-    onConnectionChange?.(false)
   }
+
+  /* =========================
+   * Render Loop (RAF)
+   * ========================= */
+
+  useEffect(() => {
+    const loop = () => {
+      if (latestDataRef.current) {
+        /**
+         * 🔴 화면 반영은 초당 최대 60회
+         * 네트워크 수신 속도와 체감상 거의 동일
+         */
+        setRenderData(latestDataRef.current)
+      }
+      rafRef.current = requestAnimationFrame(loop)
+    }
+
+    rafRef.current = requestAnimationFrame(loop)
+
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+      }
+    }
+  }, [])
 
   /* =========================
    * Render
@@ -127,7 +154,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   return (
     <div className="space-y-6 p-6">
       <DroneSimulationCard
-        data={qgcData}
+        data={renderData}
         connected={connected}
         onConnect={connect}
         onDisconnect={disconnect}
