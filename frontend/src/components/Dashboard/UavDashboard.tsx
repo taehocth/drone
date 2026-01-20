@@ -195,10 +195,7 @@ export function UavDashboard() {
               </p>
             </div>
           </div>
-          <DroneSimulation
-            onConnectionChange={setDroneConnected}
-            onDataChange={setDroneData}
-          />
+          <DroneSimulation />
         </div>
 
         <div className="space-y-4">

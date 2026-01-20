@@ -1,4 +1,3 @@
-// frontend/src/components/Dashboard/DroneSimulation.tsx
 import React, { useState, useEffect, useRef } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
@@ -24,6 +23,12 @@ export interface DroneData {
   sysid?: number
 }
 
+/** 🔹 추가: 외부에서 받을 수 있는 Props */
+interface DroneSimulationProps {
+  onConnectionChange?: (connected: boolean) => void
+  onDataChange?: (data: DroneData | null) => void
+}
+
 const initialData: DroneData = {}
 
 /* =========================
@@ -37,7 +42,10 @@ const radToDeg = (v?: number) =>
  * Component
  * ========================= */
 
-const DroneSimulation: React.FC = () => {
+const DroneSimulation: React.FC<DroneSimulationProps> = ({
+  onConnectionChange,
+  onDataChange,
+}) => {
   const [qgcData, setQgcData] = useState<DroneData>(initialData)
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
@@ -59,9 +67,9 @@ const DroneSimulation: React.FC = () => {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
 
-      // 🔴 진짜 연결 기준: sysid가 들어왔는가
       if (typeof msg.sysid === "number") {
         setConnected(true)
+        onConnectionChange?.(true)
       }
 
       setQgcData((prev) => {
@@ -74,7 +82,7 @@ const DroneSimulation: React.FC = () => {
             ? Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
             : prev.speed
 
-        return {
+        const next: DroneData = {
           sysid: msg.sysid ?? prev.sysid,
           latitude: msg.position?.lat ?? prev.latitude,
           longitude: msg.position?.lon ?? prev.longitude,
@@ -89,16 +97,20 @@ const DroneSimulation: React.FC = () => {
           speed,
           timestamp: msg.server_ts ?? prev.timestamp,
         }
+
+        onDataChange?.(next)
+        return next
       })
     }
 
     ws.onclose = ws.onerror = () => {
       setConnected(false)
+      onConnectionChange?.(false)
       wsRef.current = null
     }
 
     return () => ws.close()
-  }, [])
+  }, [onConnectionChange, onDataChange])
 
   return (
     <div className="space-y-6 p-6">
