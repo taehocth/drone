@@ -9,7 +9,7 @@ from app.core.config import settings
 # CONFIG
 # =====================================================
 
-STALE_THRESHOLD_SEC = 1.5   # 🔴 heartbeat 기준 (1~2초 권장)
+STALE_THRESHOLD_SEC = 1.5   # alive 판정 기준 (초)
 
 
 # =====================================================
@@ -50,6 +50,7 @@ class VehicleRegistry:
                     "gps": None,
                     "last_seen": now,
                 }
+                print(f"[Registry] New vehicle detected: sysid={sysid}")
 
             v = self._vehicles[sysid]
 
@@ -86,9 +87,9 @@ class VehicleRegistry:
             if not alive:
                 return None
 
-            v = alive[0]  # 🔴 현재는 1대만
+            # 🔴 현재는 1대만 사용
+            v = alive[0]
 
-            # 🔹 flatten (프론트 기대 구조)
             payload = {
                 "sysid": v["sysid"],
                 "position": v.get("position"),
@@ -110,3 +111,15 @@ _registry = VehicleRegistry()
 
 def get_vehicle_registry() -> VehicleRegistry:
     return _registry
+
+
+# =====================================================
+# Compatibility (Render 부팅 보호)
+# =====================================================
+
+def start_mavlink_background():
+    """
+    Render / Cloud 환경에서는 서버가 MAVLink를 직접 다루지 않음.
+    기존 코드와의 호환을 위한 NO-OP 함수.
+    """
+    print("[MAVLink] Server mode: MAVLink disabled (agent-only)")
