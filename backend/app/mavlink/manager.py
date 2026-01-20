@@ -4,6 +4,7 @@ import time
 import threading
 from typing import Optional, Dict
 
+# ⚠️ 유지 (로컬 Agent 재사용 / 타입 호환 목적)
 import requests
 from pymavlink import mavutil
 
@@ -11,7 +12,7 @@ from app.core.config import settings
 
 
 # =====================================================
-# Telemetry PUSH (Render Backend)
+# Telemetry PUSH (❌ SERVER에서는 사용 안 함)
 # =====================================================
 
 RENDER_TELEMETRY_PUSH_URL = settings.RENDER_TELEMETRY_PUSH_URL
@@ -20,14 +21,41 @@ STALE_THRESHOLD_SEC = 1.0
 
 
 # =====================================================
-# Vehicle Registry (sysid 기반)
+# Vehicle Registry (sysid 기반, SERVER 진실 소스)
 # =====================================================
 
 class VehicleRegistry:
+    """
+    서버의 단일 진실 소스 (Single Source of Truth)
+
+    - Local Telemetry Agent가 PUSH한 데이터만 저장
+    - 서버는 MAVLink / USB / Serial을 직접 다루지 않음
+    """
+
     def __init__(self):
         self._vehicles: Dict[int, dict] = {}
         self._lock = threading.Lock()
 
+    # -------------------------------------------------
+    # 🔹 Agent → Server 진입점 (핵심)
+    # -------------------------------------------------
+    def ingest_from_agent(self, data: dict) -> None:
+        """
+        Local Telemetry Agent가 보내준 payload 저장
+        """
+        sysid = data.get("sysid")
+        if sysid is None:
+            return
+
+        with self._lock:
+            self._vehicles[sysid] = {
+                **data,
+                "last_seen": time.time(),
+            }
+
+    # -------------------------------------------------
+    # 🔹 (호환용) 기존 구조 유지
+    # -------------------------------------------------
     def get_or_create(self, sysid: int) -> dict:
         with self._lock:
             if sysid not in self._vehicles:
@@ -43,7 +71,14 @@ class VehicleRegistry:
                 }
             return self._vehicles[sysid]
 
+    # -------------------------------------------------
+    # ❌ SERVER에서는 사용하지 않음 (보존만)
+    # -------------------------------------------------
     def handle_message(self, msg) -> None:
+        """
+        ⚠️ 서버에서는 호출되지 않음
+        (Local Telemetry Agent 전용 로직)
+        """
         sysid = msg.get_srcSystem()
         v = self.get_or_create(sysid)
         v["last_seen"] = time.time()
@@ -89,21 +124,28 @@ class VehicleRegistry:
                 "remaining": msg.battery_remaining,
             }
 
+    # -------------------------------------------------
+    # 🔹 WebSocket 소비용
+    # -------------------------------------------------
     def latest_flattened(self) -> Optional[dict]:
         with self._lock:
             now = time.time()
 
             alive = [
                 v for v in self._vehicles.values()
-                if v["last_seen"] and now - v["last_seen"] < STALE_THRESHOLD_SEC
+                if v.get("last_seen") and now - v["last_seen"] < STALE_THRESHOLD_SEC
             ]
 
             if not alive:
                 return None
 
-            # 🔴 우선 1대 반환 (프론트 구조상)
+            # 🔴 프론트 구조상 우선 1대
             return alive[0]
 
+
+# =====================================================
+# Singleton
+# =====================================================
 
 _registry = VehicleRegistry()
 
@@ -113,7 +155,7 @@ def get_vehicle_registry() -> VehicleRegistry:
 
 
 # =====================================================
-# MAVLink Threads
+# MAVLink Threads (❌ SERVER 비활성화)
 # =====================================================
 
 _connected = False
@@ -121,101 +163,37 @@ _lock = threading.Lock()
 
 
 def _listen_loop(mav):
-    print("[MAVLink] Listening for MAVLink messages...")
-    registry = get_vehicle_registry()
-
-    while True:
-        msg = mav.recv_match(blocking=True, timeout=3)
-        if msg:
-            registry.handle_message(msg)
+    """
+    ❌ SERVER에서는 실행되지 않음
+    (Local Telemetry Agent 전용)
+    """
+    pass
 
 
 def _mavlink_connect_loop():
-    global _connected
-
-    # 🔴 연결 문자열 결정
-    if settings.MAVLINK_CONNECTION:
-        conn = settings.MAVLINK_CONNECTION
-    elif settings.MAVLINK_MODE == "udp":
-        conn = settings.MAVLINK_UDP_ENDPOINT
-    else:
-        raise RuntimeError("Serial mode requires MAVLINK_CONNECTION")
-
-    while True:
-        with _lock:
-            if _connected:
-                time.sleep(2)
-                continue
-
-        try:
-            print(f"[MAVLink] Connecting to {conn} ...")
-
-            mav = mavutil.mavlink_connection(
-                conn,
-                baud=settings.MAVLINK_BAUD,
-                autoreconnect=True,
-            )
-            mav.wait_heartbeat(timeout=10)
-
-            print(
-                f"[MAVLink] Connected: SYSID={mav.target_system}, "
-                f"COMPID={mav.target_component}"
-            )
-
-            with _lock:
-                _connected = True
-
-            threading.Thread(
-                target=_listen_loop,
-                args=(mav,),
-                daemon=True,
-            ).start()
-
-        except Exception as e:
-            print(f"[MAVLink] Connection failed ({conn}): {e}")
-            time.sleep(2)
+    """
+    ❌ SERVER에서는 실행되지 않음
+    """
+    pass
 
 
 def _push_telemetry_loop():
-    registry = get_vehicle_registry()
-    last_push = 0.0
-
-    while True:
-        now = time.time()
-        if now - last_push >= PUSH_INTERVAL_SEC:
-            payload = registry.latest_flattened()
-            if payload:
-                try:
-                    requests.post(
-                        RENDER_TELEMETRY_PUSH_URL,
-                        json=payload,
-                        timeout=1,
-                    )
-                except Exception as e:
-                    print(f"[Telemetry PUSH] Failed: {e}")
-            last_push = now
-
-        time.sleep(0.05)
+    """
+    ❌ SERVER에서는 실행되지 않음
+    """
+    pass
 
 
 # =====================================================
-# Public Entry
+# Public Entry (SERVER 보호 장치)
 # =====================================================
 
 _threads_started = False
 
 
 def start_mavlink_background():
-    global _threads_started
-
-    if not settings.MAVLINK_ENABLED:
-        print("[MAVLink] Disabled by config")
-        return
-
-    if _threads_started:
-        return
-
-    _threads_started = True
-
-    threading.Thread(target=_mavlink_connect_loop, daemon=True).start()
-    threading.Thread(target=_push_telemetry_loop, daemon=True).start()
+    """
+    ❌ 배포 서버(Render 등)에서는 절대 MAVLink를 시작하지 않음
+    """
+    print("[MAVLink] Server mode: MAVLink disabled (Agent-only)")
+    return

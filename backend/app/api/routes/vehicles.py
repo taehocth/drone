@@ -20,8 +20,10 @@ def list_vehicles():
     for sysid, v in registry._vehicles.items():
         last_seen = v.get("last_seen")
 
-        # 🔴 오래된 기체 제외
-        if not last_seen or now - last_seen > STALE_THRESHOLD_SEC:
+        # 최근에 데이터가 들어온 기체만 반환
+        if not last_seen:
+            continue
+        if now - last_seen > STALE_THRESHOLD_SEC:
             continue
 
         vehicles.append(v)

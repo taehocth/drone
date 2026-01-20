@@ -1,19 +1,16 @@
-# app/api/routes/qgc_ws.py
+# backend/app/api/routes/qgc_ws.py
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Body
 from datetime import datetime, timezone, timedelta
 import asyncio
-import time
 
 from app.mavlink.manager import get_vehicle_registry
 
 router = APIRouter()
 
-STALE_THRESHOLD_SEC = 1.0
-
 
 # =====================================================
-# 1️⃣ Local Agent → Render Backend Telemetry PUSH
+# 1️⃣ Local Telemetry Agent → Server
 # =====================================================
 
 @router.post("/telemetry/push")
@@ -27,17 +24,13 @@ async def push_telemetry(data: dict = Body(...)):
     if sysid is None:
         return {"ok": False, "error": "missing sysid"}
 
-    # 🔴 registry에 직접 저장 (단일 진실 소스)
-    registry._vehicles[sysid] = {
-        **data,
-        "last_seen": time.time(),
-    }
+    registry.ingest_from_agent(data)
 
     return {"ok": True}
 
 
 # =====================================================
-# 2️⃣ WebSocket → Frontend (QGC-style stream)
+# 2️⃣ WebSocket → Frontend (QGC-style)
 # =====================================================
 
 @router.websocket("/ws/qgc")
@@ -51,7 +44,6 @@ async def qgc_ws(websocket: WebSocket):
             payload = registry.latest_flattened()
 
             if payload:
-                # 🔴 서버 기준 타임스탬프 추가
                 payload = dict(payload)
                 payload["server_ts"] = datetime.now(
                     timezone(timedelta(hours=9))
@@ -67,7 +59,7 @@ async def qgc_ws(websocket: WebSocket):
                     ).isoformat(),
                 })
 
-            await asyncio.sleep(0.1)  # 10Hz
+            await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
         pass
