@@ -10,7 +10,6 @@ import { DroneSimulationCard } from "./DroneSimulationCard"
 export interface DroneData {
   altitude?: number
   speed?: number
-  throttle?: number
   battery?: number
   latitude?: number
   longitude?: number
@@ -21,7 +20,6 @@ export interface DroneData {
   vy?: number
   vz?: number
   timestamp?: string
-  satellites?: number
   sysid?: number
 }
 
@@ -32,24 +30,29 @@ export interface DroneData {
 const radToDeg = (v?: number) =>
   typeof v === "number" ? (v * 180) / Math.PI : undefined
 
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+
 /* =========================
  * Component
  * ========================= */
 
 const DroneSimulation: React.FC = () => {
-  /**
-   * renderData
-   * - 실제로 화면에 그릴 데이터
-   * - requestAnimationFrame 기준으로만 갱신됨
-   */
+  /** 화면에 실제로 그릴 값 */
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
-  /**
-   * refs
-   */
+  /** refs */
   const wsRef = useRef<WebSocket | null>(null)
-  const latestDataRef = useRef<DroneData | null>(null)
+
+  // 서버에서 마지막으로 받은 값
+  const targetRef = useRef<DroneData | null>(null)
+
+  // 현재 화면에 그려지고 있는 값
+  const currentRef = useRef<DroneData>({})
+
+  // 마지막 서버 패킷 수신 시각
+  const lastPacketTsRef = useRef<number>(0)
+
   const rafRef = useRef<number | null>(null)
 
   /* =========================
@@ -72,10 +75,9 @@ const DroneSimulation: React.FC = () => {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
 
-      // 🔴 waiting 패킷은 무시
+      // waiting 패킷 무시
       if (typeof msg.sysid !== "number") return
 
-      // 🔹 실제 연결 상태
       setConnected(true)
 
       const vx = msg.velocity?.vx
@@ -89,15 +91,11 @@ const DroneSimulation: React.FC = () => {
           ? Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
           : undefined
 
-      /**
-       * 🔴 최신 데이터는 ref에만 저장
-       * - 여기서는 setState ❌
-       */
-      latestDataRef.current = {
+      targetRef.current = {
         sysid: msg.sysid,
+        altitude: msg.position?.alt,
         latitude: msg.position?.lat,
         longitude: msg.position?.lon,
-        altitude: msg.position?.alt,
         battery: msg.battery?.remaining,
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
@@ -108,6 +106,8 @@ const DroneSimulation: React.FC = () => {
         speed,
         timestamp: msg.server_ts,
       }
+
+      lastPacketTsRef.current = performance.now()
     }
 
     ws.onclose = ws.onerror = () => {
@@ -123,27 +123,58 @@ const DroneSimulation: React.FC = () => {
   }
 
   /* =========================
-   * Render Loop (RAF)
+   * Render Loop (Interpolation)
    * ========================= */
 
   useEffect(() => {
     const loop = () => {
-      if (latestDataRef.current) {
-        /**
-         * 🔴 화면 반영은 초당 최대 60회
-         * 네트워크 수신 속도와 체감상 거의 동일
-         */
-        setRenderData(latestDataRef.current)
+      const target = targetRef.current
+      if (target) {
+        const now = performance.now()
+        const dt = Math.min((now - lastPacketTsRef.current) / 100, 1)
+
+        const prev = currentRef.current
+
+        const next: DroneData = {
+          sysid: target.sysid,
+          altitude:
+            typeof prev.altitude === "number" &&
+            typeof target.altitude === "number"
+              ? lerp(prev.altitude, target.altitude, dt)
+              : target.altitude,
+
+          roll:
+            typeof prev.roll === "number" && typeof target.roll === "number"
+              ? lerp(prev.roll, target.roll, dt)
+              : target.roll,
+
+          pitch:
+            typeof prev.pitch === "number" && typeof target.pitch === "number"
+              ? lerp(prev.pitch, target.pitch, dt)
+              : target.pitch,
+
+          yaw:
+            typeof prev.yaw === "number" && typeof target.yaw === "number"
+              ? lerp(prev.yaw, target.yaw, dt)
+              : target.yaw,
+
+          battery: target.battery,
+          latitude: target.latitude,
+          longitude: target.longitude,
+          speed: target.speed,
+          timestamp: target.timestamp,
+        }
+
+        currentRef.current = next
+        setRenderData(next)
       }
+
       rafRef.current = requestAnimationFrame(loop)
     }
 
     rafRef.current = requestAnimationFrame(loop)
-
     return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-      }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [])
 
