@@ -1,12 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Wifi, Gauge, Battery, MapPin } from "lucide-react"
-import React, { useEffect } from "react"
+import React, { useEffect, useState } from "react"
 import type { DroneData } from "./DroneSimulation"
 
 interface Props {
   data: DroneData
-  connected: boolean
+  connected: boolean // 실제 backend 연결 상태
   onConnect?: () => void
   onDisconnect?: () => void
 }
@@ -17,6 +17,13 @@ export const DroneSimulationCard: React.FC<Props> = ({
   onConnect,
   onDisconnect,
 }) => {
+  /**
+   * uiConnecting
+   * - 사용자가 "연결" 버튼을 눌렀는지 여부
+   * - backend가 waiting이든 말든 UI는 즉시 반응해야 함
+   */
+  const [uiConnecting, setUiConnecting] = useState(false)
+
   /* =========================
    * Map position sync
    * ========================= */
@@ -37,8 +44,34 @@ export const DroneSimulationCard: React.FC<Props> = ({
     }
   }, [data.latitude, data.longitude, data.yaw])
 
+  /**
+   * 실제 연결이 끊기면 UI 연결 상태도 같이 초기화
+   */
+  useEffect(() => {
+    if (!connected) {
+      setUiConnecting(false)
+    }
+  }, [connected])
+
   const v = (n?: number, unit = "") =>
     typeof n === "number" ? `${n.toFixed(2)}${unit}` : "N/A"
+
+  /* =========================
+   * UI State derived values
+   * ========================= */
+  const isActive = connected || uiConnecting
+
+  const badgeClass = connected
+    ? "border-green-200 bg-green-50 text-green-700"
+    : uiConnecting
+      ? "border-yellow-200 bg-yellow-50 text-yellow-700"
+      : "border-gray-200 bg-gray-50 text-gray-500"
+
+  const badgeLabel = connected
+    ? "연결됨"
+    : uiConnecting
+      ? "연결 시도 중"
+      : "대기 중"
 
   return (
     <Card className="mx-auto w-full max-w-2xl rounded-2xl">
@@ -52,27 +85,27 @@ export const DroneSimulationCard: React.FC<Props> = ({
         </CardTitle>
 
         <div className="flex items-center gap-2">
-          <Badge
-            className={
-              connected
-                ? "border-green-200 bg-green-50 text-green-700"
-                : "border-gray-200 bg-gray-50 text-gray-500"
-            }
-          >
+          <Badge className={badgeClass}>
             <Wifi className="mr-1 h-3 w-3" />
-            {connected ? "연결됨" : "대기 중"}
+            {badgeLabel}
           </Badge>
 
-          {!connected ? (
+          {!isActive ? (
             <button
-              onClick={onConnect}
+              onClick={() => {
+                setUiConnecting(true)
+                onConnect?.()
+              }}
               className="hover:bg-muted rounded-md border px-2 py-1 text-xs font-medium"
             >
               연결
             </button>
           ) : (
             <button
-              onClick={onDisconnect}
+              onClick={() => {
+                setUiConnecting(false)
+                onDisconnect?.()
+              }}
               className="hover:bg-muted rounded-md border px-2 py-1 text-xs font-medium"
             >
               해제
