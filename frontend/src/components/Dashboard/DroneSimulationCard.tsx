@@ -1,15 +1,25 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Wifi, Gauge, Battery, MapPin, Activity } from "lucide-react"
+import { Wifi, Gauge, Battery, MapPin } from "lucide-react"
 import React, { useEffect } from "react"
 import type { DroneData } from "./DroneSimulation"
 
 interface Props {
   data: DroneData
   connected: boolean
+  onConnect?: () => void
+  onDisconnect?: () => void
 }
 
-export const DroneSimulationCard: React.FC<Props> = ({ data, connected }) => {
+export const DroneSimulationCard: React.FC<Props> = ({
+  data,
+  connected,
+  onConnect,
+  onDisconnect,
+}) => {
+  /* =========================
+   * Map position sync
+   * ========================= */
   useEffect(() => {
     if (
       typeof data.latitude === "number" &&
@@ -32,17 +42,48 @@ export const DroneSimulationCard: React.FC<Props> = ({ data, connected }) => {
 
   return (
     <Card className="mx-auto w-full max-w-2xl rounded-2xl">
-      <CardHeader className="flex flex-row justify-between">
+      {/* =========================
+       * Header
+       * ========================= */}
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Gauge className="h-5 w-5 text-blue-500" />
           드론 상태
         </CardTitle>
-        <Badge className={connected ? "text-green-600" : "text-gray-500"}>
-          <Wifi className="h-3 w-3" />
-          {connected ? "연결됨" : "대기 중"}
-        </Badge>
+
+        <div className="flex items-center gap-2">
+          <Badge
+            className={
+              connected
+                ? "border-green-200 bg-green-50 text-green-700"
+                : "border-gray-200 bg-gray-50 text-gray-500"
+            }
+          >
+            <Wifi className="mr-1 h-3 w-3" />
+            {connected ? "연결됨" : "대기 중"}
+          </Badge>
+
+          {!connected ? (
+            <button
+              onClick={onConnect}
+              className="hover:bg-muted rounded-md border px-2 py-1 text-xs font-medium"
+            >
+              연결
+            </button>
+          ) : (
+            <button
+              onClick={onDisconnect}
+              className="hover:bg-muted rounded-md border px-2 py-1 text-xs font-medium"
+            >
+              해제
+            </button>
+          )}
+        </div>
       </CardHeader>
 
+      {/* =========================
+       * Content
+       * ========================= */}
       <CardContent className="space-y-3 text-sm">
         <div className="flex justify-between">
           <span>고도</span>

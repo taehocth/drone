@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useRef } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
 /* =========================
@@ -23,7 +23,6 @@ export interface DroneData {
   sysid?: number
 }
 
-/** 🔹 추가: 외부에서 받을 수 있는 Props */
 interface DroneSimulationProps {
   onConnectionChange?: (connected: boolean) => void
   onDataChange?: (data: DroneData | null) => void
@@ -50,11 +49,14 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
 
-  useEffect(() => {
+  /* =========================
+   * Connect / Disconnect
+   * ========================= */
+
+  const connect = () => {
     if (wsRef.current) return
 
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000"
-
     const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws"
     const wsHost = apiBaseUrl
       .replace(/^https?:\/\//, "")
@@ -67,6 +69,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
 
+      // 🔹 실제 연결 판단 기준
       if (typeof msg.sysid === "number") {
         setConnected(true)
         onConnectionChange?.(true)
@@ -108,13 +111,27 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       onConnectionChange?.(false)
       wsRef.current = null
     }
+  }
 
-    return () => ws.close()
-  }, [onConnectionChange, onDataChange])
+  const disconnect = () => {
+    wsRef.current?.close()
+    wsRef.current = null
+    setConnected(false)
+    onConnectionChange?.(false)
+  }
+
+  /* =========================
+   * Render
+   * ========================= */
 
   return (
     <div className="space-y-6 p-6">
-      <DroneSimulationCard data={qgcData} connected={connected} />
+      <DroneSimulationCard
+        data={qgcData}
+        connected={connected}
+        onConnect={connect}
+        onDisconnect={disconnect}
+      />
     </div>
   )
 }
