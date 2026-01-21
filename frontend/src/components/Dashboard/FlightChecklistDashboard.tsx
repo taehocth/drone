@@ -299,9 +299,10 @@ export function FlightChecklistDashboard() {
   }, [])
 
   useEffect(() => {
-    if (savedChecklists.length > 0) {
-      localStorage.setItem("savedChecklists", JSON.stringify(savedChecklists))
-    }
+    localStorage.setItem(
+      "savedChecklists",
+      JSON.stringify(savedChecklists),
+    )
   }, [savedChecklists])
 
   // 매뉴얼 업서트 + 실시간 구독 + 비어있을 때 시드
