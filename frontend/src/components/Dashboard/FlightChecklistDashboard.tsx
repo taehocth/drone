@@ -703,52 +703,50 @@ export function FlightChecklistDashboard() {
             </DialogHeader>
 
             <div className="grid gap-3 py-3">
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">매뉴얼</label>
-                <select
-  className="w-full rounded-md border px-3 py-2 text-sm"
-  value={newItem.category}
-  onChange={(e) =>
-    setNewItem((p) => ({ ...p, category: e.target.value }))
-  }
-  disabled={!newItem.manualId}
->
-  <option value="">선택하세요</option>
-
-  {newItem.manualId &&
-    getCategoriesForManual(newItem.manualId).map((c) => (
-      <option key={c} value={c}>
-        {c}
+            <div className="grid gap-2">
+  <label className="text-sm font-medium">매뉴얼</label>
+  <select
+    className="w-full rounded-md border px-3 py-2 text-sm"
+    value={newItem.manualId}
+    onChange={(e) =>
+      setNewItem((p) => ({
+        ...p,
+        manualId: e.target.value,
+        category: "", // 🔥 매뉴얼 바뀌면 카테고리 초기화
+      }))
+    }
+  >
+    <option value="">선택하세요</option>
+    {manualMetas.map((m) => (
+      <option key={m.id} value={m.id}>
+        {m.title}
       </option>
     ))}
-</select>
+  </select>
+</div>
 
-              </div>
 
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">카테고리</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={newItem.category}
-                  onChange={(e) =>
-                    setNewItem((p) => ({
-                      ...p,
-                      manualId: e.target.value,
-                      category: "", // 🔥 핵심
-                    }))
-                  }                  
-                  disabled={!newItem.manualId}
-                >
-                  <option value="">선택하세요</option>
-                  {manualMetas
-                    .find((m) => m.id === newItem.manualId)
-                    ?.categories?.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                </select>
-              </div>
+<div className="grid gap-2">
+  <label className="text-sm font-medium">카테고리</label>
+  <select
+    className="w-full rounded-md border px-3 py-2 text-sm"
+    value={newItem.category}
+    onChange={(e) =>
+      setNewItem((p) => ({ ...p, category: e.target.value }))
+    }
+    disabled={!newItem.manualId}
+  >
+    <option value="">선택하세요</option>
+
+    {newItem.manualId &&
+      getCategoriesForManual(newItem.manualId).map((c) => (
+        <option key={c} value={c}>
+          {c}
+        </option>
+      ))}
+  </select>
+</div>
+
 
               <div className="grid gap-2">
                 <label className="text-sm font-medium">제목</label>
