@@ -235,15 +235,17 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
       "비상 착륙 기능 테스트",
     ],
   },
-  const getCategoriesForManual = (manualId: string): string[] => {
-    const structure = defaultStructures[manualId]
-    if (!structure) return []
-    return Object.keys(structure)
-  }  
+
 }
 
 const getDefaultStructureFor = (manualId: string) =>
   defaultStructures[manualId] ?? null
+
+const getCategoriesForManual = (manualId: string): string[] => {
+  const structure = defaultStructures[manualId]
+  if (!structure) return []
+  return Object.keys(structure)
+}  
 
 export function FlightChecklistDashboard() {
   const [itemsByManual, setItemsByManual] = useState<
