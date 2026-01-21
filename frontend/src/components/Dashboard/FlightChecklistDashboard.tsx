@@ -235,6 +235,11 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
       "비상 착륙 기능 테스트",
     ],
   },
+  const getCategoriesForManual = (manualId: string): string[] => {
+    const structure = defaultStructures[manualId]
+    if (!structure) return []
+    return Object.keys(structure)
+  }  
 }
 
 const getDefaultStructureFor = (manualId: string) =>
@@ -699,19 +704,23 @@ export function FlightChecklistDashboard() {
               <div className="grid gap-2">
                 <label className="text-sm font-medium">매뉴얼</label>
                 <select
-                  className="w-full rounded-md border px-3 py-2 text-sm"
-                  value={newItem.manualId}
-                  onChange={(e) =>
-                    setNewItem((p) => ({ ...p, manualId: e.target.value }))
-                  }
-                >
-                  <option value="">선택하세요</option>
-                  {manualMetas.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.title}
-                    </option>
-                  ))}
-                </select>
+  className="w-full rounded-md border px-3 py-2 text-sm"
+  value={newItem.category}
+  onChange={(e) =>
+    setNewItem((p) => ({ ...p, category: e.target.value }))
+  }
+  disabled={!newItem.manualId}
+>
+  <option value="">선택하세요</option>
+
+  {newItem.manualId &&
+    getCategoriesForManual(newItem.manualId).map((c) => (
+      <option key={c} value={c}>
+        {c}
+      </option>
+    ))}
+</select>
+
               </div>
 
               <div className="grid gap-2">
@@ -720,8 +729,12 @@ export function FlightChecklistDashboard() {
                   className="w-full rounded-md border px-3 py-2 text-sm"
                   value={newItem.category}
                   onChange={(e) =>
-                    setNewItem((p) => ({ ...p, category: e.target.value }))
-                  }
+                    setNewItem((p) => ({
+                      ...p,
+                      manualId: e.target.value,
+                      category: "", // 🔥 핵심
+                    }))
+                  }                  
                   disabled={!newItem.manualId}
                 >
                   <option value="">선택하세요</option>
