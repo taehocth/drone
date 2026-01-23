@@ -59,7 +59,7 @@ async def qgc_ws(websocket: WebSocket):
                     ).isoformat(),
                 })
 
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 
     except WebSocketDisconnect:
         pass
