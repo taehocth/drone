@@ -1,5 +1,3 @@
-// frontend/src/components/Dashboard/DroneSimulation.tsx
-
 import React, { useState, useRef, useEffect } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
@@ -32,28 +30,36 @@ const radToDeg = (v?: number) =>
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
+// yaw 보간 (±180° 튐 방지)
+const lerpAngle = (a: number, b: number, t: number) => {
+  let d = b - a
+  if (d > 180) d -= 360
+  if (d < -180) d += 360
+  return a + d * t
+}
+
+// deadband: 미세 변화 무시
+const deadband = (prev?: number, next?: number, eps = 0.1) => {
+  if (typeof prev !== "number" || typeof next !== "number") return next
+  return Math.abs(prev - next) < eps ? prev : next
+}
+
 /* =========================
  * Component
  * ========================= */
 
 const DroneSimulation: React.FC = () => {
-  /** 화면에 실제로 그릴 값 */
+  /** 실제 렌더링 값 */
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
   /** refs */
   const wsRef = useRef<WebSocket | null>(null)
-
-  // 서버에서 마지막으로 받은 값
   const targetRef = useRef<DroneData | null>(null)
-
-  // 현재 화면에 그려지고 있는 값
   const currentRef = useRef<DroneData>({})
 
-  // 마지막 서버 패킷 수신 시각
-  const lastPacketTsRef = useRef<number>(0)
-
   const rafRef = useRef<number | null>(null)
+  const lastFrameTimeRef = useRef<number>(performance.now())
 
   /* =========================
    * Connect / Disconnect
@@ -75,9 +81,7 @@ const DroneSimulation: React.FC = () => {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
 
-      // waiting 패킷 무시
       if (typeof msg.sysid !== "number") return
-
       setConnected(true)
 
       const vx = msg.velocity?.vx
@@ -85,10 +89,8 @@ const DroneSimulation: React.FC = () => {
       const vz = msg.velocity?.vz
 
       const speed =
-        typeof vx === "number" &&
-        typeof vy === "number" &&
-        typeof vz === "number"
-          ? Math.sqrt(vx * vx + vy * vy + vz * vz) * 3.6
+        typeof vx === "number" && typeof vy === "number"
+          ? Math.sqrt(vx * vx + vy * vy) * 3.6
           : undefined
 
       targetRef.current = {
@@ -100,19 +102,16 @@ const DroneSimulation: React.FC = () => {
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
-        vx,
-        vy,
-        vz,
         speed,
         timestamp: msg.server_ts,
       }
-
-      lastPacketTsRef.current = performance.now()
     }
 
     ws.onclose = ws.onerror = () => {
       setConnected(false)
       wsRef.current = null
+      targetRef.current = null
+      currentRef.current = {}
     }
   }
 
@@ -120,10 +119,12 @@ const DroneSimulation: React.FC = () => {
     wsRef.current?.close()
     wsRef.current = null
     setConnected(false)
+    targetRef.current = null
+    currentRef.current = {}
   }
 
   /* =========================
-   * Render Loop (Interpolation)
+   * Render Loop (Time-based interpolation)
    * ========================= */
 
   useEffect(() => {
@@ -131,31 +132,40 @@ const DroneSimulation: React.FC = () => {
       const target = targetRef.current
       if (target) {
         const now = performance.now()
-        const dt = Math.min((now - lastPacketTsRef.current) / 100, 1)
+        const dt = Math.min((now - lastFrameTimeRef.current) / 1000, 0.1)
+        lastFrameTimeRef.current = now
+
+        // 반응 계수 (QGC 스타일)
+        const alpha = Math.min(dt * 8, 1)
 
         const prev = currentRef.current
 
         const next: DroneData = {
           sysid: target.sysid,
+
           altitude:
             typeof prev.altitude === "number" &&
             typeof target.altitude === "number"
-              ? lerp(prev.altitude, target.altitude, dt)
+              ? lerp(
+                  prev.altitude,
+                  deadband(prev.altitude, target.altitude, 0.1) as number,
+                  alpha
+                )
               : target.altitude,
 
           roll:
             typeof prev.roll === "number" && typeof target.roll === "number"
-              ? lerp(prev.roll, target.roll, dt)
+              ? lerp(prev.roll, target.roll, alpha)
               : target.roll,
 
           pitch:
             typeof prev.pitch === "number" && typeof target.pitch === "number"
-              ? lerp(prev.pitch, target.pitch, dt)
+              ? lerp(prev.pitch, target.pitch, alpha)
               : target.pitch,
 
           yaw:
             typeof prev.yaw === "number" && typeof target.yaw === "number"
-              ? lerp(prev.yaw, target.yaw, dt)
+              ? lerpAngle(prev.yaw, target.yaw, alpha)
               : target.yaw,
 
           battery: target.battery,
