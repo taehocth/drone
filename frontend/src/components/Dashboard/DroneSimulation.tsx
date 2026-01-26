@@ -11,12 +11,17 @@ export interface DroneData {
   battery?: number
   latitude?: number
   longitude?: number
+
+  // 🔹 내부 계산용 (실수)
   roll?: number
   pitch?: number
   yaw?: number
-  vx?: number
-  vy?: number
-  vz?: number
+
+  // 🔹 UI 표시용 (정수)
+  rollInt?: number
+  pitchInt?: number
+  yawInt?: number
+
   timestamp?: string
   sysid?: number
 }
@@ -80,13 +85,12 @@ const DroneSimulation: React.FC = () => {
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
-
       if (typeof msg.sysid !== "number") return
+
       setConnected(true)
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
-      const vz = msg.velocity?.vz
 
       const speed =
         typeof vx === "number" && typeof vy === "number"
@@ -99,9 +103,12 @@ const DroneSimulation: React.FC = () => {
         latitude: msg.position?.lat,
         longitude: msg.position?.lon,
         battery: msg.battery?.remaining,
+
+        // 🔹 실수 각도 (deg)
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
+
         speed,
         timestamp: msg.server_ts,
       }
@@ -135,9 +142,7 @@ const DroneSimulation: React.FC = () => {
         const dt = Math.min((now - lastFrameTimeRef.current) / 1000, 0.1)
         lastFrameTimeRef.current = now
 
-        // 반응 계수 (QGC 스타일)
         const alpha = Math.min(dt * 8, 1)
-
         const prev = currentRef.current
 
         const next: DroneData = {
@@ -153,6 +158,7 @@ const DroneSimulation: React.FC = () => {
                 )
               : target.altitude,
 
+          // 🔹 내부용 실수 보간
           roll:
             typeof prev.roll === "number" && typeof target.roll === "number"
               ? lerp(prev.roll, target.roll, alpha)
@@ -167,6 +173,22 @@ const DroneSimulation: React.FC = () => {
             typeof prev.yaw === "number" && typeof target.yaw === "number"
               ? lerpAngle(prev.yaw, target.yaw, alpha)
               : target.yaw,
+
+          // 🔹 UI 표시용 정수 (여기가 핵심)
+          rollInt:
+            typeof target.roll === "number"
+              ? Math.round(target.roll)
+              : undefined,
+
+          pitchInt:
+            typeof target.pitch === "number"
+              ? Math.round(target.pitch)
+              : undefined,
+
+          yawInt:
+            typeof target.yaw === "number"
+              ? Math.round(target.yaw)
+              : undefined,
 
           battery: target.battery,
           latitude: target.latitude,
