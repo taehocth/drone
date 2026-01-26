@@ -6,7 +6,7 @@ import type { DroneData } from "./DroneSimulation"
 
 interface Props {
   data: DroneData
-  connected: boolean // 실제 backend 연결 상태
+  connected: boolean
   onConnect?: () => void
   onDisconnect?: () => void
 }
@@ -20,7 +20,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
   /**
    * uiConnecting
    * - 사용자가 "연결" 버튼을 눌렀는지 여부
-   * - backend가 waiting이든 말든 UI는 즉시 반응해야 함
+   * - backend 상태와 무관하게 UI는 즉시 반응
    */
   const [uiConnecting, setUiConnecting] = useState(false)
 
@@ -45,7 +45,7 @@ export const DroneSimulationCard: React.FC<Props> = ({
   }, [data.latitude, data.longitude, data.yaw])
 
   /**
-   * 실제 연결이 끊기면 UI 연결 상태도 같이 초기화
+   * 실제 연결이 끊기면 UI 상태도 초기화
    */
   useEffect(() => {
     if (!connected) {
@@ -53,8 +53,17 @@ export const DroneSimulationCard: React.FC<Props> = ({
     }
   }, [connected])
 
+  /* =========================
+   * Value formatters
+   * ========================= */
+
+  // 소수 유지용 (고도, 속도 등)
   const v = (n?: number, unit = "") =>
     typeof n === "number" ? `${n.toFixed(2)}${unit}` : "N/A"
+
+  // ✅ 정수 전용 (Roll / Pitch / Yaw)
+  const vInt = (n?: number, unit = "") =>
+    typeof n === "number" ? `${Math.round(n)}${unit}` : "N/A"
 
   /* =========================
    * UI State derived values
@@ -138,10 +147,12 @@ export const DroneSimulationCard: React.FC<Props> = ({
           </span>
         </div>
 
+        {/* ✅ 자세: 정수만 표시 */}
         <div className="flex justify-between">
           <span>자세 (R / P / Y)</span>
           <span>
-            {v(data.roll, "°")} / {v(data.pitch, "°")} / {v(data.yaw, "°")}
+            {vInt(data.roll, "°")} / {vInt(data.pitch, "°")} /{" "}
+            {vInt(data.yaw, "°")}
           </span>
         </div>
 
