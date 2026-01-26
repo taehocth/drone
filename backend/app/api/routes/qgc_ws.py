@@ -9,15 +9,8 @@ from app.mavlink.manager import get_vehicle_registry
 router = APIRouter()
 
 
-# =====================================================
-# 1️⃣ Local Telemetry Agent → Server
-# =====================================================
-
 @router.post("/telemetry/push")
 async def push_telemetry(data: dict = Body(...)):
-    """
-    Local Telemetry Agent가 실제 기체 데이터를 PUSH
-    """
     registry = get_vehicle_registry()
 
     sysid = data.get("sysid")
@@ -25,41 +18,32 @@ async def push_telemetry(data: dict = Body(...)):
         return {"ok": False, "error": "missing sysid"}
 
     registry.ingest_from_agent(data)
-
     return {"ok": True}
 
-
-# =====================================================
-# 2️⃣ WebSocket → Frontend (QGC-style)
-# =====================================================
 
 @router.websocket("/ws/qgc")
 async def qgc_ws(websocket: WebSocket):
     await websocket.accept()
 
     registry = get_vehicle_registry()
+    last_payload = None  # 🔥 핵심
 
     try:
         while True:
             payload = registry.latest_flattened()
 
             if payload:
-                payload = dict(payload)
-                payload["server_ts"] = datetime.now(
+                last_payload = payload
+
+            # ❌ waiting 절대 보내지 않음
+            if last_payload:
+                out = dict(last_payload)
+                out["server_ts"] = datetime.now(
                     timezone(timedelta(hours=9))
                 ).isoformat()
+                await websocket.send_json(out)
 
-                await websocket.send_json(payload)
-
-            else:
-                await websocket.send_json({
-                    "status": "waiting",
-                    "server_ts": datetime.now(
-                        timezone(timedelta(hours=9))
-                    ).isoformat(),
-                })
-
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)  # 10Hz
 
     except WebSocketDisconnect:
         pass

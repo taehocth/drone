@@ -19,7 +19,7 @@ TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 BAUD_RATES = [57600, 115200, 921600]
 
 # 전송 주기(초): 0.05 = 20Hz (빠름), 0.1 = 10Hz (권장)
-PUSH_INTERVAL_SEC = 0.05
+PUSH_INTERVAL_SEC = 0.1
 
 # 특정 데이터가 너무 오래 갱신되지 않으면 stale로 판단(초)
 STALE_WARN_SEC = 2.0

@@ -9,7 +9,7 @@ from app.core.config import settings
 # CONFIG
 # =====================================================
 
-STALE_THRESHOLD_SEC = 1.5   # alive 판정 기준 (초)
+STALE_THRESHOLD_SEC =5.0 # alive 판정 기준 (초)
 
 
 # =====================================================
