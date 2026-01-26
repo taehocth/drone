@@ -12,12 +12,10 @@ export interface DroneData {
   latitude?: number
   longitude?: number
 
-  // 🔹 내부 계산용 (실수)
   roll?: number
   pitch?: number
   yaw?: number
 
-  // 🔹 UI 표시용 (정수)
   rollInt?: number
   pitchInt?: number
   yawInt?: number
@@ -35,7 +33,6 @@ const radToDeg = (v?: number) =>
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
-// yaw 보간 (±180° 튐 방지)
 const lerpAngle = (a: number, b: number, t: number) => {
   let d = b - a
   if (d > 180) d -= 360
@@ -43,28 +40,20 @@ const lerpAngle = (a: number, b: number, t: number) => {
   return a + d * t
 }
 
-// deadband: 미세 변화 무시
-const deadband = (prev?: number, next?: number, eps = 0.1) => {
-  if (typeof prev !== "number" || typeof next !== "number") return next
-  return Math.abs(prev - next) < eps ? prev : next
-}
-
 /* =========================
  * Component
  * ========================= */
 
 const DroneSimulation: React.FC = () => {
-  /** 실제 렌더링 값 */
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
-  /** refs */
   const wsRef = useRef<WebSocket | null>(null)
-  const targetRef = useRef<DroneData | null>(null)
-  const currentRef = useRef<DroneData>({})
 
-  const rafRef = useRef<number | null>(null)
-  const lastFrameTimeRef = useRef<number>(performance.now())
+  // 🔹 고주기 계산용
+  const targetRef = useRef<DroneData | null>(null)
+  const smoothRef = useRef<DroneData>({})
+  const lastTsRef = useRef<number>(performance.now())
 
   /* =========================
    * Connect / Disconnect
@@ -75,11 +64,9 @@ const DroneSimulation: React.FC = () => {
 
     const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000"
     const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws"
-    const wsHost = apiBaseUrl
-      .replace(/^https?:\/\//, "")
-      .replace(/\/api\/v1$/, "")
-
+    const wsHost = apiBaseUrl.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
+
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
@@ -91,7 +78,6 @@ const DroneSimulation: React.FC = () => {
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
-
       const speed =
         typeof vx === "number" && typeof vy === "number"
           ? Math.sqrt(vx * vx + vy * vy) * 3.6
@@ -103,12 +89,9 @@ const DroneSimulation: React.FC = () => {
         latitude: msg.position?.lat,
         longitude: msg.position?.lon,
         battery: msg.battery?.remaining,
-
-        // 🔹 실수 각도 (deg)
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
-
         speed,
         timestamp: msg.server_ts,
       }
@@ -118,7 +101,7 @@ const DroneSimulation: React.FC = () => {
       setConnected(false)
       wsRef.current = null
       targetRef.current = null
-      currentRef.current = {}
+      smoothRef.current = {}
     }
   }
 
@@ -127,87 +110,68 @@ const DroneSimulation: React.FC = () => {
     wsRef.current = null
     setConnected(false)
     targetRef.current = null
-    currentRef.current = {}
+    smoothRef.current = {}
   }
 
   /* =========================
-   * Render Loop (Time-based interpolation)
+   * RAF: 고주기 보간 (state X)
    * ========================= */
 
   useEffect(() => {
-    const loop = () => {
+    let rafId: number
+
+    const rafLoop = () => {
       const target = targetRef.current
       if (target) {
         const now = performance.now()
-        const dt = Math.min((now - lastFrameTimeRef.current) / 1000, 0.1)
-        lastFrameTimeRef.current = now
-
+        const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
+        lastTsRef.current = now
         const alpha = Math.min(dt * 8, 1)
-        const prev = currentRef.current
 
-        const next: DroneData = {
-          sysid: target.sysid,
+        const prev = smoothRef.current
 
-          altitude:
-            typeof prev.altitude === "number" &&
-            typeof target.altitude === "number"
-              ? lerp(
-                  prev.altitude,
-                  deadband(prev.altitude, target.altitude, 0.1) as number,
-                  alpha
-                )
-              : target.altitude,
-
-          // 🔹 내부용 실수 보간
+        smoothRef.current = {
+          ...target,
           roll:
             typeof prev.roll === "number" && typeof target.roll === "number"
               ? lerp(prev.roll, target.roll, alpha)
               : target.roll,
-
           pitch:
             typeof prev.pitch === "number" && typeof target.pitch === "number"
               ? lerp(prev.pitch, target.pitch, alpha)
               : target.pitch,
-
           yaw:
             typeof prev.yaw === "number" && typeof target.yaw === "number"
               ? lerpAngle(prev.yaw, target.yaw, alpha)
               : target.yaw,
-
-          // 🔹 UI 표시용 정수 (여기가 핵심)
-          rollInt:
-            typeof target.roll === "number"
-              ? Math.round(target.roll)
-              : undefined,
-
-          pitchInt:
-            typeof target.pitch === "number"
-              ? Math.round(target.pitch)
-              : undefined,
-
-          yawInt:
-            typeof target.yaw === "number"
-              ? Math.round(target.yaw)
-              : undefined,
-
-          battery: target.battery,
-          latitude: target.latitude,
-          longitude: target.longitude,
-          speed: target.speed,
-          timestamp: target.timestamp,
         }
-
-        currentRef.current = next
-        setRenderData(next)
       }
 
-      rafRef.current = requestAnimationFrame(loop)
+      rafId = requestAnimationFrame(rafLoop)
     }
 
-    rafRef.current = requestAnimationFrame(loop)
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    }
+    rafId = requestAnimationFrame(rafLoop)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
+  /* =========================
+   * UI Snapshot (10Hz)
+   * ========================= */
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const d = smoothRef.current
+      if (!d.sysid) return
+
+      setRenderData({
+        ...d,
+        rollInt: typeof d.roll === "number" ? Math.round(d.roll) : undefined,
+        pitchInt: typeof d.pitch === "number" ? Math.round(d.pitch) : undefined,
+        yawInt: typeof d.yaw === "number" ? Math.round(d.yaw) : undefined,
+      })
+    }, 100) // 🔥 핵심: 10Hz
+
+    return () => clearInterval(id)
   }, [])
 
   /* =========================
