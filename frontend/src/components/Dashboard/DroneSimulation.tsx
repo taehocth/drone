@@ -33,6 +33,22 @@ const radToDeg = (v?: number) =>
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
+// 🔥 yaw 전용: 각속도 제한 보간
+function smoothYaw(
+  prev: number,
+  target: number,
+  dt: number,
+  maxDegPerSec = 120, // 필요하면 60 / 90 / 180 등으로 조절
+) {
+  let diff = target - prev
+  if (diff > 180) diff -= 360
+  if (diff < -180) diff += 360
+
+  const maxStep = maxDegPerSec * dt
+  if (Math.abs(diff) <= maxStep) return target
+  return prev + Math.sign(diff) * maxStep
+}
+
 /* =========================
  * Component
  * ========================= */
@@ -43,9 +59,9 @@ const DroneSimulation: React.FC = () => {
 
   const wsRef = useRef<WebSocket | null>(null)
 
-  // 실시간 데이터 흐름
-  const targetRef = useRef<DroneData | null>(null)
-  const smoothRef = useRef<DroneData>({})
+  // 데이터 흐름 분리
+  const targetRef = useRef<DroneData | null>(null) // 서버 최신값
+  const smoothRef = useRef<DroneData>({})           // 보간 결과
   const lastTsRef = useRef<number>(performance.now())
 
   /* =========================
@@ -83,7 +99,7 @@ const DroneSimulation: React.FC = () => {
         longitude: msg.position?.lon,
         battery: msg.battery?.remaining,
 
-        // 🔥 각도는 즉시 반영 (핵심)
+        // 서버 값은 그대로 저장 (보간은 RAF에서)
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
@@ -110,7 +126,7 @@ const DroneSimulation: React.FC = () => {
   }
 
   /* =========================
-   * RAF Loop (고주기 계산, state X)
+   * RAF Loop (핵심 로직)
    * ========================= */
 
   useEffect(() => {
@@ -123,14 +139,13 @@ const DroneSimulation: React.FC = () => {
         const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
         lastTsRef.current = now
 
-        const alpha = Math.min(dt * 12, 1) // 🔥 반응성 강화
-
+        const alpha = Math.min(dt * 12, 1)
         const prev = smoothRef.current
 
         smoothRef.current = {
           ...target,
 
-          // 위치·고도·속도만 부드럽게
+          // 위치·속도는 부드럽게
           altitude:
             typeof prev.altitude === "number" &&
             typeof target.altitude === "number"
@@ -142,10 +157,22 @@ const DroneSimulation: React.FC = () => {
               ? lerp(prev.speed, target.speed, alpha)
               : target.speed,
 
-          // 🔥 각도는 보간 제거 (즉시)
-          roll: target.roll,
-          pitch: target.pitch,
-          yaw: target.yaw,
+          // roll / pitch는 일반 보간
+          roll:
+            typeof prev.roll === "number" && typeof target.roll === "number"
+              ? lerp(prev.roll, target.roll, alpha)
+              : target.roll,
+
+          pitch:
+            typeof prev.pitch === "number" && typeof target.pitch === "number"
+              ? lerp(prev.pitch, target.pitch, alpha)
+              : target.pitch,
+
+          // 🔥 yaw만 각속도 제한 보간
+          yaw:
+            typeof prev.yaw === "number" && typeof target.yaw === "number"
+              ? smoothYaw(prev.yaw, target.yaw, dt, 120)
+              : target.yaw,
         }
       }
 
@@ -171,10 +198,14 @@ const DroneSimulation: React.FC = () => {
         pitchInt: typeof d.pitch === "number" ? Math.round(d.pitch) : undefined,
         yawInt: typeof d.yaw === "number" ? Math.round(d.yaw) : undefined,
       })
-    }, 80) // 🔥 12.5Hz
+    }, 80)
 
     return () => clearInterval(id)
   }, [])
+
+  /* =========================
+   * Render
+   * ========================= */
 
   return (
     <div className="space-y-6 p-6">
