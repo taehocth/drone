@@ -33,13 +33,6 @@ const radToDeg = (v?: number) =>
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
-const lerpAngle = (a: number, b: number, t: number) => {
-  let d = b - a
-  if (d > 180) d -= 360
-  if (d < -180) d += 360
-  return a + d * t
-}
-
 /* =========================
  * Component
  * ========================= */
@@ -50,7 +43,7 @@ const DroneSimulation: React.FC = () => {
 
   const wsRef = useRef<WebSocket | null>(null)
 
-  // 🔹 고주기 계산용
+  // 실시간 데이터 흐름
   const targetRef = useRef<DroneData | null>(null)
   const smoothRef = useRef<DroneData>({})
   const lastTsRef = useRef<number>(performance.now())
@@ -89,9 +82,12 @@ const DroneSimulation: React.FC = () => {
         latitude: msg.position?.lat,
         longitude: msg.position?.lon,
         battery: msg.battery?.remaining,
+
+        // 🔥 각도는 즉시 반영 (핵심)
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
+
         speed,
         timestamp: msg.server_ts,
       }
@@ -114,7 +110,7 @@ const DroneSimulation: React.FC = () => {
   }
 
   /* =========================
-   * RAF: 고주기 보간 (state X)
+   * RAF Loop (고주기 계산, state X)
    * ========================= */
 
   useEffect(() => {
@@ -126,24 +122,30 @@ const DroneSimulation: React.FC = () => {
         const now = performance.now()
         const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
         lastTsRef.current = now
-        const alpha = Math.min(dt * 8, 1)
+
+        const alpha = Math.min(dt * 12, 1) // 🔥 반응성 강화
 
         const prev = smoothRef.current
 
         smoothRef.current = {
           ...target,
-          roll:
-            typeof prev.roll === "number" && typeof target.roll === "number"
-              ? lerp(prev.roll, target.roll, alpha)
-              : target.roll,
-          pitch:
-            typeof prev.pitch === "number" && typeof target.pitch === "number"
-              ? lerp(prev.pitch, target.pitch, alpha)
-              : target.pitch,
-          yaw:
-            typeof prev.yaw === "number" && typeof target.yaw === "number"
-              ? lerpAngle(prev.yaw, target.yaw, alpha)
-              : target.yaw,
+
+          // 위치·고도·속도만 부드럽게
+          altitude:
+            typeof prev.altitude === "number" &&
+            typeof target.altitude === "number"
+              ? lerp(prev.altitude, target.altitude, alpha)
+              : target.altitude,
+
+          speed:
+            typeof prev.speed === "number" && typeof target.speed === "number"
+              ? lerp(prev.speed, target.speed, alpha)
+              : target.speed,
+
+          // 🔥 각도는 보간 제거 (즉시)
+          roll: target.roll,
+          pitch: target.pitch,
+          yaw: target.yaw,
         }
       }
 
@@ -155,7 +157,7 @@ const DroneSimulation: React.FC = () => {
   }, [])
 
   /* =========================
-   * UI Snapshot (10Hz)
+   * UI Snapshot (12.5Hz)
    * ========================= */
 
   useEffect(() => {
@@ -169,14 +171,10 @@ const DroneSimulation: React.FC = () => {
         pitchInt: typeof d.pitch === "number" ? Math.round(d.pitch) : undefined,
         yawInt: typeof d.yaw === "number" ? Math.round(d.yaw) : undefined,
       })
-    }, 100) // 🔥 핵심: 10Hz
+    }, 80) // 🔥 12.5Hz
 
     return () => clearInterval(id)
   }, [])
-
-  /* =========================
-   * Render
-   * ========================= */
 
   return (
     <div className="space-y-6 p-6">
