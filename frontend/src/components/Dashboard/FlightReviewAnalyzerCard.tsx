@@ -90,6 +90,13 @@ export interface AnalysisResult {
     max_climb_rate?: number
     max_descent_rate?: number
     landing_impact?: number
+
+    path?: {
+      lat: number
+      lng: number
+      alt?: number
+      time?: number
+      }[]
   }
 }
 type FlightReviewAnalyzerCardProps = {

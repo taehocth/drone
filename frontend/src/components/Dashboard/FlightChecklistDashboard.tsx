@@ -125,55 +125,56 @@ const manualMetas: ExtendedManualChecklist[] = [
 
 const defaultStructures: Record<string, Record<string, string[]>> = {
   operation: {
-    "1. 배터리 점검": [
-      "기체 배터리 상태 점검",
-      "조종기 배터리 점검",
-      "배터리 케이스 점검 (배터리 흔들림)",
-    ],
-    "2. 조종기 점검": ["기체 전원 인가 전 조종기 전원 on", "유선 조종기 확인"],
-    "3. Main Body 점검": [
+
+    "조종기 점검": ["기체 전원 인가 전 조종기 전원 on", "유선 조종기 확인"],
+    "Main Body 점검": [
       "Main Frame (카울 크랙 점검)",
       "LTE, RFD 안테나 연결 및 전장품 고정 상태 점검",
       "카메라 고정 상태 점검",
       "Landing Gear 고정 상태 및 크랙 점검",
       "그리퍼 고정 및 전원 점검",
     ],
-    "4. Arm 점검": [
+    "Arm 점검": [
       "Arm Frame 크랙 점검",
       "모터 고정 상태 점검",
       "프로펠러 고정 상태 및 크랙 점검",
       "모터/ESC 작동 상태 및 회전 방향 점검",
       "Arm 폴딩 부분 나사 점검",
     ],
-    "5. 통신 상태 점검": [
+    "통신 상태 점검": [
       "LTE 연결 및 발열 확인",
       "RFD 연결 확인",
       "카메라 연결 확인",
       "GPS 상태 확인 (위성 개수 30 이상)",
       "K-DRIMS 연결 확인",
     ],
-    "6. GCS 미션 경로 점검": [
+    "GCS 미션 경로 점검": [
       "배송거점 이륙 및 착륙 위치 점검",
       "배달점 위치 점검",
       "대기 모드 설정 여부 점검",
       "전체 비행 고도 점검",
       "기체 Yaw 고정 점검",
     ],
-    "7. 배터리 연결 후 최종 점검": [
+    "배터리 연결 후 최종 점검": [
       "GCS 상 기체 위치 오차 및 기수 방향 점검",
       "비행 경로 최종 확인 및 업로드",
       "비행 모드 점검",
       "그리퍼 잠금 및 배송품 상태 확인",
       "비행 전 수평 캘리브레이션",
     ],
+    "배터리 점검": [
+      "기체 배터리 상태 점검",
+      "조종기 배터리 점검",
+      "배터리 케이스 점검 (배터리 흔들림)",
+    ],
   },
   "post-flight": {
-    "1. 배터리": [
+    "배터리": [
       "배터리 잔량 체크",
       "기체 전원 케이블 분리",
       "배터리 사이클 표기",
     ],
-    "2. 기체 점검": [
+    "기체 점검": [
       "Main Frame 크랙 점검",
       "Arm Frame 크랙 점검",
       "Landing Gear 고정 상태 및 크랙 점검",
@@ -186,23 +187,25 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
     ],
   },
   "regular-maintenance": {
-    "1. 노트북": ["노트북 배터리 상태 확인", "운영 소프트웨어 버전 확인"],
-    "2. 배터리": [
+    "노트북": ["노트북 배터리 상태 확인", "운영 소프트웨어 버전 확인"],
+    "배터리": [
       "P900 배터리 ",
       "반고체 배터리 최소 2세트 (4팩)",
       "배터리 충전기",
       "셀 체커기",
     ],
-    "3.조종기": ["무선 조종기", "유선 조종기"],
-    "4.기타": [
+    "조종기": ["무선 조종기", "유선 조종기"],
+    "기타": [
       "보령시 휴대폰",
       "인터콤",
       "배송물품 보호팩, 공기 주입기",
       "예비 기체",
     ],
+
+
   },
   "periodic-maintenance": {
-    "1. Main body 점검": [
+    " Main body 점검": [
       "Main Frame 전체 크랙 및 변형 점검",
       "카울 전체 크랙 및 마모 점검",
       "LTE 안테나 연결 상태 및 손상 점검",
@@ -213,7 +216,7 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
       "전장품 고정 상태 및 배선 점검",
       "배터리 케이스 고정 상태 점검",
     ],
-    "2. Arm 점검": [
+    " Arm 점검": [
       "Arm Frame 전체 크랙 및 변형 점검",
       "모터 베어링 마모 및 소음 점검",
       "모터 고정 나사 풀림 점검",
@@ -224,7 +227,7 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
       "Arm 폴딩 메커니즘 작동 점검",
       "Arm 폴딩 부분 나사 및 마모 점검",
     ],
-    "3. 비행점검": [
+    " 비행점검": [
       "비행 전 수평 캘리브레이션 정확도 확인",
       "GPS 수신 안정성 및 위성 수 확인",
       "비행 안정성 테스트 (호버링)",
@@ -995,11 +998,11 @@ export function FlightChecklistDashboard() {
                                   return (
 <div
   key={itemId}
+  role="button"
+  tabIndex={0}
   onClick={() =>
     handleCheckboxChange(meta.id, itemId, !done)
   }
-  role="button"
-  tabIndex={0}
   onKeyDown={(e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault()
@@ -1012,51 +1015,39 @@ export function FlightChecklistDashboard() {
       : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
   }`}
 >
-<Checkbox
-  id={itemId}
-  checked={done}
-  onClick={(e) => e.stopPropagation()}
-  onCheckedChange={(checked) =>
-    handleCheckboxChange(meta.id, itemId, Boolean(checked))
-  }
-  className="mt-1"
-/>
-                                      <div className="min-w-0 flex-1">
-                                        <label
-                                          htmlFor={itemId}
-                                          className={`cursor-pointer font-medium ${
-                                            done
-                                              ? "text-green-700 line-through dark:text-green-400"
-                                              : "text-gray-900 dark:text-gray-100"
-                                          }`}
-                                        >
-                                          {title}
-                                        </label>
-                                        {desc !== "" && (
-                                          <p
-                                            className={`text-sm ${
-                                              done
-                                                ? "text-green-600 dark:text-green-300"
-                                                : "text-muted-foreground"
-                                            }`}
-                                          >
-                                            {desc}
-                                          </p>
-                                        )}
-                                      </div>
-                                      {item.id && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() =>
-                                            handleDeleteItem(meta.id, item.id!)
-                                          }
-                                          className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-900/20 dark:hover:text-red-300"
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                      )}
-                                    </div>
+  {/* 체크박스는 시각 요소만 */}
+  <Checkbox
+    checked={done}
+    tabIndex={-1}
+    onClick={(e) => e.stopPropagation()}
+    className="mt-1"
+  />
+
+  {/* label ❌ → 그냥 span */}
+  <div className="min-w-0 flex-1">
+    <span
+      className={`block cursor-pointer font-medium ${
+        done
+          ? "text-green-700 line-through dark:text-green-400"
+          : "text-gray-900 dark:text-gray-100"
+      }`}
+    >
+      {title}
+    </span>
+
+    {desc !== "" && (
+      <p
+        className={`text-sm ${
+          done
+            ? "text-green-600 dark:text-green-300"
+            : "text-muted-foreground"
+        }`}
+      >
+        {desc}
+      </p>
+    )}
+  </div>
+</div>
                                   )
                                 })
                               )}
