@@ -30,103 +30,92 @@ export function RealtimeCBMStatusCard({
   const [data, setData] = useState<CbmSystem[]>([])
 
   useEffect(() => {
+    /* -------------------------------
+     * 1️⃣ 연결 안 됨
+     * ------------------------------- */
     if (!connected) {
-      // 연결되지 않았을 때는 빈 상태 또는 기본 메시지
       setData([
-        {
-          system: "Battery",
-          level: "warning",
-          msg: "연결되지 않음",
-        },
-        {
-          system: "ESC",
-          level: "warning",
-          msg: "연결되지 않음",
-        },
-        {
-          system: "FCC",
-          level: "warning",
-          msg: "연결되지 않음",
-        },
-        {
-          system: "GNSS",
-          level: "warning",
-          msg: "연결되지 않음",
-        },
+        { system: "Battery", level: "warning", msg: "연결되지 않음" },
+        { system: "ESC", level: "warning", msg: "연결되지 않음" },
+        { system: "FCC", level: "warning", msg: "연결되지 않음" },
+        { system: "GNSS", level: "warning", msg: "연결되지 않음" },
       ])
       return
     }
 
-    // 연결되었을 때 드론 데이터를 기반으로 CBM 상태 계산
+    /* -------------------------------
+     * 2️⃣ 연결됨 + 데이터 아직 없음
+     * ------------------------------- */
+    if (!droneData) {
+      setData([
+        { system: "Battery", level: "warning", msg: "데이터 수신 대기 중" },
+        { system: "ESC", level: "warning", msg: "데이터 수신 대기 중" },
+        { system: "FCC", level: "warning", msg: "데이터 수신 대기 중" },
+        { system: "GNSS", level: "warning", msg: "데이터 수신 대기 중" },
+      ])
+      return
+    }
+
+    /* -------------------------------
+     * 3️⃣ 연결됨 + 데이터 수신 중
+     * ------------------------------- */
     const systems: CbmSystem[] = []
 
-    // 배터리 상태 평가
-    const battery = droneData?.battery ?? 0
-    if (battery > 80) {
-      systems.push({
-        system: "Battery",
-        level: "safe",
-        msg: `정상 (${battery.toFixed(1)}%)`,
-      })
-    } else if (battery > 50) {
-      systems.push({
-        system: "Battery",
-        level: "warning",
-        msg: `주의 필요 (${battery.toFixed(1)}%)`,
-      })
+    /* 🔋 Battery */
+    if (typeof droneData.battery === "number") {
+      const battery = droneData.battery
+      systems.push(
+        battery > 80
+          ? { system: "Battery", level: "safe", msg: `정상 (${battery.toFixed(1)}%)` }
+          : battery > 50
+          ? { system: "Battery", level: "warning", msg: `주의 (${battery.toFixed(1)}%)` }
+          : { system: "Battery", level: "danger", msg: `위험 (${battery.toFixed(1)}%)` },
+      )
     } else {
       systems.push({
         system: "Battery",
-        level: "danger",
-        msg: `위험 (${battery.toFixed(1)}%)`,
+        level: "warning",
+        msg: "데이터 없음",
       })
     }
 
-    // ESC 상태 평가 (속도 기반)
-    const speed = droneData?.speed ?? 0
-    if (speed >= 0 && speed <= 20) {
-      systems.push({
-        system: "ESC",
-        level: "safe",
-        msg: `정상 (${speed.toFixed(1)} m/s)`,
-      })
-    } else if (speed > 20 && speed <= 30) {
-      systems.push({
-        system: "ESC",
-        level: "warning",
-        msg: `주의 필요 (${speed.toFixed(1)} m/s)`,
-      })
+    /* ⚙️ ESC (Speed) */
+    if (typeof droneData.speed === "number") {
+      const speed = droneData.speed
+      systems.push(
+        speed <= 20
+          ? { system: "ESC", level: "safe", msg: `정상 (${speed.toFixed(1)} m/s)` }
+          : speed <= 30
+          ? { system: "ESC", level: "warning", msg: `주의 (${speed.toFixed(1)} m/s)` }
+          : { system: "ESC", level: "danger", msg: `위험 (${speed.toFixed(1)} m/s)` },
+      )
     } else {
       systems.push({
         system: "ESC",
-        level: "danger",
-        msg: `위험 (${speed.toFixed(1)} m/s)`,
+        level: "warning",
+        msg: "데이터 없음",
       })
     }
 
-    // FCC 상태 평가 (고도 기반)
-    const altitude = droneData?.altitude ?? 0
-    if (altitude >= 0 && altitude <= 120) {
-      systems.push({
-        system: "FCC",
-        level: "safe",
-        msg: `정상 (${altitude.toFixed(1)} m)`,
-      })
-    } else if (altitude > 120 && altitude <= 150) {
-      systems.push({
-        system: "FCC",
-        level: "warning",
-        msg: `주의 필요 (${altitude.toFixed(1)} m)`,
-      })
+    /* 🧭 FCC (Altitude) */
+    if (typeof droneData.altitude === "number") {
+      const altitude = droneData.altitude
+      systems.push(
+        altitude <= 120
+          ? { system: "FCC", level: "safe", msg: `정상 (${altitude.toFixed(1)} m)` }
+          : altitude <= 150
+          ? { system: "FCC", level: "warning", msg: `주의 (${altitude.toFixed(1)} m)` }
+          : { system: "FCC", level: "danger", msg: `위험 (${altitude.toFixed(1)} m)` },
+      )
     } else {
       systems.push({
         system: "FCC",
-        level: "danger",
-        msg: `위험 (${altitude.toFixed(1)} m)`,
+        level: "warning",
+        msg: "데이터 없음",
       })
     }
 
-    // GNSS 상태 평가 (연결 상태 기반)
+    /* 🛰 GNSS */
     systems.push({
       system: "GNSS",
       level: "safe",
@@ -157,25 +146,21 @@ export function RealtimeCBMStatusCard({
           상태 기반 정비 (CBM)
         </CardTitle>
       </CardHeader>
+
       <CardContent className="space-y-2">
-        {data.length === 0 ? (
-          <p className="text-sm text-gray-500">데이터 수신 대기 중...</p>
-        ) : (
-          data.map((sys, idx) => (
-            <div
-              key={`${sys.system}-${idx}`}
-              className={`flex items-center justify-between border-b pb-1 ${colorMap[sys.level]}`}
-            >
-              <div className="flex items-center gap-2">
-                {iconMap[sys.system] ?? <CheckCircle className="h-5 w-5" />}
-                <span className="font-medium">{sys.system}</span>
-              </div>
-              <span className="text-sm">{sys.msg}</span>
+        {data.map((sys, idx) => (
+          <div
+            key={`${sys.system}-${idx}`}
+            className={`flex items-center justify-between border-b pb-1 ${colorMap[sys.level]}`}
+          >
+            <div className="flex items-center gap-2">
+              {iconMap[sys.system] ?? <CheckCircle className="h-5 w-5" />}
+              <span className="font-medium">{sys.system}</span>
             </div>
-          ))
-        )}
+            <span className="text-sm">{sys.msg}</span>
+          </div>
+        ))}
       </CardContent>
     </Card>
   )
 }
-
