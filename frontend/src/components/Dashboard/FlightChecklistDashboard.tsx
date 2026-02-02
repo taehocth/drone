@@ -993,26 +993,34 @@ export function FlightChecklistDashboard() {
                                   const title = item.title ?? ""
 
                                   return (
-                                    <div
-                                      key={itemId}
-                                      className={`flex items-start gap-2 rounded-lg border p-2 ${
-                                        done
-                                          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
-                                          : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-                                      }`}
-                                    >
-                                      <Checkbox
-                                        id={itemId}
-                                        checked={done}
-                                        onCheckedChange={(checked) =>
-                                          handleCheckboxChange(
-                                            meta.id,
-                                            itemId,
-                                            Boolean(checked),
-                                          )
-                                        }
-                                        className="mt-1"
-                                      />
+<div
+  key={itemId}
+  onClick={() =>
+    handleCheckboxChange(meta.id, itemId, !done)
+  }
+  role="button"
+  tabIndex={0}
+  onKeyDown={(e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault()
+      handleCheckboxChange(meta.id, itemId, !done)
+    }
+  }}
+  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2 transition-colors ${
+    done
+      ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+      : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+  }`}
+>
+<Checkbox
+  id={itemId}
+  checked={done}
+  onClick={(e) => e.stopPropagation()}
+  onCheckedChange={(checked) =>
+    handleCheckboxChange(meta.id, itemId, Boolean(checked))
+  }
+  className="mt-1"
+/>
                                       <div className="min-w-0 flex-1">
                                         <label
                                           htmlFor={itemId}
