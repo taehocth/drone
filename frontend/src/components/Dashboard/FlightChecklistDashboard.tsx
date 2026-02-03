@@ -35,6 +35,7 @@ import {
   BarChart3,
   Check,
   CheckCircle,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   Download,
@@ -45,6 +46,7 @@ import {
   Save,
   Settings,
   Shield,
+  Square,
   Target,
   Trash2,
 } from "lucide-react"
@@ -443,6 +445,39 @@ export function FlightChecklistDashboard() {
       await toggleChecklistItem(manualId, itemId, checked)
     } catch (e) {
       console.error("toggleChecklistItem error", e)
+    }
+  }
+
+  const handleToggleAllInCategory = async (
+    manualId: string,
+    category: string,
+    items: ChecklistItem[],
+  ) => {
+    const allCompleted = items.every((item) => item.isCompleted === true)
+    const newCheckedState = !allCompleted
+
+    // ✅ 1. 프론트 상태 먼저 즉시 반영
+    setItemsByManual((prev) => ({
+      ...prev,
+      [manualId]: (prev[manualId] || []).map((item) =>
+        normalizeCategory(item.category || "기타") === category
+          ? { ...item, isCompleted: newCheckedState }
+          : item,
+      ),
+    }))
+
+    // ✅ 2. 그 다음 Firestore 업데이트
+    try {
+      await Promise.all(
+        items.map((item) => {
+          if (item.id) {
+            return toggleChecklistItem(manualId, item.id, newCheckedState)
+          }
+          return Promise.resolve()
+        }),
+      )
+    } catch (e) {
+      console.error("toggleAllInCategory error", e)
     }
   }
 
@@ -956,11 +991,11 @@ export function FlightChecklistDashboard() {
                           key={category}
                           className="overflow-hidden rounded-lg border"
                         >
-                          <button
-                            onClick={() => toggleCategory(category)}
-                            className="flex w-full items-center justify-between bg-gray-50 p-3 hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700"
-                          >
-                            <div className="flex items-center gap-3">
+                          <div className="flex w-full items-center justify-between bg-gray-50 p-3 dark:bg-gray-800">
+                            <button
+                              onClick={() => toggleCategory(category)}
+                              className="flex flex-1 items-center gap-3 hover:opacity-80"
+                            >
                               <span className="text-base font-semibold">
                                 {category}
                               </span>
@@ -968,18 +1003,53 @@ export function FlightChecklistDashboard() {
                                 {catStatus.completedCount}/
                                 {catStatus.totalCount}
                               </span>
-                            </div>
+                            </button>
                             <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggleAllInCategory(
+                                    meta.id,
+                                    category,
+                                    catItems,
+                                  )
+                                }}
+                                className="h-7 px-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700"
+                                title={
+                                  catStatus.isAllCompleted
+                                    ? "모두 체크 해제"
+                                    : "모두 체크"
+                                }
+                              >
+                                {catStatus.isAllCompleted ? (
+                                  <>
+                                    <CheckSquare className="mr-1 h-3 w-3" />
+                                    모두 해제
+                                  </>
+                                ) : (
+                                  <>
+                                    <Square className="mr-1 h-3 w-3" />
+                                    모두 선택
+                                  </>
+                                )}
+                              </Button>
                               {catStatus.isAllCompleted && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
-                              {isCollapsed ? (
-                                <ChevronRight className="h-4 w-4 text-gray-500" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4 text-gray-500" />
-                              )}
+                              <button
+                                onClick={() => toggleCategory(category)}
+                                className="p-1 hover:opacity-80"
+                              >
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-4 w-4 text-gray-500" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-gray-500" />
+                                )}
+                              </button>
                             </div>
-                          </button>
+                          </div>
 
                           {!isCollapsed && (
                             <div className="space-y-2 bg-white p-3 dark:bg-gray-900">
