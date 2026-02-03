@@ -31,6 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { NaverMap } from "@/components/Map/NaverMap"
 
 type ExplanationLevel = "beginner" | "normal" | "expert"
 
@@ -668,6 +669,26 @@ export function FlightReviewAnalyzerCard({
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* 비행 경로 지도 */}
+        {analysisResult?.extra?.path && analysisResult.extra.path.length > 0 && (
+          <div className="rounded-lg border-2 border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 p-5 shadow-md dark:border-green-800 dark:from-green-950/40 dark:to-emerald-950/40">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="rounded-full bg-gradient-to-br from-green-500 to-emerald-500 p-2.5 shadow-lg">
+                <FileChartColumn className="h-5 w-5 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                🗺️ 비행 경로
+              </h3>
+            </div>
+            <div className="h-[400px] w-full overflow-hidden rounded-lg border border-gray-300 shadow-sm">
+              <NaverMap flightPath={analysisResult.extra.path} />
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              💡 총 {analysisResult.extra.path.length}개의 GPS 포인트가 기록되었습니다.
+            </p>
           </div>
         )}
 

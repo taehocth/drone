@@ -9,6 +9,7 @@ interface NaverMapProps {
   lng?: number
   markers?: Array<{ lat: number; lng: number; id: number }>
   onMapClick?: (nx: number, ny: number) => void
+  flightPath?: Array<{ lat: number; lng: number; alt?: number; time?: number }>
 }
 
 const DEFAULT_LAT = 36.5941
@@ -19,6 +20,7 @@ export function NaverMap({
   lng,
   markers: _markers = [],
   onMapClick,
+  flightPath,
 }: NaverMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
@@ -27,6 +29,7 @@ export function NaverMap({
 
   const pathCoords = useRef<any[]>([])
   const polylineRef = useRef<any>(null)
+  const flightPathPolylineRef = useRef<any>(null)
 
   const [searchQuery, setSearchQuery] = useState("")
   const [clickedInfo, setClickedInfo] = useState<{
@@ -498,6 +501,47 @@ export function NaverMap({
       polylineRef.current = null
     }
   }
+
+  // ================================
+  // 비행 로그 경로 표시
+  // ================================
+  useEffect(() => {
+    if (!flightPath || flightPath.length === 0 || !mapInstance.current) {
+      // flightPath가 없으면 기존 polyline 제거
+      if (flightPathPolylineRef.current) {
+        flightPathPolylineRef.current.setMap(null)
+        flightPathPolylineRef.current = null
+      }
+      return
+    }
+
+    const naver = (window as any).naver
+    const path = flightPath.map((point) => new naver.maps.LatLng(point.lat, point.lng))
+
+    // 기존 flightPath polyline 제거
+    if (flightPathPolylineRef.current) {
+      flightPathPolylineRef.current.setMap(null)
+    }
+
+    // 새로운 polyline 생성
+    flightPathPolylineRef.current = new naver.maps.Polyline({
+      map: mapInstance.current,
+      path: path,
+      strokeColor: "#10B981", // 녹색으로 비행 로그 경로 표시
+      strokeWeight: 3,
+      strokeOpacity: 0.8,
+      zIndex: 200,
+    })
+
+    // 경로의 첫 번째 지점으로 지도 중심 이동
+    if (path.length > 0) {
+      mapInstance.current.setCenter(path[0])
+      // 경로 전체가 보이도록 bounds 조정
+      const bounds = new naver.maps.LatLngBounds(path[0], path[0])
+      path.forEach((point) => bounds.extend(point))
+      mapInstance.current.fitBounds(bounds, { padding: 50 })
+    }
+  }, [flightPath])
 
   // ================================
   // .plan 파일 파싱 및 경로 표시
