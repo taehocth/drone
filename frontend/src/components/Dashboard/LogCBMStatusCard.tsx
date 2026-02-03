@@ -12,8 +12,10 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  Map,
 } from "lucide-react"
 import type { AnalysisResult } from "@/components/Dashboard/FlightReviewAnalyzerCard"
+import { NaverMap } from "@/components/Map/NaverMap"
 
 // --------------------------------------------------------
 // Types
@@ -229,7 +231,7 @@ export function LogCBMStatusCard({
   analysis: AnalysisResult | null
 }) {
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([])
-  const [openSections, setOpenSections] = useState([false, false, false, false])
+  const [openSections, setOpenSections] = useState([false, false, false, false, false])
 
   if (!analysis) {
     return (
@@ -492,6 +494,17 @@ export function LogCBMStatusCard({
         },
       ].map((m) => ({ ...m, ...evalMetric(m.label, m.value) })),
     },
+
+    // ---------------- 지도 ----------------
+    {
+      name: "비행 경로 지도",
+      icon: <Map className="h-6 w-6 text-emerald-500 drop-shadow" />,
+      level: (e.path && e.path.length > 0) ? "safe" : "warning",
+      message: (e.path && e.path.length > 0)
+        ? `${e.path.length}개 GPS 포인트 기록됨`
+        : "GPS 경로 데이터 없음",
+      metrics: [],
+    },
   ]
 
   return (
@@ -505,7 +518,7 @@ export function LogCBMStatusCard({
 
       <CardContent className="space-y-10">
         {/* CATEGORY BUTTONS */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {statuses.map((sys, i) => (
             <button
               key={i}
@@ -556,32 +569,43 @@ export function LogCBMStatusCard({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {sys.metrics.map((m, idx) => (
-                  <div
-                    key={idx}
-                    className={`rounded-xl border p-5 shadow transition hover:scale-[1.02] hover:shadow-xl ${metricLevelColor[m.level ?? "safe"]}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {m.label}
+              {/* 지도 섹션 특별 처리 */}
+              {sys.name === "비행 경로 지도" && e.path && e.path.length > 0 ? (
+                <div className="h-[400px] w-full overflow-hidden rounded-lg border border-gray-300 shadow-sm">
+                  <NaverMap flightPath={e.path} />
+                </div>
+              ) : sys.name === "비행 경로 지도" ? (
+                <div className="rounded-lg border border-gray-300 bg-gray-50 p-8 text-center text-gray-500">
+                  GPS 경로 데이터가 없습니다
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {sys.metrics.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className={`rounded-xl border p-5 shadow transition hover:scale-[1.02] hover:shadow-xl ${metricLevelColor[m.level ?? "safe"]}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-gray-900">
+                          {m.label}
+                        </div>
+                        {metricLevelIcon[m.level ?? "safe"]}
                       </div>
-                      {metricLevelIcon[m.level ?? "safe"]}
-                    </div>
 
-                    <div className="mt-1 flex items-end gap-1 text-2xl font-bold text-gray-900">
-                      {m.value}
-                      {m.unit && (
-                        <span className="text-sm text-gray-600">{m.unit}</span>
-                      )}
-                    </div>
+                      <div className="mt-1 flex items-end gap-1 text-2xl font-bold text-gray-900">
+                        {m.value}
+                        {m.unit && (
+                          <span className="text-sm text-gray-600">{m.unit}</span>
+                        )}
+                      </div>
 
-                    <div className="mt-2 text-xs text-gray-700/70">
-                      {m.desc} — {m.reason}
+                      <div className="mt-2 text-xs text-gray-700/70">
+                        {m.desc} — {m.reason}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
