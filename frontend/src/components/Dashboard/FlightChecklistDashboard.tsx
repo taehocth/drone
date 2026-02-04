@@ -49,6 +49,7 @@ import {
   Square,
   Target,
   Trash2,
+  ListChecks,
 } from "lucide-react"
 
 const normalizeCategory = (raw: string) => {
