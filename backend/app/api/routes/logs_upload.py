@@ -585,6 +585,67 @@ async def upload_log(file: UploadFile = File(...)):
             alt = [-float(z) for z in pos_d["z"]]
             summary["gnss_alt_std"] = float(np.std(alt))
 
+        # GPS Path 추출 (비행 경로 지도용)
+        path_points = []
+
+        # vehicle_global_position 우선 사용 (WGS84 좌표, 도 단위)
+        if global_pos and "lat" in global_pos.data and "lon" in global_pos.data:
+            lats = global_pos.data["lat"]
+            lons = global_pos.data["lon"]
+            alts = global_pos.data.get("alt", [None] * len(lats))
+            times = global_pos.data.get("timestamp", [None] * len(lats))
+
+            # 데이터 샘플링 (너무 많으면 10개 중 1개씩만)
+            step = max(1, len(lats) // 500)
+
+            for i in range(0, len(lats), step):
+                lat = float(lats[i])
+                lon = float(lons[i])
+
+                # 유효한 좌표인지 확인 (위도: -90~90, 경도: -180~180)
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    point = {"lat": lat, "lng": lon}
+
+                    if alts[i] is not None:
+                        point["alt"] = float(alts[i])
+
+                    if times[i] is not None:
+                        point["time"] = int(times[i])
+
+                    path_points.append(point)
+
+        # fallback: vehicle_gps_position 사용 (1e7 스케일)
+        elif gps and "lat" in gps.data and "lon" in gps.data:
+            lats = gps.data["lat"]
+            lons = gps.data["lon"]
+            alts = gps.data.get("altitude_msl_m", [None] * len(lats))
+            times = gps.data.get("timestamp", [None] * len(lats))
+
+            # 데이터 샘플링
+            step = max(1, len(lats) // 500)
+
+            for i in range(0, len(lats), step):
+                # GPS 좌표는 1e7로 스케일됨 → 도 단위로 변환
+                lat = float(lats[i]) / 1e7
+                lon = float(lons[i]) / 1e7
+
+                # 유효한 좌표인지 확인
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    point = {"lat": lat, "lng": lon}
+
+                    if alts[i] is not None:
+                        point["alt"] = float(alts[i])
+
+                    if times[i] is not None:
+                        point["time"] = int(times[i])
+
+                    path_points.append(point)
+
+        # path가 유효한 경우만 summary에 추가
+        if path_points:
+            summary["path"] = path_points
+            print(f"[DEBUG] GPS 경로 포인트 {len(path_points)}개 추출 완료")
+
         # Flight summary
         altitudes = [m["altitude"] for m in merged]
         speeds = [m["speed"] for m in merged]
