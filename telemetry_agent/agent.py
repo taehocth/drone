@@ -19,7 +19,7 @@ TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 BAUD_RATES = [57600, 115200, 921600]
 
 # 전송 주기(초): 0.05 = 20Hz (빠름), 0.1 = 10Hz (권장)
-PUSH_INTERVAL_SEC = 0.1
+PUSH_INTERVAL_SEC = 0.05
 
 # 특정 데이터가 너무 오래 갱신되지 않으면 stale로 판단(초)
 STALE_WARN_SEC = 2.0
@@ -127,7 +127,7 @@ class TelemetryAgent:
     # -------------------------------------------------
     def ingest_message(self, msg) -> None:
         t = msg.get_type()
-        ts = now_ts()
+        ts = time.time()
 
         with self._lock:
             # sysid는 항상 유지
@@ -221,14 +221,17 @@ class TelemetryAgent:
     def build_snapshot(self) -> dict:
         with self._lock:
             snap = {
-                "sysid": self._cache.get("sysid"),
-                "ts": now_ts(),
-                "position": self._cache.get("position"),
-                "velocity": self._cache.get("velocity"),
-                "attitude": self._cache.get("attitude"),
-                "battery": self._cache.get("battery"),
-                "gps": self._cache.get("gps"),
-            }
+    "sysid": self._cache.get("sysid"),
+
+    # 🔥 자세는 항상 최신
+    "attitude": self._cache.get("attitude"),
+
+    # 아래는 있으면 포함
+    "position": self._cache.get("position"),
+    "velocity": self._cache.get("velocity"),
+    "battery": self._cache.get("battery"),
+    "gps": self._cache.get("gps"),
+}
 
             # stale 진단용 필드(서버/프론트에서 무시해도 됨)
             age = {}
