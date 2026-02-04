@@ -105,24 +105,21 @@ const DroneSimulation: React.FC = () => {
         const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
         lastTsRef.current = now
 
-        const alpha = Math.min(dt * 8, 1) // 🔽 보간 약화
+        const alpha = Math.min(dt * 15, 1) // 🚀 더 빠른 반응
 
         const prev = smoothRef.current
         smoothRef.current = {
           ...t,
-          altitude:
-            prev.altitude && t.altitude
-              ? lerp(prev.altitude, t.altitude, alpha)
-              : t.altitude,
-          speed:
-            prev.speed && t.speed
-              ? lerp(prev.speed, t.speed, alpha)
-              : t.speed,
+          // 🚀 중요 데이터는 즉시 반영 (지연 최소화)
+          altitude: t.altitude,
+          speed: t.speed,
+          battery: t.battery,
+          // 🎮 자세는 부드럽게 보간
           roll:
             prev.roll && t.roll ? lerp(prev.roll, t.roll, alpha) : t.roll,
           pitch:
             prev.pitch && t.pitch ? lerp(prev.pitch, t.pitch, alpha) : t.pitch,
-          yaw: t.yaw, // 🔥 yaw는 그대로
+          yaw: t.yaw,
         }
       }
       raf = requestAnimationFrame(loop)
@@ -142,7 +139,7 @@ const DroneSimulation: React.FC = () => {
         pitchInt: d.pitch && Math.round(d.pitch),
         yawInt: d.yaw && Math.round(d.yaw),
       })
-    }, 50) // 🔥 20Hz UI
+    }, 33) // 🚀 30Hz UI (더 빠른 반응)
 
     return () => clearInterval(id)
   }, [])
