@@ -1005,36 +1005,33 @@ export function FlightChecklistDashboard() {
                               </span>
                             </button>
                             <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleToggleAllInCategory(
-                                    meta.id,
-                                    category,
-                                    catItems,
-                                  )
-                                }}
-                                className="h-7 px-2 text-xs hover:bg-gray-200 dark:hover:bg-gray-700"
-                                title={
-                                  catStatus.isAllCompleted
-                                    ? "모두 체크 해제"
-                                    : "모두 체크"
-                                }
-                              >
-                                {catStatus.isAllCompleted ? (
-                                  <>
-                                    <CheckSquare className="mr-1 h-3 w-3" />
-                                    모두 해제
-                                  </>
-                                ) : (
-                                  <>
-                                    <Square className="mr-1 h-3 w-3" />
-                                    모두 선택
-                                  </>
-                                )}
-                              </Button>
+                            <Button
+  size="sm"
+  variant="ghost"
+  onClick={(e) => {
+    e.stopPropagation()
+    handleToggleAllInCategory(
+      meta.id,
+      category,
+      catItems,
+    )
+  }}
+  className={`h-7 px-2 text-xs flex items-center gap-1
+    ${
+      catStatus.isAllCompleted
+        ? "text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30"
+        : "text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700"
+    }
+  `}
+  title={
+    catStatus.isAllCompleted
+      ? "모두 체크 해제"
+      : "모두 체크"
+  }
+>
+  <ListChecks className="h-3.5 w-3.5" />
+  {catStatus.isAllCompleted ? "전체 해제" : "전체 선택"}
+</Button>
                               {catStatus.isAllCompleted && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
