@@ -33,12 +33,11 @@ const radToDeg = (v?: number) =>
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
-// 🔥 yaw 전용: 각속도 제한 보간
 function smoothYaw(
   prev: number,
   target: number,
   dt: number,
-  maxDegPerSec = 120, // 필요하면 60 / 90 / 180 등으로 조절
+  maxDegPerSec = 120,
 ) {
   let diff = target - prev
   if (diff > 180) diff -= 360
@@ -59,9 +58,8 @@ const DroneSimulation: React.FC = () => {
 
   const wsRef = useRef<WebSocket | null>(null)
 
-  // 데이터 흐름 분리
-  const targetRef = useRef<DroneData | null>(null) // 서버 최신값
-  const smoothRef = useRef<DroneData>({})           // 보간 결과
+  const targetRef = useRef<DroneData | null>(null)
+  const smoothRef = useRef<DroneData>({})
   const lastTsRef = useRef<number>(performance.now())
 
   /* =========================
@@ -71,10 +69,17 @@ const DroneSimulation: React.FC = () => {
   const connect = () => {
     if (wsRef.current) return
 
-    const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000"
-    const wsProtocol = apiBaseUrl.startsWith("https") ? "wss" : "ws"
-    const wsHost = apiBaseUrl.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
+    // 🔧 핵심: Telemetry WS 전용 URL 우선 사용
+    const telemetryWsBase =
+      import.meta.env.VITE_TELEMETRY_WS_URL ||
+      import.meta.env.VITE_API_URL ||
+      "http://localhost:8000"
+
+    const wsProtocol = telemetryWsBase.startsWith("https") ? "wss" : "ws"
+    const wsHost = telemetryWsBase.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
     const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
+
+    console.log("📡 Telemetry WS URL:", wsUrl)
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -92,6 +97,12 @@ const DroneSimulation: React.FC = () => {
           ? Math.sqrt(vx * vx + vy * vy) * 3.6
           : undefined
 
+      // 🔧 지연 확인용 (선택)
+      if (msg.server_ts) {
+        const delay = Date.now() - new Date(msg.server_ts).getTime()
+        console.log("⏱ Telemetry delay(ms):", delay)
+      }
+
       targetRef.current = {
         sysid: msg.sysid,
         altitude: msg.position?.alt,
@@ -99,7 +110,6 @@ const DroneSimulation: React.FC = () => {
         longitude: msg.position?.lon,
         battery: msg.battery?.remaining,
 
-        // 서버 값은 그대로 저장 (보간은 RAF에서)
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
@@ -126,7 +136,7 @@ const DroneSimulation: React.FC = () => {
   }
 
   /* =========================
-   * RAF Loop (핵심 로직)
+   * RAF Loop
    * ========================= */
 
   useEffect(() => {
@@ -145,7 +155,6 @@ const DroneSimulation: React.FC = () => {
         smoothRef.current = {
           ...target,
 
-          // 위치·속도는 부드럽게
           altitude:
             typeof prev.altitude === "number" &&
             typeof target.altitude === "number"
@@ -157,7 +166,6 @@ const DroneSimulation: React.FC = () => {
               ? lerp(prev.speed, target.speed, alpha)
               : target.speed,
 
-          // roll / pitch는 일반 보간
           roll:
             typeof prev.roll === "number" && typeof target.roll === "number"
               ? lerp(prev.roll, target.roll, alpha)
@@ -168,7 +176,6 @@ const DroneSimulation: React.FC = () => {
               ? lerp(prev.pitch, target.pitch, alpha)
               : target.pitch,
 
-          // 🔥 yaw만 각속도 제한 보간
           yaw:
             typeof prev.yaw === "number" && typeof target.yaw === "number"
               ? smoothYaw(prev.yaw, target.yaw, dt, 120)
@@ -184,7 +191,7 @@ const DroneSimulation: React.FC = () => {
   }, [])
 
   /* =========================
-   * UI Snapshot (12.5Hz)
+   * UI Snapshot
    * ========================= */
 
   useEffect(() => {

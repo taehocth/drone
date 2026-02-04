@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 데이터베이스
+  db:
+    image: postgres:16
+    container_name: drone_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-drone_prod_db_9f2a31}
+      POSTGRES_DB: ${POSTGRES_DB:-drone_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - drone_network
+
+  # FastAPI 백엔드
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drone_backend
+    restart: always
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-drone_prod_db_9f2a31}
+      - POSTGRES_DB=${POSTGRES_DB:-drone_db}
+      - SECRET_KEY=${SECRET_KEY}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MAVLINK_ENABLED=false
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    networks:
+      - drone_network
+    volumes:
+      - ./app:/app/app
+
+  # Nginx 리버스 프록시 (선택사항)
+  nginx:
+    image: nginx:alpine
+    container_name: drone_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - drone_network
+
+volumes:
+  postgres_data:
+
+networks:
+  drone_network:
+    driver: bridge
