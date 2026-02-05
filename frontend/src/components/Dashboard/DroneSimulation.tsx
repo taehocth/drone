@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
+/* =========================
+ * Types
+ * ========================= */
+
 export interface DroneData {
   altitude?: number
   speed?: number
@@ -17,47 +21,74 @@ export interface DroneData {
   yawInt?: number
 
   timestamp?: string
-  wsAgeMs?: number
   sysid?: number
 }
+
+/* =========================
+ * Utils
+ * ========================= */
 
 const radToDeg = (v?: number) =>
   typeof v === "number" ? (v * 180) / Math.PI : undefined
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
+function smoothYaw(
+  prev: number,
+  target: number,
+  dt: number,
+  maxDegPerSec = 120,
+) {
+  let diff = target - prev
+  if (diff > 180) diff -= 360
+  if (diff < -180) diff += 360
+
+  const maxStep = maxDegPerSec * dt
+  if (Math.abs(diff) <= maxStep) return target
+  return prev + Math.sign(diff) * maxStep
+}
+
+/* =========================
+ * Component
+ * ========================= */
+
 const DroneSimulation: React.FC = () => {
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
+
   const targetRef = useRef<DroneData | null>(null)
   const smoothRef = useRef<DroneData>({})
   const lastTsRef = useRef<number>(performance.now())
 
+  /* =========================
+   * Connect / Disconnect
+   * ========================= */
+
   const connect = () => {
     if (wsRef.current) return
 
-    const base =
+    // 🔧 핵심: Telemetry WS 전용 URL 우선 사용
+    const telemetryWsBase =
       import.meta.env.VITE_TELEMETRY_WS_URL ||
       import.meta.env.VITE_API_URL ||
       "http://localhost:8000"
 
-    const wsUrl = `${base.replace(/^http/, "ws")}/api/v1/qgc/ws/qgc`
-    console.log("📡 WS:", wsUrl)
+    const wsProtocol = telemetryWsBase.startsWith("https") ? "wss" : "ws"
+    const wsHost = telemetryWsBase.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
+    const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
+
+    console.log("📡 Telemetry WS URL:", wsUrl)
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data)
-      if (!msg.sysid) return
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
+      if (typeof msg.sysid !== "number") return
 
       setConnected(true)
-
-      const wsAgeMs = msg.ws_ts
-        ? Date.now() - new Date(msg.ws_ts).getTime()
-        : undefined
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
@@ -65,6 +96,12 @@ const DroneSimulation: React.FC = () => {
         typeof vx === "number" && typeof vy === "number"
           ? Math.sqrt(vx * vx + vy * vy) * 3.6
           : undefined
+
+      // 🔧 지연 확인용 (선택)
+      if (msg.server_ts) {
+        const delay = Date.now() - new Date(msg.server_ts).getTime()
+        console.log("⏱ Telemetry delay(ms):", delay)
+      }
 
       targetRef.current = {
         sysid: msg.sysid,
@@ -75,77 +112,149 @@ const DroneSimulation: React.FC = () => {
 
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),
-        yaw: radToDeg(msg.attitude?.yaw), // 🔥 즉각 반영
+        yaw: radToDeg(msg.attitude?.yaw),
 
         speed,
-        wsAgeMs,
+        timestamp: msg.server_ts,
       }
     }
 
     ws.onclose = ws.onerror = () => {
+      setConnected(false)
       wsRef.current = null
       targetRef.current = null
       smoothRef.current = {}
-      setConnected(false)
     }
   }
 
   const disconnect = () => {
     wsRef.current?.close()
     wsRef.current = null
+    setConnected(false)
+    targetRef.current = null
+    smoothRef.current = {}
   }
 
-  /* RAF loop */
+  /* =========================
+   * RAF Loop
+   * ========================= */
+
   useEffect(() => {
-    let raf: number
-    const loop = () => {
-      const t = targetRef.current
-      if (t) {
+    let rafId: number
+
+    const rafLoop = () => {
+      const target = targetRef.current
+      if (target) {
         const now = performance.now()
         const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
         lastTsRef.current = now
 
-        const alpha = Math.min(dt * 15, 1) // 🚀 더 빠른 반응
-
+        const alpha = Math.min(dt * 20, 1)
         const prev = smoothRef.current
+
         smoothRef.current = {
-          ...t,
-          // 🚀 중요 데이터는 즉시 반영 (지연 최소화)
-          altitude: t.altitude,
-          speed: t.speed,
-          battery: t.battery,
-          // 🎮 자세는 부드럽게 보간
+          ...target,
+
+          altitude:
+            typeof prev.altitude === "number" &&
+            typeof target.altitude === "number"
+              ? lerp(prev.altitude, target.altitude, alpha)
+              : target.altitude,
+
+          speed:
+            typeof prev.speed === "number" && typeof target.speed === "number"
+              ? lerp(prev.speed, target.speed, alpha)
+              : target.speed,
+
           roll:
-            prev.roll && t.roll ? lerp(prev.roll, t.roll, alpha) : t.roll,
+            typeof prev.roll === "number" && typeof target.roll === "number"
+              ? lerp(prev.roll, target.roll, alpha)
+              : target.roll,
+
           pitch:
-            prev.pitch && t.pitch ? lerp(prev.pitch, t.pitch, alpha) : t.pitch,
-          yaw: t.yaw,
+            typeof prev.pitch === "number" && typeof target.pitch === "number"
+              ? lerp(prev.pitch, target.pitch, alpha)
+              : target.pitch,
+
+          yaw:
+            typeof prev.yaw === "number" && typeof target.yaw === "number"
+              ? smoothYaw(prev.yaw, target.yaw, dt, 120)
+              : target.yaw,
         }
       }
-      raf = requestAnimationFrame(loop)
+
+      rafId = requestAnimationFrame(rafLoop)
     }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
+
+    rafId = requestAnimationFrame(rafLoop)
+    return () => cancelAnimationFrame(rafId)
   }, [])
 
-  /* UI snapshot */
+  /* =========================
+   * UI Snapshot
+   * ========================= */
+
   useEffect(() => {
-    const id = setInterval(() => {
-      const d = smoothRef.current
-      if (!d.sysid) return
-      setRenderData({
-        ...d,
-        rollInt: d.roll && Math.round(d.roll),
-        pitchInt: d.pitch && Math.round(d.pitch),
-        yawInt: d.yaw && Math.round(d.yaw),
-      })
-    }, 33) // 🚀 30Hz UI (더 빠른 반응)
-
-    return () => clearInterval(id)
+    let rafId: number
+  
+    const rafLoop = () => {
+      const target = targetRef.current
+      if (target) {
+        const now = performance.now()
+        const dt = Math.min((now - lastTsRef.current) / 1000, 0.05)
+        lastTsRef.current = now
+  
+        const alpha = Math.min(dt * 20, 1)
+        const prev = smoothRef.current
+  
+        const next = {
+          ...target,
+          altitude:
+            prev.altitude != null && target.altitude != null
+              ? lerp(prev.altitude, target.altitude, alpha)
+              : target.altitude,
+          speed:
+            prev.speed != null && target.speed != null
+              ? lerp(prev.speed, target.speed, alpha)
+              : target.speed,
+          roll:
+            prev.roll != null && target.roll != null
+              ? lerp(prev.roll, target.roll, alpha)
+              : target.roll,
+          pitch:
+            prev.pitch != null && target.pitch != null
+              ? lerp(prev.pitch, target.pitch, alpha)
+              : target.pitch,
+          yaw:
+            prev.yaw != null && target.yaw != null
+              ? smoothYaw(prev.yaw, target.yaw, dt, 180)
+              : target.yaw,
+        }
+  
+        smoothRef.current = next
+  
+        // 🔥 여기서 바로 렌더
+        setRenderData({
+          ...next,
+          rollInt: next.roll != null ? Math.round(next.roll) : undefined,
+          pitchInt: next.pitch != null ? Math.round(next.pitch) : undefined,
+          yawInt: next.yaw != null ? Math.round(next.yaw) : undefined,
+        })
+      }
+  
+      rafId = requestAnimationFrame(rafLoop)
+    }
+  
+    rafId = requestAnimationFrame(rafLoop)
+    return () => cancelAnimationFrame(rafId)
   }, [])
+
+  /* =========================
+   * Render
+   * ========================= */
 
   return (
-    <div className="p-6">
+    <div className="space-y-6 p-6">
       <DroneSimulationCard
         data={renderData}
         connected={connected}
