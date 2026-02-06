@@ -57,7 +57,6 @@ const DroneSimulation: React.FC = () => {
   const [connected, setConnected] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
-
   const targetRef = useRef<DroneData | null>(null)
   const smoothRef = useRef<DroneData>({})
   const lastTsRef = useRef<number>(performance.now())
@@ -69,17 +68,29 @@ const DroneSimulation: React.FC = () => {
   const connect = () => {
     if (wsRef.current) return
 
-    // 🔧 핵심: Telemetry WS 전용 URL 우선 사용
-    const telemetryWsBase =
-      import.meta.env.VITE_TELEMETRY_WS_URL ||
-      import.meta.env.VITE_API_URL ||
-      "http://localhost:8000"
+    const TELEMETRY_WS_BASE = import.meta.env.VITE_TELEMETRY_WS_URL
 
-    const wsProtocol = telemetryWsBase.startsWith("https") ? "wss" : "ws"
-    const wsHost = telemetryWsBase.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
-    const wsUrl = `${wsProtocol}://${wsHost}/api/v1/qgc/ws/qgc`
+    if (!TELEMETRY_WS_BASE) {
+      console.error("❌ VITE_TELEMETRY_WS_URL is not defined")
+      return
+    }
 
-    console.log("📡 Telemetry WS URL:", wsUrl)
+    let wsUrl: string
+
+    try {
+      const url = new URL(TELEMETRY_WS_BASE)
+
+      if (url.protocol !== "ws:" && url.protocol !== "wss:") {
+        throw new Error("Telemetry WS URL must start with ws:// or wss://")
+      }
+
+      wsUrl = `${url.protocol}//${url.host}/api/v1/qgc/ws/qgc`
+    } catch (err) {
+      console.error("❌ Invalid TELEMETRY WS URL:", TELEMETRY_WS_BASE, err)
+      return
+    }
+
+    console.log("📡 FINAL Telemetry WS URL =", wsUrl)
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
@@ -97,7 +108,6 @@ const DroneSimulation: React.FC = () => {
           ? Math.sqrt(vx * vx + vy * vy) * 3.6
           : undefined
 
-      // 🔧 지연 확인용 (선택)
       if (msg.server_ts) {
         const delay = Date.now() - new Date(msg.server_ts).getTime()
         console.log("⏱ Telemetry delay(ms):", delay)
@@ -119,7 +129,12 @@ const DroneSimulation: React.FC = () => {
       }
     }
 
-    ws.onclose = ws.onerror = () => {
+    ws.onerror = () => {
+      console.error("❌ Telemetry WS error")
+    }
+
+    ws.onclose = () => {
+      console.warn("🔌 Telemetry WS disconnected")
       setConnected(false)
       wsRef.current = null
       targetRef.current = null
@@ -136,7 +151,7 @@ const DroneSimulation: React.FC = () => {
   }
 
   /* =========================
-   * RAF Loop
+   * RAF Loop (Smoothing)
    * ========================= */
 
   useEffect(() => {
@@ -156,28 +171,27 @@ const DroneSimulation: React.FC = () => {
           ...target,
 
           altitude:
-            typeof prev.altitude === "number" &&
-            typeof target.altitude === "number"
+            prev.altitude != null && target.altitude != null
               ? lerp(prev.altitude, target.altitude, alpha)
               : target.altitude,
 
           speed:
-            typeof prev.speed === "number" && typeof target.speed === "number"
+            prev.speed != null && target.speed != null
               ? lerp(prev.speed, target.speed, alpha)
               : target.speed,
 
           roll:
-            typeof prev.roll === "number" && typeof target.roll === "number"
+            prev.roll != null && target.roll != null
               ? lerp(prev.roll, target.roll, alpha)
               : target.roll,
 
           pitch:
-            typeof prev.pitch === "number" && typeof target.pitch === "number"
+            prev.pitch != null && target.pitch != null
               ? lerp(prev.pitch, target.pitch, alpha)
               : target.pitch,
 
           yaw:
-            typeof prev.yaw === "number" && typeof target.yaw === "number"
+            prev.yaw != null && target.yaw != null
               ? smoothYaw(prev.yaw, target.yaw, dt, 120)
               : target.yaw,
         }
@@ -196,55 +210,20 @@ const DroneSimulation: React.FC = () => {
 
   useEffect(() => {
     let rafId: number
-  
+
     const rafLoop = () => {
-      const target = targetRef.current
-      if (target) {
-        const now = performance.now()
-        const dt = Math.min((now - lastTsRef.current) / 1000, 0.05)
-        lastTsRef.current = now
-  
-        const alpha = Math.min(dt * 20, 1)
-        const prev = smoothRef.current
-  
-        const next = {
-          ...target,
-          altitude:
-            prev.altitude != null && target.altitude != null
-              ? lerp(prev.altitude, target.altitude, alpha)
-              : target.altitude,
-          speed:
-            prev.speed != null && target.speed != null
-              ? lerp(prev.speed, target.speed, alpha)
-              : target.speed,
-          roll:
-            prev.roll != null && target.roll != null
-              ? lerp(prev.roll, target.roll, alpha)
-              : target.roll,
-          pitch:
-            prev.pitch != null && target.pitch != null
-              ? lerp(prev.pitch, target.pitch, alpha)
-              : target.pitch,
-          yaw:
-            prev.yaw != null && target.yaw != null
-              ? smoothYaw(prev.yaw, target.yaw, dt, 180)
-              : target.yaw,
-        }
-  
-        smoothRef.current = next
-  
-        // 🔥 여기서 바로 렌더
-        setRenderData({
-          ...next,
-          rollInt: next.roll != null ? Math.round(next.roll) : undefined,
-          pitchInt: next.pitch != null ? Math.round(next.pitch) : undefined,
-          yawInt: next.yaw != null ? Math.round(next.yaw) : undefined,
-        })
-      }
-  
+      const next = smoothRef.current
+
+      setRenderData({
+        ...next,
+        rollInt: next.roll != null ? Math.round(next.roll) : undefined,
+        pitchInt: next.pitch != null ? Math.round(next.pitch) : undefined,
+        yawInt: next.yaw != null ? Math.round(next.yaw) : undefined,
+      })
+
       rafId = requestAnimationFrame(rafLoop)
     }
-  
+
     rafId = requestAnimationFrame(rafLoop)
     return () => cancelAnimationFrame(rafId)
   }, [])
