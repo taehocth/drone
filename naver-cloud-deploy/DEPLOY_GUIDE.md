@@ -202,7 +202,7 @@ const connect = () => {
   if (wsRef.current) return
 
   // 🔴 네이버 클라우드 서버로 직접 연결
-  const wsUrl = "ws://211.188.48.144/api/v1/qgc/ws/qgc"
+  const wsUrl = "wss://211.188.48.144/api/v1/qgc/ws/qgc"
 
   const ws = new WebSocket(wsUrl)
   // ... 나머지 코드
@@ -355,4 +355,4 @@ sudo systemctl start drone-backend.service
 
 **접속 URL**:
 - API 문서: http://211.188.48.144/docs
-- WebSocket: ws://211.188.48.144/api/v1/qgc/ws/qgc
+- WebSocket: wss://211.188.48.144/api/v1/qgc/ws/qgc

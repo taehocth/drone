@@ -14,7 +14,7 @@ export default function QGCTelemetryPanel() {
   const [data, setData] = useState<TelemetryData | null>(null)
 
   useEffect(() => {
-    const ws = new WebSocket("ws://127.0.0.1:8000/api/v1/qgc/ws/qgc")
+    const ws = new WebSocket("wss://127.0.0.1:8000/api/v1/qgc/ws/qgc")
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)

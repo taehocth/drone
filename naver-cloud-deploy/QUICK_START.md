@@ -117,7 +117,7 @@ VITE_DRONE_API_URL=http://211.188.48.144
 
 ```typescript
 // frontend/src/components/Dashboard/DroneSimulation.tsx
-const wsUrl = "ws://211.188.48.144/api/v1/qgc/ws/qgc"
+const wsUrl = "wss://211.188.48.144/api/v1/qgc/ws/qgc"
 ```
 
 ---
