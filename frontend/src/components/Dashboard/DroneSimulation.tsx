@@ -68,12 +68,15 @@ const DroneSimulation: React.FC = () => {
   const connect = () => {
     if (wsRef.current) return
 
-    const TELEMETRY_WS_BASE = import.meta.env.VITE_TELEMETRY_WS_URL
+    // 환경 변수 또는 기본값 사용
+    const TELEMETRY_WS_BASE = import.meta.env.VITE_TELEMETRY_WS_URL || "http://211.188.48.144"
 
     if (!TELEMETRY_WS_BASE) {
       console.error("❌ VITE_TELEMETRY_WS_URL is not defined")
       return
     }
+
+    console.log("🔧 Using Telemetry WS Base:", TELEMETRY_WS_BASE)
 
     let wsUrl: string
 
