@@ -45,10 +45,10 @@ export function UavDashboard() {
     : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 md:p-6">
+    <div className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-white p-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* 헤더 */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white p-6 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
+        <div className="rounded-2xl border border-slate-200/60 bg-slate-100/70 p-6 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-3">
@@ -70,7 +70,7 @@ export function UavDashboard() {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   배터리
                 </p>
@@ -78,7 +78,7 @@ export function UavDashboard() {
                   {droneData ? `${droneData.battery}%` : "-"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   고도
                 </p>
@@ -86,7 +86,7 @@ export function UavDashboard() {
                   {droneData ? `${droneData.altitude}m` : "-"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   속도
                 </p>
@@ -94,7 +94,7 @@ export function UavDashboard() {
                   {droneData ? `${droneData.speed}m/s` : "-"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   좌표
                 </p>
@@ -108,12 +108,31 @@ export function UavDashboard() {
           </div>
         </div>
 
+        {/* 운영 상태 요약 */}
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-slate-100/60 px-5 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60 dark:text-slate-300">
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              운영 상태
+            </span>
+            <span>비행 모드: {droneData ? "AUTO" : "-"}</span>
+            <span>위성: {droneData ? "12" : "-"}</span>
+            <span>링크 품질: {droneConnected ? "양호" : "-"}</span>
+            <span>마지막 업데이트: {droneData ? "방금" : "-"}</span>
+          </div>
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <span>알림</span>
+            <span className="rounded-full bg-slate-900/10 px-2 py-1 text-slate-600 dark:bg-white/10 dark:text-slate-200">
+              이상 없음
+            </span>
+          </div>
+        </div>
+
         {/* Gemini AI 채팅 */}
         <GeminiChatCard />
 
         {/* 드론 위치 */}
-        <Card className="gap-0 overflow-hidden border-slate-200/70 bg-white shadow-sm transition-all duration-300 hover:shadow-md dark:border-slate-800/70 dark:bg-slate-900">
-          <CardHeader className="border-b border-slate-200/70 bg-slate-50/80 dark:border-slate-800/70 dark:bg-slate-900/80">
+        <Card className="gap-0 overflow-hidden border-slate-200/60 bg-slate-100/60 shadow-sm backdrop-blur-sm transition-all duration-300 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+          <CardHeader className="border-b border-slate-200/60 bg-slate-100/80 dark:border-slate-800/60 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-blue-500 p-2 shadow-sm">
                 <MapPin className="h-5 w-5 text-white" />
@@ -152,7 +171,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
+            <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
               <DroneSimulation />
             </div>
           </div>
@@ -171,7 +190,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
+            <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
             </div>
           </div>
@@ -193,7 +212,7 @@ export function UavDashboard() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
+          <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
             <RealtimeCBMStatusCard
               connected={droneConnected}
               droneData={
