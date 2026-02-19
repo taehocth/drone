@@ -41,21 +41,21 @@ export function UavDashboard() {
 
   const connectionLabel = droneConnected ? "연결됨" : "연결 대기"
   const connectionTone = droneConnected
-    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200"
-    : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200"
+    ? "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+    : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white p-4 dark:from-slate-950 dark:to-slate-900 md:p-6">
+    <div className="min-h-screen bg-slate-50 p-4 dark:bg-slate-950 md:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
         {/* 헤더 */}
-        <div className="rounded-2xl border border-slate-200/70 bg-white/70 p-6 shadow-sm backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/60">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="rounded-2xl border border-slate-200/70 bg-white p-6 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-blue-500 text-white shadow-lg">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500 text-white shadow-sm">
                   <Activity className="h-5 w-5" />
                 </span>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">
                   드론 관제 센터
                 </h1>
                 <span
@@ -70,32 +70,32 @@ export function UavDashboard() {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold text-slate-500">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   배터리
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {droneData ? `${droneData.battery}%` : "-"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold text-slate-500">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   고도
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {droneData ? `${droneData.altitude}m` : "-"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold text-slate-500">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   속도
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {droneData ? `${droneData.speed}m/s` : "-"}
                 </p>
               </div>
-              <div className="rounded-xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800/70 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold text-slate-500">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50 px-4 py-3 dark:border-slate-800/70 dark:bg-slate-950/60">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   좌표
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
@@ -112,10 +112,10 @@ export function UavDashboard() {
         <GeminiChatCard />
 
         {/* 드론 위치 */}
-        <Card className="gap-0 overflow-hidden border-slate-200/70 bg-white/80 shadow-md backdrop-blur transition-all duration-300 hover:shadow-xl dark:border-slate-800/70 dark:bg-slate-900/60">
-          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40">
+        <Card className="gap-0 overflow-hidden border-slate-200/70 bg-white shadow-sm transition-all duration-300 hover:shadow-md dark:border-slate-800/70 dark:bg-slate-900">
+          <CardHeader className="border-b border-slate-200/70 bg-slate-50/80 dark:border-slate-800/70 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-blue-500 p-2 shadow-lg">
+              <div className="rounded-xl bg-blue-500 p-2 shadow-sm">
                 <MapPin className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -139,7 +139,7 @@ export function UavDashboard() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-indigo-500 p-2 shadow-lg">
+              <div className="rounded-xl bg-indigo-500 p-2 shadow-sm">
                 <Activity className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -152,14 +152,14 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-md backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/60">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
               <DroneSimulation />
             </div>
           </div>
 
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-cyan-500 p-2 shadow-lg">
+              <div className="rounded-xl bg-cyan-500 p-2 shadow-sm">
                 <Cloud className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -171,7 +171,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-md backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/60">
+            <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
             </div>
           </div>
@@ -180,7 +180,7 @@ export function UavDashboard() {
         {/* CBM 상태 기반 정비 */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-amber-500 p-2 shadow-lg">
+            <div className="rounded-xl bg-amber-500 p-2 shadow-sm">
               <AlertTriangle className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -193,7 +193,7 @@ export function UavDashboard() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-md backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/60">
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800/70 dark:bg-slate-900">
             <RealtimeCBMStatusCard
               connected={droneConnected}
               droneData={
