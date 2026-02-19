@@ -5,7 +5,7 @@ import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
 import DroneSimulation, { DroneData } from "./DroneSimulation"
 
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
-import { FlightReviewAnalyzerCard } from "@/components/Dashboard/FlightReviewAnalyzerCard"
+import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 
 import {
   Card,
@@ -55,8 +55,8 @@ export function UavDashboard() {
         </div>
       </div>
 
-      {/* 비행 로그 분석 */}
-      <FlightReviewAnalyzerCard />
+      {/* Gemini AI 채팅 */}
+      <GeminiChatCard />
 
       {/* 드론 위치 */}
       <Card className="gap-0 pb-0 transition-all duration-300 hover:scale-[1.01] hover:shadow-xl">

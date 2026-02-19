@@ -98,6 +98,70 @@ async def cbm_ai_summary(request: dict):
         )
 
 
+@router.post("/chat")
+async def chat(request: dict):
+    """일반 AI 채팅"""
+    try:
+        message = request.get("message", "")
+        history = request.get("history", [])
+
+        if not message:
+            raise HTTPException(status_code=400, detail="메시지가 필요합니다")
+
+        # 대화 히스토리 포함 프롬프트 구성
+        history_text = ""
+        if history:
+            history_text = "\n\n이전 대화:\n"
+            for msg in history[-5:]:  # 최근 5개만 포함
+                role = "사용자" if msg.get("role") == "user" else "AI"
+                history_text += f"{role}: {msg.get('content', '')}\n"
+
+        prompt = f"""당신은 드론 관련 전문 AI 어시스턴트입니다. 사용자의 질문에 친절하고 정확하게 답변해주세요.
+드론, 항공, 기술 관련 질문은 전문적으로 답변하고, 일반적인 질문에도 도움을 제공하세요.
+{history_text}
+
+사용자: {message}
+
+AI:"""
+
+        result = await asyncio.to_thread(
+            model.generate_content,
+            prompt
+        )
+
+        # 응답 텍스트 추출
+        response_text = None
+        if hasattr(result, 'text') and result.text:
+            response_text = result.text
+        elif hasattr(result, 'candidates') and result.candidates:
+            candidate = result.candidates[0]
+            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                if candidate.content.parts and len(candidate.content.parts) > 0:
+                    response_text = candidate.content.parts[0].text
+        elif hasattr(result, 'response'):
+            if hasattr(result.response, 'text'):
+                response_text = result.response.text
+
+        if not response_text:
+            raise HTTPException(
+                status_code=500,
+                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다"
+            )
+
+        return {"response": response_text}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ 채팅 처리 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"채팅 처리 오류: {str(e)}"
+        )
+
+
 @router.post("/cbm/ask-question")
 async def ask_question(request: dict):
     """추가 질문에 대한 답변"""
