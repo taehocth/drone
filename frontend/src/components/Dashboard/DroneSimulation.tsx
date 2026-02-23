@@ -154,6 +154,16 @@ const DroneSimulation: React.FC = () => {
 
   const connect = () => {
     if (wsRef.current) return
+    console.log("🧪 ENV DEBUG", {
+      MODE: import.meta.env.MODE,
+      PROD: import.meta.env.PROD,
+      DEV: import.meta.env.DEV,
+      BASE_URL: import.meta.env.BASE_URL,
+      // VITE_* 키들만 보기 쉽게 필터링
+      VITE_KEYS: Object.keys(import.meta.env).filter((k) => k.startsWith("VITE_")),
+      VITE_TELEMETRY_WS_URL: import.meta.env.VITE_TELEMETRY_WS_URL,
+      VITE_API_URL: (import.meta.env as any).VITE_API_URL,
+    })
 
     const TELEMETRY_WS_BASE = getTelemetryEnvBase()
 

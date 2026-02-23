@@ -3,12 +3,12 @@
 ## 1️⃣ SSH 접속 (Windows PowerShell)
 
 ```powershell
-ssh -i "C:\Users\cth99\Downloads\drone-ssh.pem" ubuntu@211.188.48.144
+ssh -i "C:\Users\cth99\Downloads\hanuldrone.pem" ubuntu@49.50.138.219
 ```
 
 권한 오류 시 **Git Bash** 사용:
 ```bash
-ssh -i "C:\Users\cth99\Downloads\drone-ssh.pem" ubuntu@211.188.48.144
+ssh -i "C:\Users\cth99\Downloads\hanuldrone.pem" ubuntu@49.50.138.219
 ```
 
 ---
@@ -30,7 +30,7 @@ exit
 
 다시 접속:
 ```bash
-ssh -i "C:\Users\cth99\Downloads\drone-ssh.pem" ubuntu@211.188.48.144
+ssh -i "C:\Users\cth99\Downloads\hanuldrone.pem" ubuntu@49.50.138.219
 ```
 
 ---
@@ -43,7 +43,7 @@ cd C:\Dev\drone
 Compress-Archive -Path naver-cloud-deploy\* -DestinationPath naver-deploy.zip -Force
 
 # 서버로 전송 (Git Bash 사용)
-scp -i "C:\Users\cth99\Downloads\drone-ssh.pem" C:/Dev/drone/naver-deploy.zip ubuntu@211.188.48.144:~/
+scp -i "C:\Users\cth99\Downloads\hanuldrone.pem" C:/Dev/drone/naver-deploy.zip ubuntu@49.50.138.219:~/
 ```
 
 ---
@@ -110,14 +110,14 @@ curl http://localhost:8000/api/v1/health
 
 Render 대시보드 → 프론트엔드 서비스 → Environment:
 ```env
-VITE_DRONE_API_URL=http://211.188.48.144
+VITE_DRONE_API_URL=http://49.50.138.219
 ```
 
 ### 옵션 B: DroneSimulation.tsx 직접 수정
 
 ```typescript
 // frontend/src/components/Dashboard/DroneSimulation.tsx
-const wsUrl = "wss://211.188.48.144/api/v1/qgc/ws/qgc"
+const wsUrl = "wss://49.50.138.219/api/v1/qgc/ws/qgc"
 ```
 
 ---
@@ -126,7 +126,7 @@ const wsUrl = "wss://211.188.48.144/api/v1/qgc/ws/qgc"
 
 브라우저에서:
 ```
-http://211.188.48.144/docs
+http://49.50.138.219/docs
 ```
 
 ---

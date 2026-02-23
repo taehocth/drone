@@ -1,9 +1,9 @@
 # 🚀 네이버 클라우드 백엔드 배포 가이드
 
 ## 서버 정보
-- **공인 IP**: 211.188.48.144
+- **공인 IP**: 49.50.138.219
 - **사용자명**: ubuntu
-- **SSH 키**: C:\Users\cth99\Downloads\drone-ssh.pem
+- **SSH 키**: C:\Users\cth99\Downloads\hanuldrone.pem
 
 ---
 
@@ -14,16 +14,16 @@
 PowerShell 또는 Git Bash를 열고 다음 명령어로 접속하세요:
 
 ```bash
-ssh -i "C:\Users\cth99\Downloads\drone-ssh.pem" ubuntu@211.188.48.144
+ssh -i "C:\Users\cth99\Downloads\hanuldrone.pem" ubuntu@49.50.138.219
 ```
 
 접속이 안되면 키 권한 문제일 수 있습니다. WSL에서 시도:
 
 ```bash
 # WSL에서 실행
-cp /mnt/c/Users/cth99/Downloads/drone-ssh.pem ~/.ssh/
-chmod 600 ~/.ssh/drone-ssh.pem
-ssh -i ~/.ssh/drone-ssh.pem ubuntu@211.188.48.144
+cp /mnt/c/Users/cth99/Downloads/hanuldrone.pem ~/.ssh/
+chmod 600 ~/.ssh/hanuldrone.pem
+ssh -i ~/.ssh/hanuldrone.pem ubuntu@49.50.138.219
 ```
 
 ### 1.2 서버 환경 설정
@@ -51,7 +51,7 @@ exit
 
 다시 SSH로 접속:
 ```bash
-ssh -i "C:\Users\cth99\Downloads\drone-ssh.pem" ubuntu@211.188.48.144
+ssh -i "C:\Users\cth99\Downloads\hanuldrone.pem" ubuntu@49.50.138.219
 ```
 
 ---
@@ -72,7 +72,7 @@ Compress-Archive -Path naver-cloud-deploy\* -DestinationPath naver-cloud-deploy.
 **Git Bash** 또는 **WSL**에서 실행:
 
 ```bash
-scp -i "C:\Users\cth99\Downloads\drone-ssh.pem" C:/Dev/drone/naver-cloud-deploy.zip ubuntu@211.188.48.144:~/
+scp -i "C:\Users\cth99\Downloads\hanuldrone.pem" C:/Dev/drone/naver-cloud-deploy.zip ubuntu@49.50.138.219:~/
 ```
 
 ### 2.3 서버에서 압축 해제
@@ -158,7 +158,7 @@ docker ps
 curl http://localhost:8000/api/v1/health
 
 # WebSocket 테스트 (외부에서)
-# ws://211.188.48.144/api/v1/qgc/ws/qgc
+# ws://49.50.138.219/api/v1/qgc/ws/qgc
 ```
 
 ---
@@ -183,13 +183,13 @@ curl http://localhost:8000/api/v1/health
 Render 대시보드에서 프론트엔드 서비스 선택 후:
 
 ```env
-VITE_API_URL=http://211.188.48.144
+VITE_API_URL=http://49.50.138.219
 ```
 
 또는 드론 데이터만 네이버 클라우드로:
 
 ```env
-VITE_DRONE_API_URL=http://211.188.48.144
+VITE_DRONE_API_URL=http://49.50.138.219
 ```
 
 ### 6.2 DroneSimulation.tsx 수정 (선택사항)
@@ -202,7 +202,7 @@ const connect = () => {
   if (wsRef.current) return
 
   // 🔴 네이버 클라우드 서버로 직접 연결
-  const wsUrl = "wss://211.188.48.144/api/v1/qgc/ws/qgc"
+  const wsUrl = "wss://49.50.138.219/api/v1/qgc/ws/qgc"
 
   const ws = new WebSocket(wsUrl)
   // ... 나머지 코드
@@ -217,7 +217,7 @@ const connect = () => {
 
 브라우저에서:
 ```
-http://211.188.48.144/docs
+http://49.50.138.219/docs
 ```
 
 ### 7.2 WebSocket 연결 테스트
@@ -354,5 +354,5 @@ sudo systemctl start drone-backend.service
 백엔드가 네이버 클라우드에서 실행되고 있습니다.
 
 **접속 URL**:
-- API 문서: http://211.188.48.144/docs
-- WebSocket: wss://211.188.48.144/api/v1/qgc/ws/qgc
+- API 문서: http://49.50.138.219/docs
+- WebSocket: wss://49.50.138.219/api/v1/qgc/ws/qgc

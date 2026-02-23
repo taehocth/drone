@@ -13,7 +13,7 @@ from serial.tools import list_ports
 # CONFIG
 # =====================================================
 
-SERVER_BASE_URL = "https://drone-5-2qlc.onrender.com"
+SERVER_BASE_URL = "http://49.50.138.219:8000"
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 
 BAUD_RATES = [57600, 115200, 921600]
