@@ -68,8 +68,8 @@ const DroneSimulation: React.FC = () => {
   const connect = () => {
     if (wsRef.current) return
 
-    // 환경 변수 또는 기본값 사용
-    const TELEMETRY_WS_BASE = import.meta.env.VITE_TELEMETRY_WS_URL || "wss://211.188.48.144"
+    // 환경 변수 기반 WS URL
+    const TELEMETRY_WS_BASE = import.meta.env.VITE_TELEMETRY_WS_URL
 
     if (!TELEMETRY_WS_BASE) {
       console.error("❌ VITE_TELEMETRY_WS_URL is not defined")
@@ -82,12 +82,24 @@ const DroneSimulation: React.FC = () => {
 
     try {
       const url = new URL(TELEMETRY_WS_BASE)
+      const protocol =
+        url.protocol === "http:"
+          ? "ws:"
+          : url.protocol === "https:"
+            ? "wss:"
+            : url.protocol
 
-      if (url.protocol !== "ws:" && url.protocol !== "wss:") {
-        throw new Error("Telemetry WS URL must start with ws:// or wss://")
+      if (protocol !== "ws:" && protocol !== "wss:") {
+        throw new Error("Telemetry WS URL must start with ws://, wss://, http://, or https://")
       }
 
-      wsUrl = `${url.protocol}//${url.host}/api/v1/qgc/ws/qgc`
+      const hasWsPath =
+        url.pathname.includes("/api/v1/qgc/ws/qgc") ||
+        url.pathname.endsWith("/qgc/ws/qgc") ||
+        url.pathname.endsWith("/ws/qgc")
+
+      const path = hasWsPath ? url.pathname : "/api/v1/qgc/ws/qgc"
+      wsUrl = `${protocol}//${url.host}${path}`
     } catch (err) {
       console.error("❌ Invalid TELEMETRY WS URL:", TELEMETRY_WS_BASE, err)
       return
@@ -136,8 +148,10 @@ const DroneSimulation: React.FC = () => {
       console.error("❌ Telemetry WS error")
     }
 
-    ws.onclose = () => {
-      console.warn("🔌 Telemetry WS disconnected")
+    ws.onclose = (event) => {
+      console.warn(
+        `🔌 Telemetry WS disconnected (code=${event.code}, reason=${event.reason || "no reason"})`,
+      )
       setConnected(false)
       wsRef.current = null
       targetRef.current = null
