@@ -1,28 +1,35 @@
-# Stage 0, "build-stage", based on Node.js, to build and compile the frontend
+# frontend/Dockerfile
+
+# Stage 0: build
 FROM node:20 AS build-stage
-
-# 1. Accept build arguments
-ARG VITE_API_URL
-ARG NODE_ENV
-
-# 2. Set environment variables (so Vite sees them)
-ENV VITE_API_URL=$VITE_API_URL
-ENV NODE_ENV=$NODE_ENV
 
 WORKDIR /app
 
-COPY package*.json /app/
+# 1) Accept build arguments (Render Docker build args로 들어옴)
+ARG VITE_API_URL
+ARG VITE_TELEMETRY_WS_URL
+ARG NODE_ENV=production
 
+# 2) Set env so Vite sees them at build time
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_TELEMETRY_WS_URL=${VITE_TELEMETRY_WS_URL}
+ENV NODE_ENV=${NODE_ENV}
+
+# Install deps first (cache-friendly)
+COPY package*.json ./
 RUN npm install --production=false
 
-COPY ./ /app/
+# Copy source
+COPY . .
 
-ARG VITE_API_URL=${VITE_API_URL}
+# (옵션) 빌드 로그로 확인하고 싶으면 잠깐 켜두기
+# RUN node -e "console.log('VITE_API_URL=', process.env.VITE_API_URL); console.log('VITE_TELEMETRY_WS_URL=', process.env.VITE_TELEMETRY_WS_URL)"
 
+# Build
 RUN npm run build
 
 
-# Stage 1, based on Nginx, to have only the compiled app, ready for production with Nginx
+# Stage 1: serve with nginx
 FROM nginx:1
 
 COPY --from=build-stage /app/dist/ /usr/share/nginx/html
