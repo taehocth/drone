@@ -1,3 +1,5 @@
+// frontend/src/components/Dashboard/DroneSimulation.tsx
+
 import React, { useState, useRef, useEffect } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
@@ -49,6 +51,91 @@ function smoothYaw(
 }
 
 /* =========================
+ * WS URL Builder
+ * ========================= */
+
+/**
+ * VITE_TELEMETRY_WS_URL을 "base"로 받아서
+ * 항상 /api/v1/qgc/ws/qgc 경로로 안전하게 합친 뒤 ws/wss로 보정한다.
+ *
+ * ✅ 허용 입력 예:
+ * - wss://drone-5-2qlc.onrender.com
+ * - https://drone-5-2qlc.onrender.com
+ * - wss://ws.my-domain.com/api/v1/qgc/ws/qgc
+ * - http://49.50.138.219:8000
+ * - https://49.50.138.219
+ *
+ * ⚠️ 주의:
+ * - 배포(https) 페이지에서 ws://는 Mixed Content로 차단될 수 있음.
+ */
+function buildTelemetryWsUrl(rawBase: string) {
+  const WS_PATH = "/api/v1/qgc/ws/qgc"
+
+  const base = rawBase.trim()
+  if (!base) throw new Error("VITE_TELEMETRY_WS_URL is empty")
+
+  // 1) URL 파싱 (스킴 필수)
+  const u = new URL(base)
+
+  // 2) ws/wss 프로토콜로 정규화
+  //    - http:  -> ws:
+  //    - https: -> wss:
+  //    - ws/wss -> 그대로
+  //    - 그 외  -> 에러
+  let wsProtocol: "ws:" | "wss:"
+  if (u.protocol === "http:") wsProtocol = "ws:"
+  else if (u.protocol === "https:") wsProtocol = "wss:"
+  else if (u.protocol === "ws:" || u.protocol === "wss:") wsProtocol = u.protocol
+  else {
+    throw new Error(
+      "Telemetry WS URL must start with ws://, wss://, http://, or https://",
+    )
+  }
+
+  // 3) base에 이미 WS 경로가 들어있는지 판별
+  const hasWsPath =
+    u.pathname === WS_PATH ||
+    u.pathname.endsWith("/api/v1/qgc/ws/qgc") ||
+    u.pathname.endsWith("/qgc/ws/qgc") ||
+    u.pathname.endsWith("/ws/qgc")
+
+  // 4) 최종 URL 조합 (host는 유지, pathname만 결정)
+  //    new URL(path, origin) 을 쓰면 슬래시 이슈가 사라짐
+  const origin = `${wsProtocol}//${u.host}`
+  const finalUrl = new URL(hasWsPath ? u.pathname : WS_PATH, origin)
+
+  // 필요하면 query/hash 유지 (일단은 u.search/u.hash는 기본적으로 비움)
+  // finalUrl.search = u.search
+  // finalUrl.hash = u.hash
+
+  return finalUrl.toString()
+}
+
+/* =========================
+ * Env Getter (오해 방지 + 방어코드)
+ * ========================= */
+
+function getTelemetryEnvBase(): string | null {
+  // Vite는 빌드 시점 주입이므로 런타임에 바뀌지 않음.
+  const v = import.meta.env.VITE_TELEMETRY_WS_URL as unknown
+
+  // 1) 진짜 undefined/null
+  if (v == null) return null
+
+  // 2) 문자열이 아닌 경우 방어
+  if (typeof v !== "string") return null
+
+  const trimmed = v.trim()
+
+  // 3) 빈 문자열 / "undefined" / "null" 같은 실수 입력 방어
+  if (!trimmed) return null
+  if (trimmed.toLowerCase() === "undefined") return null
+  if (trimmed.toLowerCase() === "null") return null
+
+  return trimmed
+}
+
+/* =========================
  * Component
  * ========================= */
 
@@ -68,53 +155,47 @@ const DroneSimulation: React.FC = () => {
   const connect = () => {
     if (wsRef.current) return
 
-    // 환경 변수 기반 WS URL
-    const TELEMETRY_WS_BASE = import.meta.env.VITE_TELEMETRY_WS_URL
+    const TELEMETRY_WS_BASE = getTelemetryEnvBase()
 
+    // ✅ 여기 로그는 "is not defined"가 아니라 "missing/empty"로 명확히
     if (!TELEMETRY_WS_BASE) {
-      console.error("❌ VITE_TELEMETRY_WS_URL is not defined")
+      console.error("❌ VITE_TELEMETRY_WS_URL is missing or empty in import.meta.env", {
+        value: import.meta.env.VITE_TELEMETRY_WS_URL,
+        mode: import.meta.env.MODE,
+        prod: import.meta.env.PROD,
+      })
       return
     }
-
-    console.log("🔧 Using Telemetry WS Base:", TELEMETRY_WS_BASE)
 
     let wsUrl: string
-
     try {
-      const url = new URL(TELEMETRY_WS_BASE)
-      const protocol =
-        url.protocol === "http:"
-          ? "ws:"
-          : url.protocol === "https:"
-            ? "wss:"
-            : url.protocol
-
-      if (protocol !== "ws:" && protocol !== "wss:") {
-        throw new Error("Telemetry WS URL must start with ws://, wss://, http://, or https://")
-      }
-
-      const hasWsPath =
-        url.pathname.includes("/api/v1/qgc/ws/qgc") ||
-        url.pathname.endsWith("/qgc/ws/qgc") ||
-        url.pathname.endsWith("/ws/qgc")
-
-      const path = hasWsPath ? url.pathname : "/api/v1/qgc/ws/qgc"
-      wsUrl = `${protocol}//${url.host}${path}`
+      wsUrl = buildTelemetryWsUrl(TELEMETRY_WS_BASE)
     } catch (err) {
-      console.error("❌ Invalid TELEMETRY WS URL:", TELEMETRY_WS_BASE, err)
+      console.error("❌ Invalid VITE_TELEMETRY_WS_URL:", TELEMETRY_WS_BASE, err)
       return
     }
 
+    console.log("🔧 Telemetry WS Base =", TELEMETRY_WS_BASE)
     console.log("📡 FINAL Telemetry WS URL =", wsUrl)
 
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
-    ws.onmessage = (event) => {
-      const msg = JSON.parse(event.data)
-      if (typeof msg.sysid !== "number") return
-
+    ws.onopen = () => {
+      console.log("✅ Telemetry WS connected:", wsUrl)
       setConnected(true)
+    }
+
+    ws.onmessage = (event) => {
+      let msg: any
+      try {
+        msg = JSON.parse(event.data)
+      } catch {
+        console.warn("⚠️ Telemetry WS message JSON parse failed:", event.data)
+        return
+      }
+
+      if (typeof msg.sysid !== "number") return
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
@@ -145,7 +226,11 @@ const DroneSimulation: React.FC = () => {
     }
 
     ws.onerror = () => {
-      console.error("❌ Telemetry WS error")
+      // readyState: 0 CONNECTING, 1 OPEN, 2 CLOSING, 3 CLOSED
+      console.error("❌ Telemetry WS error", {
+        url: wsUrl,
+        readyState: ws.readyState,
+      })
     }
 
     ws.onclose = (event) => {
