@@ -64,7 +64,7 @@ const DroneSimulation: React.FC = () => {
   /* =========================
    * Connect / Disconnect
    * ========================= */
-  console.log("ENV CHECK", import.meta.env)
+
   const connect = () => {
     if (wsRef.current) return
 
