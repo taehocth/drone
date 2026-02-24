@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { NaverMap } from "@/components/Map/NaverMap"
 import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
 
@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 
-import { MapPin, Cloud, Activity, AlertTriangle } from "lucide-react"
+import { MapPin, Cloud, Activity, AlertTriangle, ArrowUp } from "lucide-react"
 
 // ==========================
 // 기본 지도 설정
@@ -38,6 +38,16 @@ export function UavDashboard() {
 
   const [droneConnected, setDroneConnected] = useState(false)
   const [droneData, setDroneData] = useState<DroneData | null>(null)
+  const [showScrollTop, setShowScrollTop] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 320)
+    }
+    onScroll()
+    window.addEventListener("scroll", onScroll, { passive: true })
+    return () => window.removeEventListener("scroll", onScroll)
+  }, [])
 
   const connectionLabel = droneConnected ? "연결됨" : "연결 대기"
   const connectionTone = droneConnected
@@ -45,10 +55,10 @@ export function UavDashboard() {
     : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-white p-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-100 via-slate-50 to-white p-4 scroll-smooth dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:p-6">
+      <div className="mx-auto max-w-7xl space-y-8">
         {/* 헤더 */}
-        <div className="rounded-2xl border border-slate-200/60 bg-slate-100/70 p-6 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+        <div className="rounded-2xl border border-slate-200/60 bg-slate-100/70 p-6 shadow-sm backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-3">
@@ -69,7 +79,7 @@ export function UavDashboard() {
                 관리합니다.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 lg:gap-4">
               <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   배터리
@@ -109,7 +119,7 @@ export function UavDashboard() {
         </div>
 
         {/* 운영 상태 요약 */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-slate-100/60 px-5 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60 dark:text-slate-300">
+        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-slate-100/80 px-5 py-3 text-sm text-slate-600 shadow-sm backdrop-blur-sm transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300">
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               운영 상태
@@ -131,7 +141,7 @@ export function UavDashboard() {
         <GeminiChatCard />
 
         {/* 드론 위치 */}
-        <Card className="gap-0 overflow-hidden border-slate-200/60 bg-slate-100/60 shadow-sm backdrop-blur-sm transition-all duration-300 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+        <Card className="gap-0 overflow-hidden border-slate-200/60 bg-slate-100/60 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
           <CardHeader className="border-b border-slate-200/60 bg-slate-100/80 dark:border-slate-800/60 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-blue-500 p-2 shadow-sm">
@@ -171,7 +181,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+            <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
               <DroneSimulation
                 onConnectionChange={setDroneConnected}
                 onData={setDroneData}
@@ -193,7 +203,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+            <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
             </div>
           </div>
@@ -215,7 +225,7 @@ export function UavDashboard() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
+          <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
             <RealtimeCBMStatusCard
               connected={droneConnected}
               droneData={
@@ -231,6 +241,17 @@ export function UavDashboard() {
           </div>
         </div>
       </div>
+
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          className="fixed bottom-6 right-6 z-30 rounded-full border border-slate-200/70 bg-white/90 p-3 text-slate-700 shadow-lg backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700/70 dark:bg-slate-900/80 dark:text-slate-100"
+          aria-label="맨 위로 이동"
+        >
+          <ArrowUp className="h-5 w-5" />
+        </button>
+      )}
     </div>
   )
 }
