@@ -13,19 +13,20 @@ from serial.tools import list_ports
 # CONFIG
 # =====================================================
 
-SERVER_BASE_URL = "http://49.50.138.219:8000"
+# ✅ nginx(443)로 보내야 함 (Let's Encrypt 인증서도 이 도메인에 맞춰져 있음)
+SERVER_BASE_URL = "https://hanuldrone.duckdns.org"
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 
 BAUD_RATES = [57600, 115200, 921600]
 
 # 전송 주기(초): 0.05 = 20Hz (빠름), 0.1 = 10Hz (권장)
-PUSH_INTERVAL_SEC = 0.05
+PUSH_INTERVAL_SEC = 0.1
 
 # 특정 데이터가 너무 오래 갱신되지 않으면 stale로 판단(초)
-STALE_WARN_SEC = 2.0
+STALE_WARN_SEC = 3.0
 
-# requests timeout
-HTTP_TIMEOUT_SEC = 2.0
+# requests timeout (2초는 빡빡할 수 있어 5초 권장)
+HTTP_TIMEOUT_SEC = 5.0
 
 
 # =====================================================
@@ -73,6 +74,9 @@ class TelemetryAgent:
 
         # push rate control
         self._last_push_at = 0.0
+
+        # reuse HTTP connection
+        self._session = requests.Session()
 
     # -------------------------------------------------
     # Connect to ANY available telemetry
@@ -221,17 +225,15 @@ class TelemetryAgent:
     def build_snapshot(self) -> dict:
         with self._lock:
             snap = {
-    "sysid": self._cache.get("sysid"),
-
-    # 🔥 자세는 항상 최신
-    "attitude": self._cache.get("attitude"),
-
-    # 아래는 있으면 포함
-    "position": self._cache.get("position"),
-    "velocity": self._cache.get("velocity"),
-    "battery": self._cache.get("battery"),
-    "gps": self._cache.get("gps"),
-}
+                "sysid": self._cache.get("sysid"),
+                # 🔥 자세는 항상 최신
+                "attitude": self._cache.get("attitude"),
+                # 아래는 있으면 포함
+                "position": self._cache.get("position"),
+                "velocity": self._cache.get("velocity"),
+                "battery": self._cache.get("battery"),
+                "gps": self._cache.get("gps"),
+            }
 
             # stale 진단용 필드(서버/프론트에서 무시해도 됨)
             age = {}
@@ -248,13 +250,13 @@ class TelemetryAgent:
         while self.running:
             snap = self.build_snapshot()
 
-            # sysid 없으면 전송 의미 없음
-            if not snap.get("sysid"):
+            # ✅ sysid=0도 유효할 수 있으므로 "None 여부"로만 판단해야 함
+            if snap.get("sysid") is None:
                 time.sleep(PUSH_INTERVAL_SEC)
                 continue
 
             try:
-                res = requests.post(
+                res = self._session.post(
                     TELEMETRY_PUSH_URL,
                     json=snap,
                     timeout=HTTP_TIMEOUT_SEC,

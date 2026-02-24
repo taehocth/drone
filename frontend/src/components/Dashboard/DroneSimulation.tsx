@@ -54,34 +54,14 @@ function smoothYaw(
  * WS URL Builder
  * ========================= */
 
-/**
- * VITE_TELEMETRY_WS_URL을 "base"로 받아서
- * 항상 /api/v1/qgc/ws/qgc 경로로 안전하게 합친 뒤 ws/wss로 보정한다.
- *
- * ✅ 허용 입력 예:
- * - wss://drone-5-2qlc.onrender.com
- * - https://drone-5-2qlc.onrender.com
- * - wss://ws.my-domain.com/api/v1/qgc/ws/qgc
- * - http://49.50.138.219:8000
- * - https://49.50.138.219
- *
- * ⚠️ 주의:
- * - 배포(https) 페이지에서 ws://는 Mixed Content로 차단될 수 있음.
- */
 function buildTelemetryWsUrl(rawBase: string) {
   const WS_PATH = "/api/v1/qgc/ws/qgc"
 
   const base = rawBase.trim()
   if (!base) throw new Error("VITE_TELEMETRY_WS_URL is empty")
 
-  // 1) URL 파싱 (스킴 필수)
   const u = new URL(base)
 
-  // 2) ws/wss 프로토콜로 정규화
-  //    - http:  -> ws:
-  //    - https: -> wss:
-  //    - ws/wss -> 그대로
-  //    - 그 외  -> 에러
   let wsProtocol: "ws:" | "wss:"
   if (u.protocol === "http:") wsProtocol = "ws:"
   else if (u.protocol === "https:") wsProtocol = "wss:"
@@ -92,42 +72,28 @@ function buildTelemetryWsUrl(rawBase: string) {
     )
   }
 
-  // 3) base에 이미 WS 경로가 들어있는지 판별
   const hasWsPath =
     u.pathname === WS_PATH ||
     u.pathname.endsWith("/api/v1/qgc/ws/qgc") ||
     u.pathname.endsWith("/qgc/ws/qgc") ||
     u.pathname.endsWith("/ws/qgc")
 
-  // 4) 최종 URL 조합 (host는 유지, pathname만 결정)
-  //    new URL(path, origin) 을 쓰면 슬래시 이슈가 사라짐
   const origin = `${wsProtocol}//${u.host}`
   const finalUrl = new URL(hasWsPath ? u.pathname : WS_PATH, origin)
-
-  // 필요하면 query/hash 유지 (일단은 u.search/u.hash는 기본적으로 비움)
-  // finalUrl.search = u.search
-  // finalUrl.hash = u.hash
-
   return finalUrl.toString()
 }
 
 /* =========================
- * Env Getter (오해 방지 + 방어코드)
+ * Env Getter
  * ========================= */
 
 function getTelemetryEnvBase(): string | null {
-  // Vite는 빌드 시점 주입이므로 런타임에 바뀌지 않음.
   const v = import.meta.env.VITE_TELEMETRY_WS_URL as unknown
 
-  // 1) 진짜 undefined/null
   if (v == null) return null
-
-  // 2) 문자열이 아닌 경우 방어
   if (typeof v !== "string") return null
 
   const trimmed = v.trim()
-
-  // 3) 빈 문자열 / "undefined" / "null" 같은 실수 입력 방어
   if (!trimmed) return null
   if (trimmed.toLowerCase() === "undefined") return null
   if (trimmed.toLowerCase() === "null") return null
@@ -144,9 +110,21 @@ const DroneSimulation: React.FC = () => {
   const [connected, setConnected] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
+
+  // WS 수신 즉시 반영(리렌더 X): targetRef
   const targetRef = useRef<DroneData | null>(null)
+
+  // 부드러운 화면용 스무딩 값(계산용)
   const smoothRef = useRef<DroneData>({})
+
+  // 스무딩 dt 계산용
   const lastTsRef = useRef<number>(performance.now())
+
+  // “마지막 수신 시각” (UI 신뢰도/지연 체감 개선에 사용)
+  const lastRxAtRef = useRef<number>(0)
+
+  // 콘솔 delay 로그 샘플링(DevTools 오버헤드 줄이기)
+  const lastDelayLogAtRef = useRef<number>(0)
 
   /* =========================
    * Connect / Disconnect
@@ -154,25 +132,12 @@ const DroneSimulation: React.FC = () => {
 
   const connect = () => {
     if (wsRef.current) return
-    console.log("🧪 ENV DEBUG", {
-      MODE: import.meta.env.MODE,
-      PROD: import.meta.env.PROD,
-      DEV: import.meta.env.DEV,
-      BASE_URL: import.meta.env.BASE_URL,
-      // VITE_* 키들만 보기 쉽게 필터링
-      VITE_KEYS: Object.keys(import.meta.env).filter((k) => k.startsWith("VITE_")),
-      VITE_TELEMETRY_WS_URL: import.meta.env.VITE_TELEMETRY_WS_URL,
-      VITE_API_URL: (import.meta.env as any).VITE_API_URL,
-    })
 
     const TELEMETRY_WS_BASE = getTelemetryEnvBase()
-
-    // ✅ 여기 로그는 "is not defined"가 아니라 "missing/empty"로 명확히
     if (!TELEMETRY_WS_BASE) {
-      console.error("❌ VITE_TELEMETRY_WS_URL is missing or empty in import.meta.env", {
+      console.error("❌ VITE_TELEMETRY_WS_URL is missing or empty", {
         value: import.meta.env.VITE_TELEMETRY_WS_URL,
         mode: import.meta.env.MODE,
-        prod: import.meta.env.PROD,
       })
       return
     }
@@ -185,15 +150,12 @@ const DroneSimulation: React.FC = () => {
       return
     }
 
-    console.log("🔧 Telemetry WS Base =", TELEMETRY_WS_BASE)
-    console.log("📡 FINAL Telemetry WS URL =", wsUrl)
-
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
-      console.log("✅ Telemetry WS connected:", wsUrl)
       setConnected(true)
+      console.log("✅ Telemetry WS connected:", wsUrl)
     }
 
     ws.onmessage = (event) => {
@@ -201,7 +163,6 @@ const DroneSimulation: React.FC = () => {
       try {
         msg = JSON.parse(event.data)
       } catch {
-        console.warn("⚠️ Telemetry WS message JSON parse failed:", event.data)
         return
       }
 
@@ -214,11 +175,20 @@ const DroneSimulation: React.FC = () => {
           ? Math.sqrt(vx * vx + vy * vy) * 3.6
           : undefined
 
+      // ✅ 수신 시각 기록(화면에서 “LIVE/STALE” 표시할 때도 유용)
+      lastRxAtRef.current = performance.now()
+
+      // (선택) server_ts 기반 delay 로그는 1초에 1번만
       if (msg.server_ts) {
-        const delay = Date.now() - new Date(msg.server_ts).getTime()
-        console.log("⏱ Telemetry delay(ms):", delay)
+        const now = performance.now()
+        if (now - lastDelayLogAtRef.current >= 1000) {
+          lastDelayLogAtRef.current = now
+          const delay = Date.now() - new Date(msg.server_ts).getTime()
+          console.log("⏱ Telemetry delay(ms):", delay)
+        }
       }
 
+      // ✅ 화면 반영은 “따로” (여기서는 ref만 갱신)
       targetRef.current = {
         sysid: msg.sysid,
         altitude: msg.position?.alt,
@@ -236,7 +206,6 @@ const DroneSimulation: React.FC = () => {
     }
 
     ws.onerror = () => {
-      // readyState: 0 CONNECTING, 1 OPEN, 2 CLOSING, 3 CLOSED
       console.error("❌ Telemetry WS error", {
         url: wsUrl,
         readyState: ws.readyState,
@@ -251,6 +220,7 @@ const DroneSimulation: React.FC = () => {
       wsRef.current = null
       targetRef.current = null
       smoothRef.current = {}
+      lastRxAtRef.current = 0
     }
   }
 
@@ -260,10 +230,12 @@ const DroneSimulation: React.FC = () => {
     setConnected(false)
     targetRef.current = null
     smoothRef.current = {}
+    lastRxAtRef.current = 0
   }
 
   /* =========================
-   * RAF Loop (Smoothing)
+   * RAF Loop (Smoothing only)
+   *  - 계산만 하고 setState는 하지 않음 (중요)
    * ========================= */
 
   useEffect(() => {
@@ -276,6 +248,7 @@ const DroneSimulation: React.FC = () => {
         const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
         lastTsRef.current = now
 
+        // smoothing 강도: dt * 20 (기존 유지)
         const alpha = Math.min(dt * 20, 1)
         const prev = smoothRef.current
 
@@ -317,14 +290,20 @@ const DroneSimulation: React.FC = () => {
   }, [])
 
   /* =========================
-   * UI Snapshot
+   * UI Snapshot (throttled)
+   *  - setState를 매 프레임이 아니라 50ms(20Hz)로 제한
+   *  - 사용자 체감 지연(1초 수준) 제거에 가장 효과적
    * ========================= */
 
   useEffect(() => {
-    let rafId: number
+    const UI_HZ = 20 // ✅ 20Hz = 50ms (부드럽고 “즉시”처럼 보임)
+    const UI_INTERVAL_MS = Math.round(1000 / UI_HZ)
 
-    const rafLoop = () => {
+    const id = window.setInterval(() => {
       const next = smoothRef.current
+
+      // 연결 중인데 값이 아직 없으면 굳이 렌더하지 않음
+      if (!next || Object.keys(next).length === 0) return
 
       setRenderData({
         ...next,
@@ -332,12 +311,9 @@ const DroneSimulation: React.FC = () => {
         pitchInt: next.pitch != null ? Math.round(next.pitch) : undefined,
         yawInt: next.yaw != null ? Math.round(next.yaw) : undefined,
       })
+    }, UI_INTERVAL_MS)
 
-      rafId = requestAnimationFrame(rafLoop)
-    }
-
-    rafId = requestAnimationFrame(rafLoop)
-    return () => cancelAnimationFrame(rafId)
+    return () => window.clearInterval(id)
   }, [])
 
   /* =========================
