@@ -20,3 +20,4 @@ if settings.ENVIRONMENT == "local":
 
 # 최종 등록: 모든 라우트는 /api/v1/* 로 접속 가능
 app.include_router(api_router, prefix="/api/v1")
+

@@ -107,8 +107,8 @@ export function GeminiChatCard() {
   }
 
   return (
-    <Card className="transition-all hover:shadow-lg">
-      <CardHeader className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-800/20">
+    <Card className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+      <CardHeader className="rounded-t-2xl bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-800/20">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-gradient-to-br from-purple-500 to-pink-500 p-2">
@@ -136,7 +136,7 @@ export function GeminiChatCard() {
 
       <CardContent className="space-y-4 pt-4">
         {/* 채팅 메시지 영역 */}
-        <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
+        <div className="space-y-3 rounded-lg border border-slate-200/60 bg-slate-50 p-4 dark:border-slate-700/60 dark:bg-slate-900/50">
           {messages.length === 0 ? (
             <div className="py-12 text-center">
               <Sparkles className="mx-auto mb-3 h-12 w-12 text-gray-300 dark:text-gray-600" />
@@ -148,7 +148,7 @@ export function GeminiChatCard() {
               </p>
             </div>
           ) : (
-            <div className="max-h-[400px] space-y-3 overflow-y-auto">
+            <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
               {messages.map((msg, idx) => (
                 <div
                   key={idx}

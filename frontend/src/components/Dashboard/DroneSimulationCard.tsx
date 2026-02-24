@@ -74,7 +74,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
     : "대기 중"
 
   return (
-    <Card className="mx-auto w-full max-w-2xl rounded-2xl">
+    <Card className="mx-auto w-full max-w-none rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="flex items-center gap-2">
           <Gauge className="h-5 w-5 text-blue-500" />
@@ -93,7 +93,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
                 setUiConnecting(true)
                 onConnect?.()
               }}
-              className="rounded-md border px-2 py-1 text-xs"
+              className="rounded-md border px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               연결
             </button>
@@ -103,7 +103,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
                 setUiConnecting(false)
                 onDisconnect?.()
               }}
-              className="rounded-md border px-2 py-1 text-xs"
+              className="rounded-md border border-slate-900 bg-slate-900 px-3 py-1 text-xs font-semibold text-white transition hover:bg-slate-800 dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             >
               해제
             </button>
@@ -111,7 +111,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-3 text-sm">
+      <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
         <Row label="고도" value={v(data.altitude, " m")} />
         <Row label="속도" value={v(data.speed, " km/h")} />
 
@@ -134,6 +134,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
         />
 
         <Row
+          className="sm:col-span-2"
           label={
             <span className="flex items-center gap-1">
               <MapPin className="h-4 w-4 text-red-500" />
@@ -148,7 +149,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
           }
         />
 
-        <div className="pt-2 text-xs text-muted-foreground">
+        <div className="pt-1 text-xs text-muted-foreground sm:col-span-2">
           마지막 업데이트:{" "}
           {data.timestamp
             ? new Date(data.timestamp).toLocaleTimeString("ko-KR")
@@ -162,12 +163,14 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
 function Row({
   label,
   value,
+  className,
 }: {
   label: React.ReactNode
   value: React.ReactNode
+  className?: string
 }) {
   return (
-    <div className="flex justify-between">
+    <div className={`flex justify-between ${className ?? ""}`}>
       <span>{label}</span>
       <span>{value}</span>
     </div>
