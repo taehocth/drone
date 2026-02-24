@@ -105,7 +105,15 @@ function getTelemetryEnvBase(): string | null {
  * Component
  * ========================= */
 
-const DroneSimulation: React.FC = () => {
+interface DroneSimulationProps {
+  onData?: (data: DroneData | null) => void
+  onConnectionChange?: (connected: boolean) => void
+}
+
+const DroneSimulation: React.FC<DroneSimulationProps> = ({
+  onData,
+  onConnectionChange,
+}) => {
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
@@ -315,6 +323,24 @@ const DroneSimulation: React.FC = () => {
 
     return () => window.clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    if (!onConnectionChange) return
+    onConnectionChange(connected)
+  }, [connected, onConnectionChange])
+
+  useEffect(() => {
+    if (!onData) return
+    if (!connected) {
+      onData(null)
+      return
+    }
+    if (!renderData || Object.keys(renderData).length === 0) {
+      onData(null)
+      return
+    }
+    onData(renderData)
+  }, [connected, renderData, onData])
 
   /* =========================
    * Render

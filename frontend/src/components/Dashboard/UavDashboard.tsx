@@ -36,8 +36,8 @@ export function UavDashboard() {
     ny: number
   } | null>(null)
 
-  const [droneConnected] = useState(false)
-  const [droneData] = useState<DroneData | null>(null)
+  const [droneConnected, setDroneConnected] = useState(false)
+  const [droneData, setDroneData] = useState<DroneData | null>(null)
 
   const connectionLabel = droneConnected ? "연결됨" : "연결 대기"
   const connectionTone = droneConnected
@@ -172,7 +172,10 @@ export function UavDashboard() {
               </div>
             </div>
             <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm dark:border-slate-800/60 dark:bg-slate-900/60">
-              <DroneSimulation />
+              <DroneSimulation
+                onConnectionChange={setDroneConnected}
+                onData={setDroneData}
+              />
             </div>
           </div>
 
