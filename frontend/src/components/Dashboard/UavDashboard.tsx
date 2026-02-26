@@ -172,20 +172,21 @@ export function UavDashboard() {
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-100 via-slate-50 to-white p-4 scroll-smooth dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:p-6">
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-15%] h-[420px] w-[420px] rounded-full bg-indigo-500/15 blur-3xl dark:bg-indigo-500/10" />
-        <div className="absolute right-[-15%] top-[10%] h-[420px] w-[420px] rounded-full bg-cyan-400/15 blur-3xl dark:bg-cyan-400/10" />
-        <div className="absolute bottom-[-20%] left-[15%] h-[460px] w-[460px] rounded-full bg-amber-400/10 blur-3xl dark:bg-amber-400/10" />
+        <div className="absolute left-[-10%] top-[-15%] h-[420px] w-[420px] rounded-full bg-indigo-500/15 blur-3xl motion-safe:animate-pulse dark:bg-indigo-500/10" />
+        <div className="absolute right-[-15%] top-[10%] h-[420px] w-[420px] rounded-full bg-cyan-400/15 blur-3xl motion-safe:animate-pulse dark:bg-cyan-400/10" />
+        <div className="absolute bottom-[-20%] left-[15%] h-[460px] w-[460px] rounded-full bg-amber-400/10 blur-3xl motion-safe:animate-pulse dark:bg-amber-400/10" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.05),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.08),transparent_55%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.04)_1px,transparent_1px)] bg-[size:32px_32px] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)]" />
       </div>
 
       <div className="mx-auto max-w-7xl space-y-8">
         {/* Gemini AI 채팅 */}
-        <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60">
+        <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
           <GeminiChatCard />
         </div>
 
         {/* 헤더 */}
-        <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-6 shadow-[0_16px_40px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+        <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-6 shadow-[0_16px_40px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-3">
@@ -210,7 +211,7 @@ export function UavDashboard() {
         </div>
 
         {/* 운영 상태 요약 */}
-        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-white/80 px-5 py-3 text-sm text-slate-600 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.35)] backdrop-blur-md transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300">
+        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-white/80 px-5 py-3 text-sm text-slate-600 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.35)] backdrop-blur-md ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-800/70">
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               운영 상태
@@ -237,7 +238,7 @@ export function UavDashboard() {
         </div>
 
         {/* 드론 위치 */}
-        <Card className="gap-0 overflow-hidden border-slate-200/70 bg-white/70 shadow-[0_16px_40px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+        <Card className="gap-0 overflow-hidden border-slate-200/70 bg-white/70 shadow-[0_16px_40px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
           <CardHeader className="border-b border-slate-200/60 bg-slate-100/80 dark:border-slate-800/60 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-blue-500 p-2 shadow-sm">
@@ -288,7 +289,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
               <DroneSimulation
                 onConnectionChange={setDroneConnected}
                 onData={setDroneData}
@@ -296,7 +297,7 @@ export function UavDashboard() {
             </div>
 
             {/* 실시간 비행 모니터링 임계값 알림 */}
-            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="rounded-xl bg-rose-500 p-2 shadow-sm">
@@ -397,7 +398,7 @@ export function UavDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+              <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
                 <RealtimeCBMStatusCard
                   connected={droneConnected}
                   droneData={
@@ -428,7 +429,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+            <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
             </div>
           </div>
