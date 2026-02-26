@@ -54,6 +54,123 @@ export function UavDashboard() {
     ? "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
     : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
 
+  const formatMetric = (value?: number, unit = "") =>
+    typeof value === "number" ? `${value.toFixed(0)}${unit}` : "-"
+
+  const alerts = (() => {
+    if (!droneConnected) return []
+
+    if (!droneData) {
+      return [
+        {
+          id: "waiting",
+          level: "caution",
+          label: "데이터 수신 대기",
+        },
+      ] as const
+    }
+
+    const next: Array<{
+      id: string
+      level: "safe" | "caution" | "danger"
+      label: string
+    }> = []
+
+    if (typeof droneData.battery === "number") {
+      if (droneData.battery <= 20) {
+        next.push({
+          id: "battery",
+          level: "danger",
+          label: `배터리 낮음 (${droneData.battery.toFixed(0)}%)`,
+        })
+      } else if (droneData.battery <= 35) {
+        next.push({
+          id: "battery",
+          level: "caution",
+          label: `배터리 주의 (${droneData.battery.toFixed(0)}%)`,
+        })
+      }
+    }
+
+    if (typeof droneData.altitude === "number") {
+      if (droneData.altitude > 150) {
+        next.push({
+          id: "altitude",
+          level: "danger",
+          label: `고도 초과 (${droneData.altitude.toFixed(0)}m)`,
+        })
+      } else if (droneData.altitude > 120) {
+        next.push({
+          id: "altitude",
+          level: "caution",
+          label: `고도 주의 (${droneData.altitude.toFixed(0)}m)`,
+        })
+      }
+    }
+
+    if (typeof droneData.speed === "number") {
+      if (droneData.speed > 35) {
+        next.push({
+          id: "speed",
+          level: "danger",
+          label: `과속 위험 (${droneData.speed.toFixed(0)}m/s)`,
+        })
+      } else if (droneData.speed > 25) {
+        next.push({
+          id: "speed",
+          level: "caution",
+          label: `과속 주의 (${droneData.speed.toFixed(0)}m/s)`,
+        })
+      }
+    }
+
+    const hasGps =
+      typeof droneData.latitude === "number" &&
+      typeof droneData.longitude === "number"
+    if (!hasGps) {
+      next.push({
+        id: "gps",
+        level: "caution",
+        label: "GPS 신호 약함",
+      })
+    }
+
+    if (droneData.timestamp) {
+      const lastAt = new Date(droneData.timestamp).getTime()
+      if (!Number.isNaN(lastAt)) {
+        const ageMs = Date.now() - lastAt
+        if (ageMs > 15000) {
+          next.push({
+            id: "stale",
+            level: "danger",
+            label: "데이터 지연 15초+",
+          })
+        } else if (ageMs > 8000) {
+          next.push({
+            id: "stale",
+            level: "caution",
+            label: "데이터 지연 8초+",
+          })
+        }
+      }
+    }
+
+    return next
+  })()
+
+  const alertLevel = alerts.some((alert) => alert.level === "danger")
+    ? "danger"
+    : alerts.some((alert) => alert.level === "caution")
+      ? "caution"
+      : "safe"
+
+  const alertTone =
+    alertLevel === "danger"
+      ? "bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-300"
+      : alertLevel === "caution"
+        ? "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+        : "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-gradient-to-b from-slate-100 via-slate-50 to-white p-4 scroll-smooth dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:p-6">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -85,7 +202,7 @@ export function UavDashboard() {
                   배터리
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {droneData ? `${droneData.battery}%` : "-"}
+                  {formatMetric(droneData?.battery, "%")}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
@@ -93,7 +210,7 @@ export function UavDashboard() {
                   고도
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {droneData ? `${droneData.altitude}m` : "-"}
+                  {formatMetric(droneData?.altitude, "m")}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
@@ -101,7 +218,7 @@ export function UavDashboard() {
                   속도
                 </p>
                 <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {droneData ? `${droneData.speed}m/s` : "-"}
+                  {formatMetric(droneData?.speed, "m/s")}
                 </p>
               </div>
               <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
@@ -131,9 +248,56 @@ export function UavDashboard() {
           </div>
           <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <span>알림</span>
-            <span className="rounded-full bg-slate-900/10 px-2 py-1 text-slate-600 dark:bg-white/10 dark:text-slate-200">
-              이상 없음
+            <span className={`rounded-full px-2 py-1 ${alertTone}`}>
+              {alerts.length ? `${alerts.length}건 감지` : "이상 없음"}
             </span>
+          </div>
+        </div>
+
+        {/* 실시간 비행 모니터링 임계값 알림 */}
+        <div className="rounded-2xl border border-slate-200/60 bg-white/70 p-4 shadow-sm backdrop-blur transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-rose-500 p-2 shadow-sm">
+                <AlertTriangle className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  실시간 비행 모니터링 임계값 알림
+                </h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  연결된 기체의 임계값 위반을 즉시 표시합니다.
+                </p>
+              </div>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${alertTone}`}>
+              {droneConnected ? (alerts.length ? "주의 필요" : "정상") : "연결 필요"}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {!droneConnected ? (
+              <div className="rounded-xl border border-dashed border-slate-200/80 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-300">
+                기체 연결 후 임계값 알림을 확인할 수 있습니다.
+              </div>
+            ) : alerts.length === 0 ? (
+              <div className="rounded-xl border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-200">
+                모든 항목 정상 범위입니다.
+              </div>
+            ) : (
+              alerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className={`rounded-xl border px-4 py-3 text-sm font-medium ${
+                    alert.level === "danger"
+                      ? "border-red-200/80 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-200"
+                      : "border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200"
+                  }`}
+                >
+                  {alert.label}
+                </div>
+              ))
+            )}
           </div>
         </div>
 

@@ -2,6 +2,7 @@
 
 import time
 import threading
+import math
 from typing import Optional, Dict, Any
 
 import requests
@@ -28,6 +29,10 @@ STALE_WARN_SEC = 3.0
 # requests timeout (2초는 빡빡할 수 있어 5초 권장)
 HTTP_TIMEOUT_SEC = 5.0
 
+# ✅ VFR_HUD(groundspeed)로 velocity를 덮어쓰는 fallback 조건
+# LOCAL_POSITION_NED가 이 시간 이상 안 들어오면 VFR_HUD로 velocity 보강
+VFR_VEL_FALLBACK_AFTER_SEC = 0.5
+
 
 # =====================================================
 # UTIL
@@ -39,6 +44,10 @@ def scan_serial_ports():
 
 def now_ts() -> float:
     return time.time()
+
+
+def is_num(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
 # =====================================================
@@ -55,7 +64,7 @@ class TelemetryAgent:
         self._cache: Dict[str, Any] = {
             "sysid": None,
             "position": None,   # {lat, lon, alt}
-            "velocity": None,   # {vx, vy, vz} or derived
+            "velocity": None,   # {vx, vy, vz}
             "attitude": None,   # {roll, pitch, yaw}
             "battery": None,    # {voltage, current, remaining}
             "gps": None,        # {fix_type, satellites}
@@ -72,7 +81,7 @@ class TelemetryAgent:
 
         self._lock = threading.Lock()
 
-        # push rate control
+        # push log rate control
         self._last_push_at = 0.0
 
         # reuse HTTP connection
@@ -177,7 +186,7 @@ class TelemetryAgent:
                 self._last_update["position"] = ts
                 return
 
-            # 5) 속도 (LOCAL_POSITION_NED)
+            # 5) 속도 (LOCAL_POSITION_NED) ✅ 최우선
             # vx, vy, vz: m/s (NED)
             if t == "LOCAL_POSITION_NED":
                 self._cache["velocity"] = {
@@ -188,7 +197,7 @@ class TelemetryAgent:
                 self._last_update["velocity"] = ts
                 return
 
-            # 6) 고도/속도 근삿값 (VFR_HUD) - 매우 유용
+            # 6) 고도/속도 근삿값 (VFR_HUD) - fallback로만 사용 ✅
             # airspeed/groundspeed(m/s), alt(m), climb(m/s)
             if t == "VFR_HUD":
                 # position이 없을 때라도 alt는 확보 가능
@@ -197,23 +206,27 @@ class TelemetryAgent:
 
                 # alt 업데이트
                 try:
-                    self._cache["position"]["alt"] = float(msg.alt) if msg.alt is not None else self._cache["position"]["alt"]
-                    self._last_update["position"] = ts
+                    if msg.alt is not None:
+                        self._cache["position"]["alt"] = float(msg.alt)
+                        self._last_update["position"] = ts
                 except Exception:
                     pass
 
-                # velocity가 없을 때라도 groundspeed 기반으로 근삿값 확보
-                # VFR_HUD groundspeed는 m/s
+                # ✅ velocity fallback: LOCAL_POSITION_NED가 오래 안 들어온 경우에만 사용
                 try:
                     gs = float(msg.groundspeed) if msg.groundspeed is not None else None
                     if gs is not None:
-                        # 방향 성분(vx/vy)은 모르므로 magnitude 기반 근삿값
-                        self._cache["velocity"] = {
-                            "vx": gs,   # 근삿값: vx에 넣고, 프론트에서 speed 계산에 쓰게 됨
-                            "vy": 0.0,
-                            "vz": None,
-                        }
-                        self._last_update["velocity"] = ts
+                        last_vel = self._last_update.get("velocity", 0.0) or 0.0
+                        vel_age = (now_ts() - last_vel) if last_vel else 999.0
+                        vel = self._cache.get("velocity")
+
+                        if vel is None or vel_age > VFR_VEL_FALLBACK_AFTER_SEC:
+                            self._cache["velocity"] = {
+                                "vx": gs,   # magnitude 기반 fallback
+                                "vy": 0.0,
+                                "vz": None,
+                            }
+                            self._last_update["velocity"] = ts
                 except Exception:
                     pass
 
@@ -224,13 +237,25 @@ class TelemetryAgent:
     # -------------------------------------------------
     def build_snapshot(self) -> dict:
         with self._lock:
+            vel = self._cache.get("velocity")
+
+            # ✅ speed magnitude (m/s) 계산해서 같이 보냄
+            speed_m_s = None
+            if isinstance(vel, dict):
+                vx = vel.get("vx")
+                vy = vel.get("vy")
+                # vz는 speed 표시에는 보통 안 쓰지만 필요하면 포함 가능
+                if is_num(vx) and is_num(vy):
+                    speed_m_s = math.sqrt(vx * vx + vy * vy)
+                elif is_num(vx) and (vy is None):
+                    speed_m_s = abs(vx)
+
             snap = {
                 "sysid": self._cache.get("sysid"),
-                # 🔥 자세는 항상 최신
                 "attitude": self._cache.get("attitude"),
-                # 아래는 있으면 포함
                 "position": self._cache.get("position"),
-                "velocity": self._cache.get("velocity"),
+                "velocity": vel,
+                "speed_m_s": speed_m_s,          # ✅ 추가
                 "battery": self._cache.get("battery"),
                 "gps": self._cache.get("gps"),
             }
@@ -269,10 +294,14 @@ class TelemetryAgent:
                     att_age = snap["_age_sec"].get("attitude")
                     pos_age = snap["_age_sec"].get("position")
                     vel_age = snap["_age_sec"].get("velocity")
+                    spd = snap.get("speed_m_s")
+                    spd_str = f"{spd:.2f}m/s" if isinstance(spd, (int, float)) else "None"
                     print(
                         f"[Agent] PUSH sysid={snap.get('sysid')} status={res.status_code} "
-                        f"(age attitude={att_age:.2f}s pos={pos_age if pos_age is None else f'{pos_age:.2f}s'} "
-                        f"vel={vel_age if vel_age is None else f'{vel_age:.2f}s'})"
+                        f"(age attitude={att_age:.2f}s "
+                        f"pos={pos_age if pos_age is None else f'{pos_age:.2f}s'} "
+                        f"vel={vel_age if vel_age is None else f'{vel_age:.2f}s'} "
+                        f"speed={spd_str})"
                     )
 
             except Exception as e:
