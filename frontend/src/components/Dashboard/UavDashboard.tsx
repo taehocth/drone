@@ -371,6 +371,38 @@ export function UavDashboard() {
                 </div>
               )}
             </div>
+
+            {/* CBM 상태 기반 정비 */}
+            <div className="w-full space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-amber-500 p-2 shadow-sm">
+                  <AlertTriangle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    상태 기반 정비 (CBM)
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    드론 연결 상태에 따라 실시간으로 시스템 상태를 평가합니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
+                <RealtimeCBMStatusCard
+                  connected={droneConnected}
+                  droneData={
+                    droneData
+                      ? {
+                          battery: droneData.battery,
+                          altitude: droneData.altitude,
+                          speed: droneData.speed,
+                        }
+                      : undefined
+                  }
+                />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -390,38 +422,6 @@ export function UavDashboard() {
             <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
             </div>
-          </div>
-        </div>
-
-        {/* CBM 상태 기반 정비 */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-amber-500 p-2 shadow-sm">
-              <AlertTriangle className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                상태 기반 정비 (CBM)
-              </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                드론 연결 상태에 따라 실시간으로 시스템 상태를 평가합니다.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200/60 bg-slate-100/60 p-4 shadow-sm backdrop-blur-sm transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
-            <RealtimeCBMStatusCard
-              connected={droneConnected}
-              droneData={
-                droneData
-                  ? {
-                      battery: droneData.battery,
-                      altitude: droneData.altitude,
-                      speed: droneData.speed,
-                    }
-                  : undefined
-              }
-            />
           </div>
         </div>
       </div>
