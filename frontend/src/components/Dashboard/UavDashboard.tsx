@@ -345,7 +345,7 @@ export function UavDashboard() {
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {!droneConnected ? (
-                  <div className="rounded-xl border border-dashed border-slate-200/80 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-slate-700/60 dark:bg-slate-800/40 dark:text-slate-300">
+                  <div className="flex min-h-[96px] items-center justify-center rounded-2xl border border-dashed border-slate-200/80 bg-gradient-to-br from-slate-50 via-white to-slate-100/70 px-4 py-5 text-center text-sm text-slate-500 shadow-inner dark:border-slate-700/60 dark:from-slate-900/40 dark:via-slate-900/10 dark:to-slate-800/40 dark:text-slate-300">
                     기체 연결 후 임계값 알림을 확인할 수 있습니다.
                   </div>
                 ) : alerts.length === 0 ? (
