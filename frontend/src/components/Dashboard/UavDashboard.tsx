@@ -179,30 +179,41 @@ export function UavDashboard() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.04)_1px,transparent_1px)] bg-[size:32px_32px] opacity-70 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)]" />
       </div>
 
-      <div className="mx-auto max-w-7xl space-y-8">
+      <div className="mx-auto max-w-7xl space-y-10 lg:space-y-12">
         {/* Gemini AI 채팅 */}
-        <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+        <div className="rounded-[28px] border border-slate-200/70 bg-white/70 p-4 shadow-[0_24px_60px_-40px_rgba(15,23,42,0.55)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
           <GeminiChatCard />
         </div>
 
         {/* 헤더 */}
-        <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-6 shadow-[0_16px_40px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="rounded-[28px] border border-slate-200/70 bg-white/75 p-6 shadow-[0_20px_50px_-40px_rgba(15,23,42,0.55)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500 text-white shadow-sm">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-indigo-500 to-sky-500 text-white shadow-sm">
                   <Activity className="h-5 w-5" />
                 </span>
-                <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">
+                <div>
+                  <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">
                   드론 관제 센터
-                </h1>
+                  </h1>
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400/90 dark:text-slate-400">
+                    Drone Operations Hub
+                  </p>
+                </div>
                 <span
                   className={`rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
                 >
-                  {connectionLabel}
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-40" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
+                    </span>
+                    {connectionLabel}
+                  </span>
                 </span>
               </div>
-              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+              <p className="mt-3 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
                 실시간 비행 데이터, 기상, 상태 기반 정비를 한 화면에서
                 관리합니다.
               </p>
@@ -211,7 +222,7 @@ export function UavDashboard() {
         </div>
 
         {/* 운영 상태 요약 */}
-        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-white/80 px-5 py-3 text-sm text-slate-600 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.35)] backdrop-blur-md ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-800/70">
+        <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-white/85 px-5 py-3 text-sm text-slate-600 shadow-[0_14px_36px_-30px_rgba(15,23,42,0.35)] backdrop-blur-md ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-800/70">
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               운영 상태
@@ -238,10 +249,10 @@ export function UavDashboard() {
         </div>
 
         {/* 드론 위치 */}
-        <Card className="gap-0 overflow-hidden border-slate-200/70 bg-white/70 shadow-[0_16px_40px_-35px_rgba(15,23,42,0.45)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+        <Card className="gap-0 overflow-hidden rounded-[28px] border-slate-200/70 bg-white/75 shadow-[0_18px_46px_-38px_rgba(15,23,42,0.5)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
           <CardHeader className="border-b border-slate-200/60 bg-slate-100/80 dark:border-slate-800/60 dark:bg-slate-900/80">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-blue-500 p-2 shadow-sm">
+              <div className="rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
                 <MapPin className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -274,10 +285,10 @@ export function UavDashboard() {
         </Card>
 
         {/* 실시간 시뮬레이션 + 기상 정보 */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.12fr)_minmax(0,0.88fr)]">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-indigo-500 p-2 shadow-sm">
+              <div className="rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 p-2 shadow-sm">
                 <Activity className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -290,7 +301,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+            <div className="rounded-[26px] border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
               <DroneSimulation
                 onConnectionChange={setDroneConnected}
                 onData={setDroneData}
@@ -298,10 +309,10 @@ export function UavDashboard() {
             </div>
 
             {/* 실시간 비행 모니터링 임계값 알림 */}
-            <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+            <div className="rounded-[26px] border border-slate-200/70 bg-white/85 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-rose-500 p-2 shadow-sm">
+                  <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 p-2 shadow-sm">
                     <AlertTriangle className="h-5 w-5 text-white" />
                   </div>
                   <div>
@@ -386,7 +397,7 @@ export function UavDashboard() {
             {/* CBM 상태 기반 정비 */}
             <div className="w-full space-y-4">
               <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-amber-500 p-2 shadow-sm">
+                <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
                   <AlertTriangle className="h-5 w-5 text-white" />
                 </div>
                 <div>
@@ -399,7 +410,7 @@ export function UavDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+              <div className="rounded-[26px] border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
                 <RealtimeCBMStatusCard
                   connected={droneConnected}
                   droneData={
@@ -420,7 +431,7 @@ export function UavDashboard() {
 
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-cyan-500 p-2 shadow-sm">
+              <div className="rounded-2xl bg-gradient-to-br from-cyan-500 to-sky-500 p-2 shadow-sm">
                 <Cloud className="h-5 w-5 text-white" />
               </div>
               <div>
@@ -432,7 +443,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-3xl border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
+            <div className="rounded-[26px] border border-slate-200/70 bg-white/70 p-4 shadow-[0_14px_36px_-32px_rgba(15,23,42,0.35)] backdrop-blur-lg ring-1 ring-white/60 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60 dark:ring-slate-800/70">
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
             </div>
           </div>
