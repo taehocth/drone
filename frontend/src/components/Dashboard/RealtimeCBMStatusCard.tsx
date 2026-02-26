@@ -20,6 +20,8 @@ interface RealtimeCBMStatusCardProps {
     battery?: number
     altitude?: number
     speed?: number
+    gpsFixType?: number
+    gpsSatellites?: number
   }
 }
 
@@ -116,11 +118,47 @@ export function RealtimeCBMStatusCard({
     }
 
     /* 🛰 GNSS */
-    systems.push({
-      system: "GNSS",
-      level: "safe",
-      msg: "위성 신호 정상",
-    })
+    const fixType = droneData.gpsFixType
+    const satellites = droneData.gpsSatellites
+    if (fixType == null && satellites == null) {
+      systems.push({
+        system: "GNSS",
+        level: "warning",
+        msg: "데이터 없음",
+      })
+    } else if (satellites != null) {
+      if (satellites <= 20) {
+        systems.push({
+          system: "GNSS",
+          level: "warning",
+          msg: `위성 부족 (${satellites})`,
+        })
+      } else if (satellites <= 25) {
+        systems.push({
+          system: "GNSS",
+          level: "warning",
+          msg: `주의 (${satellites})`,
+        })
+      } else {
+        systems.push({
+          system: "GNSS",
+          level: "safe",
+          msg: `정상 (위성 ${satellites})`,
+        })
+      }
+    } else if (fixType != null && fixType < 3) {
+      systems.push({
+        system: "GNSS",
+        level: "warning",
+        msg: `신호 약함 (Fix ${fixType})`,
+      })
+    } else {
+      systems.push({
+        system: "GNSS",
+        level: "safe",
+        msg: "정상",
+      })
+    }
 
     setData(systems)
   }, [connected, droneData])
@@ -139,7 +177,7 @@ export function RealtimeCBMStatusCard({
   }
 
   return (
-    <Card className="shadow-md transition-all hover:shadow-lg">
+    <Card className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-600" />
@@ -147,11 +185,11 @@ export function RealtimeCBMStatusCard({
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="space-y-2">
+      <CardContent className="divide-y divide-slate-200/60 dark:divide-slate-800/60">
         {data.map((sys, idx) => (
           <div
             key={`${sys.system}-${idx}`}
-            className={`flex items-center justify-between border-b pb-1 ${colorMap[sys.level]}`}
+            className={`flex items-center justify-between py-2 ${colorMap[sys.level]}`}
           >
             <div className="flex items-center gap-2">
               {iconMap[sys.system] ?? <CheckCircle className="h-5 w-5" />}

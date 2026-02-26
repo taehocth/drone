@@ -13,6 +13,8 @@ export interface DroneData {
   battery?: number
   latitude?: number
   longitude?: number
+  gpsFixType?: number
+  gpsSatellites?: number
 
   roll?: number
   pitch?: number
@@ -203,6 +205,12 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         latitude: msg.position?.lat,
         longitude: msg.position?.lon,
         battery: msg.battery?.remaining,
+        gpsFixType:
+          typeof msg.gps?.fix_type === "number" ? msg.gps.fix_type : undefined,
+        gpsSatellites:
+          typeof msg.gps?.satellites === "number"
+            ? msg.gps.satellites
+            : undefined,
 
         roll: radToDeg(msg.attitude?.roll),
         pitch: radToDeg(msg.attitude?.pitch),

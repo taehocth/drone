@@ -263,6 +263,7 @@ export function UavDashboard() {
                         lat: droneData.latitude,
                         lng: droneData.longitude,
                         yaw: droneData.yawInt,
+                        satellites: droneData.gpsSatellites,
                       }
                     : undefined
                 }
@@ -407,6 +408,8 @@ export function UavDashboard() {
                           battery: droneData.battery,
                           altitude: droneData.altitude,
                           speed: droneData.speed,
+                          gpsFixType: droneData.gpsFixType,
+                          gpsSatellites: droneData.gpsSatellites,
                         }
                       : undefined
                   }
