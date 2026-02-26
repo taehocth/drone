@@ -10,6 +10,7 @@ interface NaverMapProps {
   markers?: Array<{ lat: number; lng: number; id: number }>
   onMapClick?: (nx: number, ny: number) => void
   flightPath?: Array<{ lat: number; lng: number; alt?: number; time?: number }>
+  dronePosition?: { lat: number; lng: number; yaw?: number; satellites?: number }
 }
 
 const DEFAULT_LAT = 36.5941
@@ -21,6 +22,7 @@ export function NaverMap({
   markers: _markers = [],
   onMapClick,
   flightPath,
+  dronePosition,
 }: NaverMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
@@ -490,6 +492,36 @@ export function NaverMap({
       removeDroneMarker()
     }
   }, [isTrackingDrone])
+
+  // ================================
+  // 외부에서 전달된 드론 위치 반영
+  // ================================
+  useEffect(() => {
+    if (!dronePosition) {
+      removeDroneMarker()
+      setIsDroneConnected(false)
+      return
+    }
+    if (!mapInstance.current) return
+
+    const { lat: droneLat, lng: droneLng, yaw, satellites: sats } = dronePosition
+    if (typeof droneLat !== "number" || typeof droneLng !== "number") {
+      removeDroneMarker()
+      setIsDroneConnected(false)
+      return
+    }
+
+    updateDroneMarker(droneLat, droneLng, yaw)
+    setIsDroneConnected(true)
+
+    if (sats !== undefined) {
+      setSatellites(sats)
+    }
+
+    if (isTrackingDrone) {
+      mapInstance.current.setCenter(new (window as any).naver.maps.LatLng(droneLat, droneLng))
+    }
+  }, [dronePosition, isTrackingDrone])
 
   // ================================
   // 경로 초기화

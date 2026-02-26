@@ -245,6 +245,17 @@ export function UavDashboard() {
               <NaverMap
                 lat={DEFAULT_MAP_OPTIONS.center.lat}
                 lng={DEFAULT_MAP_OPTIONS.center.lng}
+                dronePosition={
+                  droneData &&
+                  typeof droneData.latitude === "number" &&
+                  typeof droneData.longitude === "number"
+                    ? {
+                        lat: droneData.latitude,
+                        lng: droneData.longitude,
+                        yaw: droneData.yawInt,
+                      }
+                    : undefined
+                }
                 onMapClick={(nx, ny) => setClickedCoordinates({ nx, ny })}
               />
             </div>
