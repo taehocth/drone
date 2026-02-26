@@ -55,9 +55,6 @@ export function UavDashboard() {
     ? "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
     : "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
 
-  const formatMetric = (value?: number, unit = "") =>
-    typeof value === "number" ? `${value.toFixed(0)}${unit}` : "-"
-
   const alerts = (() => {
     if (!droneConnected) return []
 
@@ -276,43 +273,6 @@ export function UavDashboard() {
                 onConnectionChange={setDroneConnected}
                 onData={setDroneData}
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  배터리
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {formatMetric(droneData?.battery, "%")}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  고도
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {formatMetric(droneData?.altitude, "m")}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  속도
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {formatMetric(droneData?.speed, "m/s")}
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-200/60 bg-slate-100/60 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-900/60">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  좌표
-                </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {clickedCoordinates
-                    ? `${clickedCoordinates.nx}, ${clickedCoordinates.ny}`
-                    : "-"}
-                </p>
-              </div>
             </div>
 
             {/* 실시간 비행 모니터링 임계값 알림 */}
