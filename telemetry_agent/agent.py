@@ -1,9 +1,7 @@
-# telemetry_agent/agent.py
-
 import time
 import threading
 import math
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import requests
 from pymavlink import mavutil
@@ -14,33 +12,24 @@ from serial.tools import list_ports
 # CONFIG
 # =====================================================
 
-# ✅ nginx(443)로 보내야 함 (Let's Encrypt 인증서도 이 도메인에 맞춰져 있음)
 SERVER_BASE_URL = "https://hanuldrone.duckdns.org"
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 
 BAUD_RATES = [57600, 115200, 921600]
-
-# 전송 주기(초): 0.05 = 20Hz (빠름), 0.1 = 10Hz (권장)
 PUSH_INTERVAL_SEC = 0.1
-
-# 특정 데이터가 너무 오래 갱신되지 않으면 stale로 판단(초)
 STALE_WARN_SEC = 3.0
-
-# requests timeout (2초는 빡빡할 수 있어 5초 권장)
 HTTP_TIMEOUT_SEC = 5.0
-
-# ✅ VFR_HUD(groundspeed)로 velocity를 덮어쓰는 fallback 조건
-# LOCAL_POSITION_NED가 이 시간 이상 안 들어오면 VFR_HUD로 velocity 보강
 VFR_VEL_FALLBACK_AFTER_SEC = 0.5
+
+# ✅ 포트 우선순위/필터
+PREFERRED_PORTS = ["COM6"]  # 필요하면 ["COM6","COM7"] 처럼 추가 가능
+EXCLUDE_IF_DESC_CONTAINS = ["bluetooth"]  # description에 포함되면 제외 (case-insensitive)
+USB_HINTS = ["usb", "serial", "stm", "px4", "cube", "fmu"]  # description에 있으면 우선
 
 
 # =====================================================
 # UTIL
 # =====================================================
-
-def scan_serial_ports():
-    return [p.device for p in list_ports.comports()]
-
 
 def now_ts() -> float:
     return time.time()
@@ -48,6 +37,87 @@ def now_ts() -> float:
 
 def is_num(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def fmt_age(v) -> str:
+    if v is None:
+        return "None"
+    try:
+        return f"{v:.2f}s"
+    except Exception:
+        return str(v)
+
+
+def scan_serial_ports_detailed() -> List[Tuple[str, str]]:
+    """
+    Returns list of (device, description)
+    """
+    out: List[Tuple[str, str]] = []
+    for p in list_ports.comports():
+        dev = getattr(p, "device", None) or ""
+        desc = getattr(p, "description", None) or ""
+        if dev:
+            out.append((dev, desc))
+    return out
+
+
+def should_exclude_port(device: str, desc: str) -> bool:
+    d = (device or "").lower()
+    s = (desc or "").lower()
+    for key in EXCLUDE_IF_DESC_CONTAINS:
+        key = (key or "").lower()
+        if key and (key in d or key in s):
+            return True
+    return False
+
+
+def port_score(device: str, desc: str) -> int:
+    """
+    Higher score = tried earlier (after preferred ports)
+    """
+    s = (desc or "").lower()
+    d = (device or "").lower()
+
+    score = 0
+    # USB/Serial 힌트
+    for h in USB_HINTS:
+        if h and (h in s or h in d):
+            score += 10
+
+    # COM 숫자가 클수록 가끔 USB 쪽인 경우가 있어 약간 가산(취향)
+    # (원치 않으면 삭제해도 됨)
+    if d.startswith("com"):
+        try:
+            n = int(d.replace("com", "").strip())
+            score += min(n, 20) // 5  # 최대 +4 정도
+        except Exception:
+            pass
+
+    return score
+
+
+def build_try_port_list() -> List[str]:
+    """
+    1) Preferred ports (exists) first
+    2) Non-excluded ports sorted by score desc
+    """
+    detailed = scan_serial_ports_detailed()
+    if not detailed:
+        return []
+
+    # exclude bluetooth etc.
+    filtered = [(dev, desc) for (dev, desc) in detailed if not should_exclude_port(dev, desc)]
+
+    # preferred first (only if present)
+    present = {dev for (dev, _) in filtered}
+    preferred = [p for p in PREFERRED_PORTS if p in present]
+
+    # remaining ports sorted by heuristic score
+    remaining = [(dev, desc) for (dev, desc) in filtered if dev not in preferred]
+    remaining_sorted = sorted(remaining, key=lambda x: port_score(x[0], x[1]), reverse=True)
+
+    ordered = preferred + [dev for (dev, _) in remaining_sorted]
+    return ordered
 
 
 # =====================================================
@@ -60,17 +130,15 @@ class TelemetryAgent:
         self.sysid: Optional[int] = None
         self.running = True
 
-        # 🔴 누적 캐시 (서버로 보낼 "완성 스냅샷")
         self._cache: Dict[str, Any] = {
             "sysid": None,
-            "position": None,   # {lat, lon, alt}
-            "velocity": None,   # {vx, vy, vz}
-            "attitude": None,   # {roll, pitch, yaw}
-            "battery": None,    # {voltage, current, remaining}
-            "gps": None,        # {fix_type, satellites}
+            "position": None,
+            "velocity": None,
+            "attitude": None,
+            "battery": None,
+            "gps": None,
         }
 
-        # 마지막으로 각 항목이 갱신된 시각 (stale 진단용)
         self._last_update: Dict[str, float] = {
             "position": 0.0,
             "velocity": 0.0,
@@ -80,33 +148,47 @@ class TelemetryAgent:
         }
 
         self._lock = threading.Lock()
-
-        # push log rate control
         self._last_push_at = 0.0
-
-        # reuse HTTP connection
         self._session = requests.Session()
 
     # -------------------------------------------------
-    # Connect to ANY available telemetry
+    # Connect to telemetry (COM6 우선 + Bluetooth 제외)
     # -------------------------------------------------
     def connect_any(self) -> bool:
         print("[Agent] Scanning serial ports...")
 
-        ports = scan_serial_ports()
+        ports = build_try_port_list()
         if not ports:
-            print("[Agent] No serial ports found")
+            print("[Agent] No serial ports found (after filtering)")
             return False
+
+        print("[Agent] Candidate ports (ordered):", ", ".join(ports))
 
         for port in ports:
             for baud in BAUD_RATES:
                 try:
                     print(f"[Agent] Trying {port} @ {baud}")
-                    mav = mavutil.mavlink_connection(port, baud=baud, timeout=3)
+
+                    mav = mavutil.mavlink_connection("tcp:3.36.81.238:51067")
+
+                    # ✅ heartbeat 확인 (여기서 걸리면 '진짜 MAVLink'임)
                     mav.wait_heartbeat(timeout=5)
 
+                    # ✅ sysid 확정
+                    hb = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
+                    sysid = None
+                    if hb is not None:
+                        try:
+                            sysid = hb.get_srcSystem()
+                        except Exception:
+                            sysid = None
+
+                    # fallback
+                    if sysid is None:
+                        sysid = getattr(mav, "target_system", None)
+
                     self.mav = mav
-                    self.sysid = mav.target_system
+                    self.sysid = sysid
 
                     with self._lock:
                         self._cache["sysid"] = self.sysid
@@ -116,14 +198,16 @@ class TelemetryAgent:
                     print(f"[Agent]  Baud : {baud}")
                     print(f"[Agent]  SYSID: {self.sysid}")
                     return True
-                except Exception:
+
+                except Exception as e:
+                    # 실패하면 다음 baud/포트 시도
                     continue
 
         print("[Agent] Failed to connect to any telemetry")
         return False
 
     # -------------------------------------------------
-    # MAVLink Listen Loop (캐시 누적)
+    # MAVLink Listen Loop
     # -------------------------------------------------
     def listen_loop(self):
         assert self.mav is not None
@@ -132,7 +216,6 @@ class TelemetryAgent:
             msg = self.mav.recv_match(blocking=True, timeout=2)
             if not msg:
                 continue
-
             self.ingest_message(msg)
 
     # -------------------------------------------------
@@ -140,33 +223,33 @@ class TelemetryAgent:
     # -------------------------------------------------
     def ingest_message(self, msg) -> None:
         t = msg.get_type()
-        ts = time.time()
+        ts = now_ts()
 
         with self._lock:
-            # sysid는 항상 유지
-            self._cache["sysid"] = msg.get_srcSystem()
+            # sysid 유지/갱신
+            try:
+                self._cache["sysid"] = msg.get_srcSystem()
+            except Exception:
+                pass
 
-            # 1) 자세 (ATTITUDE)
             if t == "ATTITUDE":
                 self._cache["attitude"] = {
-                    "roll": float(msg.roll),
-                    "pitch": float(msg.pitch),
-                    "yaw": float(msg.yaw),
+                    "roll": float(msg.roll) if msg.roll is not None else None,
+                    "pitch": float(msg.pitch) if msg.pitch is not None else None,
+                    "yaw": float(msg.yaw) if msg.yaw is not None else None,
                 }
                 self._last_update["attitude"] = ts
                 return
 
-            # 2) 배터리 (SYS_STATUS)
             if t == "SYS_STATUS":
                 self._cache["battery"] = {
-                    "voltage": float(msg.voltage_battery) / 1000.0 if msg.voltage_battery is not None else None,
-                    "current": float(msg.current_battery) / 100.0 if msg.current_battery is not None else None,
+                    "voltage": (float(msg.voltage_battery) / 1000.0) if msg.voltage_battery is not None else None,
+                    "current": (float(msg.current_battery) / 100.0) if msg.current_battery is not None else None,
                     "remaining": int(msg.battery_remaining) if msg.battery_remaining is not None else None,
                 }
                 self._last_update["battery"] = ts
                 return
 
-            # 3) GPS 상태 (GPS_RAW_INT)
             if t == "GPS_RAW_INT":
                 self._cache["gps"] = {
                     "fix_type": int(msg.fix_type) if msg.fix_type is not None else None,
@@ -175,19 +258,15 @@ class TelemetryAgent:
                 self._last_update["gps"] = ts
                 return
 
-            # 4) 위치 (GLOBAL_POSITION_INT)
             if t == "GLOBAL_POSITION_INT":
                 self._cache["position"] = {
-                    "lat": float(msg.lat) / 1e7 if msg.lat is not None else None,
-                    "lon": float(msg.lon) / 1e7 if msg.lon is not None else None,
-                    # relative_alt: mm → m
-                    "alt": float(msg.relative_alt) / 1000.0 if msg.relative_alt is not None else None,
+                    "lat": (float(msg.lat) / 1e7) if msg.lat is not None else None,
+                    "lon": (float(msg.lon) / 1e7) if msg.lon is not None else None,
+                    "alt": (float(msg.relative_alt) / 1000.0) if msg.relative_alt is not None else None,
                 }
                 self._last_update["position"] = ts
                 return
 
-            # 5) 속도 (LOCAL_POSITION_NED) ✅ 최우선
-            # vx, vy, vz: m/s (NED)
             if t == "LOCAL_POSITION_NED":
                 self._cache["velocity"] = {
                     "vx": float(msg.vx) if msg.vx is not None else None,
@@ -197,22 +276,17 @@ class TelemetryAgent:
                 self._last_update["velocity"] = ts
                 return
 
-            # 6) 고도/속도 근삿값 (VFR_HUD) - fallback로만 사용 ✅
-            # airspeed/groundspeed(m/s), alt(m), climb(m/s)
             if t == "VFR_HUD":
-                # position이 없을 때라도 alt는 확보 가능
                 if self._cache.get("position") is None:
                     self._cache["position"] = {"lat": None, "lon": None, "alt": None}
 
-                # alt 업데이트
-                try:
-                    if msg.alt is not None:
+                if getattr(msg, "alt", None) is not None:
+                    try:
                         self._cache["position"]["alt"] = float(msg.alt)
                         self._last_update["position"] = ts
-                except Exception:
-                    pass
+                    except Exception:
+                        pass
 
-                # ✅ velocity fallback: LOCAL_POSITION_NED가 오래 안 들어온 경우에만 사용
                 try:
                     gs = float(msg.groundspeed) if msg.groundspeed is not None else None
                     if gs is not None:
@@ -222,7 +296,7 @@ class TelemetryAgent:
 
                         if vel is None or vel_age > VFR_VEL_FALLBACK_AFTER_SEC:
                             self._cache["velocity"] = {
-                                "vx": gs,   # magnitude 기반 fallback
+                                "vx": gs,
                                 "vy": 0.0,
                                 "vz": None,
                             }
@@ -233,18 +307,16 @@ class TelemetryAgent:
                 return
 
     # -------------------------------------------------
-    # Build snapshot for server
+    # Build snapshot
     # -------------------------------------------------
     def build_snapshot(self) -> dict:
         with self._lock:
             vel = self._cache.get("velocity")
 
-            # ✅ speed magnitude (m/s) 계산해서 같이 보냄
             speed_m_s = None
             if isinstance(vel, dict):
                 vx = vel.get("vx")
                 vy = vel.get("vy")
-                # vz는 speed 표시에는 보통 안 쓰지만 필요하면 포함 가능
                 if is_num(vx) and is_num(vy):
                     speed_m_s = math.sqrt(vx * vx + vy * vy)
                 elif is_num(vx) and (vy is None):
@@ -255,12 +327,11 @@ class TelemetryAgent:
                 "attitude": self._cache.get("attitude"),
                 "position": self._cache.get("position"),
                 "velocity": vel,
-                "speed_m_s": speed_m_s,          # ✅ 추가
+                "speed_m_s": speed_m_s,
                 "battery": self._cache.get("battery"),
                 "gps": self._cache.get("gps"),
             }
 
-            # stale 진단용 필드(서버/프론트에서 무시해도 됨)
             age = {}
             for k, last in self._last_update.items():
                 age[k] = (now_ts() - last) if last else None
@@ -269,13 +340,12 @@ class TelemetryAgent:
             return snap
 
     # -------------------------------------------------
-    # Push Loop → Server (고주기 스냅샷 전송)
+    # Push Loop
     # -------------------------------------------------
     def push_loop(self):
         while self.running:
             snap = self.build_snapshot()
 
-            # ✅ sysid=0도 유효할 수 있으므로 "None 여부"로만 판단해야 함
             if snap.get("sysid") is None:
                 time.sleep(PUSH_INTERVAL_SEC)
                 continue
@@ -287,20 +357,18 @@ class TelemetryAgent:
                     timeout=HTTP_TIMEOUT_SEC,
                 )
 
-                # 너무 많은 로그는 부담이므로 1초에 1번 정도만 찍음
                 now = now_ts()
                 if now - self._last_push_at >= 1.0:
                     self._last_push_at = now
-                    att_age = snap["_age_sec"].get("attitude")
-                    pos_age = snap["_age_sec"].get("position")
-                    vel_age = snap["_age_sec"].get("velocity")
+                    age = snap.get("_age_sec", {}) or {}
                     spd = snap.get("speed_m_s")
-                    spd_str = f"{spd:.2f}m/s" if isinstance(spd, (int, float)) else "None"
+                    spd_str = (f"{spd:.2f}m/s" if is_num(spd) else "None")
+
                     print(
                         f"[Agent] PUSH sysid={snap.get('sysid')} status={res.status_code} "
-                        f"(age attitude={att_age:.2f}s "
-                        f"pos={pos_age if pos_age is None else f'{pos_age:.2f}s'} "
-                        f"vel={vel_age if vel_age is None else f'{vel_age:.2f}s'} "
+                        f"(age attitude={fmt_age(age.get('attitude'))} "
+                        f"pos={fmt_age(age.get('position'))} "
+                        f"vel={fmt_age(age.get('velocity'))} "
                         f"speed={spd_str})"
                     )
 
@@ -310,7 +378,7 @@ class TelemetryAgent:
             time.sleep(PUSH_INTERVAL_SEC)
 
     # -------------------------------------------------
-    # Run Agent
+    # Run
     # -------------------------------------------------
     def run(self):
         while self.running:
@@ -322,10 +390,6 @@ class TelemetryAgent:
             print("[Agent] Retry in 3 seconds...")
             time.sleep(3)
 
-
-# =====================================================
-# Entry Point
-# =====================================================
 
 if __name__ == "__main__":
     print("===================================")
