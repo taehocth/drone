@@ -233,6 +233,33 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         }
       }
 
+      // =========================
+      // ✅ ALT JUMP DEBUG LOG (5m 이상 점프)
+      // =========================
+      const alt = msg.position?.alt
+      const lastAlt = targetRef.current?.altitude
+
+      if (typeof alt === "number" && typeof lastAlt === "number") {
+        const jump = alt - lastAlt
+        if (Math.abs(jump) >= 5) {
+          console.warn("⚠️ ALT JUMP", {
+            sysid: msg.sysid,
+            alt,
+            lastAlt,
+            jump,
+            gpsFixType: msg.gps?.fix_type,
+            gpsSatellites: msg.gps?.satellites,
+            // 서버가 어떤 alt를 쓰는지 식별 힌트(있으면 같이)
+            rawAlt: msg.position?.alt,
+            relAlt: msg.position?.rel_alt,
+            amslAlt: msg.position?.amsl_alt,
+            baroAlt: msg.baro?.alt,
+            source: msg.position?.source,
+            server_ts: msg.server_ts,
+          })
+        }
+      }
+
       // ✅ 화면 반영은 “따로” (여기서는 ref만 갱신)
       targetRef.current = {
         sysid: msg.sysid,
@@ -284,6 +311,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     targetRef.current = null
     smoothRef.current = {}
     lastRxAtRef.current = 0
+    delayBaseRef.current = null
+    delayBaseUpdatedAtRef.current = 0
   }
 
   /* =========================
