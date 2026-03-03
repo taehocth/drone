@@ -64,14 +64,14 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
   const badgeClass = connected
     ? "border-green-200 bg-green-50 text-green-700"
     : uiConnecting
-    ? "border-yellow-200 bg-yellow-50 text-yellow-700"
-    : "border-gray-200 bg-gray-50 text-gray-500"
+      ? "border-yellow-200 bg-yellow-50 text-yellow-700"
+      : "border-gray-200 bg-gray-50 text-gray-500"
 
   const badgeLabel = connected
     ? "연결됨"
     : uiConnecting
-    ? "연결 시도 중"
-    : "대기 중"
+      ? "연결 시도 중"
+      : "대기 중"
 
   return (
     <Card className="mx-auto w-full max-w-none rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/60">
@@ -113,7 +113,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
 
       <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
         <Row label="고도" value={v(data.altitude, " m")} />
-        <Row label="속도" value={v(data.speed, " km/h")} />
+        <Row label="속도" value={v(data.speed, " m/s")} />
 
         <div className="flex justify-between">
           <span>배터리</span>
@@ -149,7 +149,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
           }
         />
 
-        <div className="pt-1 text-xs text-muted-foreground sm:col-span-2">
+        <div className="text-muted-foreground pt-1 text-xs sm:col-span-2">
           마지막 업데이트:{" "}
           {data.timestamp
             ? new Date(data.timestamp).toLocaleTimeString("ko-KR")

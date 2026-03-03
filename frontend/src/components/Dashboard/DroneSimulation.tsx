@@ -187,7 +187,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       const vy = msg.velocity?.vy
       const speed =
         typeof vx === "number" && typeof vy === "number"
-          ? Math.sqrt(vx * vx + vy * vy) * 3.6
+          ? Math.sqrt(vx * vx + vy * vy)
           : undefined
 
       // ✅ 수신 시각 기록(화면에서 “LIVE/STALE” 표시할 때도 유용)
