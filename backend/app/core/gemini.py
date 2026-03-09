@@ -27,10 +27,8 @@ def get_available_model():
         
         # 우선순위에 따라 모델 선택
         preferred_models = [
-            "gemini-1.5-flash",
-            "gemini-1.5-pro", 
-            "gemini-pro",
-            "gemini-1.0-pro"
+              "gemini-1.5-flash",
+              "gemini-1.5-pro"
         ]
         
         for preferred in preferred_models:
@@ -45,8 +43,8 @@ def get_available_model():
             return selected
         
         # 기본값
-        print("⚠️ 모델 목록이 비어있음. gemini-pro 시도")
-        return "gemini-pro"
+        print("⚠️ 모델 목록이 비어있음. gemini-1.5-flash 사용")
+        return "gemini-1.5-flash"
         
     except Exception as e:
         print(f"⚠️ 모델 목록 조회 실패: {e}")
@@ -62,8 +60,8 @@ except Exception as e:
     print(f"❌ 모델 초기화 실패: {e}")
     # 폴백: gemini-pro 시도
     try:
-        model = genai.GenerativeModel("gemini-pro")
-        print("✅ 폴백 모델 gemini-pro 사용")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        print("✅ 폴백 모델 gemini-1.5-flash 사용")
     except Exception as fallback_error:
         print(f"❌ 폴백 모델도 실패: {fallback_error}")
         raise
