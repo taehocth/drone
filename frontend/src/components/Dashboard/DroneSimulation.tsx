@@ -225,11 +225,11 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           const base = delayBaseRef.current ?? 0
           const corrected = Math.max(0, raw - base)
 
-          console.log("⏱ Telemetry delay(ms):", corrected, {
-            raw,
-            base,
-            server_ts: msg.server_ts,
-          })
+          // console.log("⏱ Telemetry delay(ms):", corrected, {
+          //   raw,
+          //   base,
+          //   server_ts: msg.server_ts,
+          // })
         }
       }
 

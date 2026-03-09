@@ -169,7 +169,7 @@ class TelemetryAgent:
                 try:
                     print(f"[Agent] Trying {port} @ {baud}")
 
-                    mav = mavutil.mavlink_connection("tcp:3.36.81.238:51067")
+                    mav = mavutil.mavlink_connection("COM5", baud=57600)
 
                     # ✅ heartbeat 확인 (여기서 걸리면 '진짜 MAVLink'임)
                     mav.wait_heartbeat(timeout=5)
