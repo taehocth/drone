@@ -2,7 +2,7 @@ import google.generativeai as genai
 from app.core.config import settings
 
 # 기본 폴백 모델
-DEFAULT_MODEL_NAME = "gemini-1.5-flash"
+DEFAULT_MODEL_NAME = settings.GEMINI_MODEL_NAME or "gemini-1.0-pro"
 MODEL_NAME = DEFAULT_MODEL_NAME
 
 # API 키 확인
@@ -32,12 +32,14 @@ def get_available_model() -> str:
 
         # 우선순위에 따라 모델 선택
         preferred_models = [
+            settings.GEMINI_MODEL_NAME,
             "gemini-1.5-flash",
             "gemini-1.5-pro",
+            "gemini-1.0-pro",
         ]
 
         for preferred in preferred_models:
-            if preferred in available_names:
+            if preferred and preferred in available_names:
                 print(f"✅ 선택된 모델: {preferred}")
                 return preferred
 
@@ -67,10 +69,23 @@ except Exception as e:
     print(f"❌ 모델 초기화 실패: {e}")
 
     # 최종 폴백
-    try:
-        MODEL_NAME = DEFAULT_MODEL_NAME
-        model = genai.GenerativeModel(MODEL_NAME)
-        print(f"✅ 폴백 모델 사용: {MODEL_NAME}")
-    except Exception as fallback_error:
-        print(f"❌ 폴백 모델도 실패: {fallback_error}")
-        raise
+    fallback_models = [
+        DEFAULT_MODEL_NAME,
+        "gemini-1.0-pro",
+    ]
+    last_error: Exception | None = None
+    for fallback in fallback_models:
+        if not fallback:
+            continue
+        try:
+            MODEL_NAME = fallback
+            model = genai.GenerativeModel(MODEL_NAME)
+            print(f"✅ 폴백 모델 사용: {MODEL_NAME}")
+            last_error = None
+            break
+        except Exception as fallback_error:
+            last_error = fallback_error
+            print(f"❌ 폴백 모델 실패: {fallback} -> {fallback_error}")
+
+    if last_error:
+        raise last_error

@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     # 외부 API
     # ==================================================
     GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL_NAME: str | None = None
     NAVER_CLIENT_ID: str | None = None
     NAVER_CLIENT_SECRET: str | None = None
 
