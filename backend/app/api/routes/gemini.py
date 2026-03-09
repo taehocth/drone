@@ -1,15 +1,16 @@
 from fastapi import APIRouter, HTTPException
-from app.core.gemini import model
+from app.core.gemini import client, MODEL_NAME
 import asyncio
 
 router = APIRouter()
+
 
 @router.post("/cbm/ai-summary")
 async def cbm_ai_summary(request: dict):
     try:
         data = request.get("data", request)  # 하위 호환성
         level = request.get("level", "normal")  # beginner, normal, expert
-        
+
         # 설명 레벨에 따른 프롬프트 조정
         level_instructions = {
             "beginner": """초보자용 설명:
@@ -31,12 +32,11 @@ async def cbm_ai_summary(request: dict):
 - 전문적인 관점에서의 평가
 - 5-7문장으로 간결하지만 포괄적으로
 - 각 시스템의 수치와 임계값 비교
-- 문제의 근본 원인과 해결 방안 제시"""
+- 문제의 근본 원인과 해결 방안 제시""",
         }
-        
+
         level_instruction = level_instructions.get(level, level_instructions["normal"])
-        
-        # 비동기로 실행하여 블로킹 방지
+
         prompt = f"""아래 드론 비행 로그 분석 결과를 상세하게 분석하고 요약해주세요.
 
 {level_instruction}
@@ -53,39 +53,27 @@ async def cbm_ai_summary(request: dict):
 {data}
 
 상세 분석:"""
+
+        print(f"🚀 cbm_ai_summary using model: {MODEL_NAME}")
+
         result = await asyncio.to_thread(
-            model.generate_content,
-            prompt
+            client.models.generate_content,
+            model=MODEL_NAME,
+            contents=prompt,
         )
-        
-        # 응답 텍스트 추출 (여러 방법 시도)
-        summary_text = None
-        
-        # 방법 1: text 속성 확인
-        if hasattr(result, 'text') and result.text:
-            summary_text = result.text
-        # 방법 2: candidates 확인
-        elif hasattr(result, 'candidates') and result.candidates:
-            candidate = result.candidates[0]
-            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                if candidate.content.parts and len(candidate.content.parts) > 0:
-                    summary_text = candidate.content.parts[0].text
-        # 방법 3: 직접 접근
-        elif hasattr(result, 'response'):
-            if hasattr(result.response, 'text'):
-                summary_text = result.response.text
-        
+
+        summary_text = getattr(result, "text", None)
+
         if not summary_text:
-            # 디버깅을 위한 로그
             print(f"⚠️ Gemini 응답 형식 확인 필요: {type(result)}")
             print(f"⚠️ result 속성: {dir(result)}")
             raise HTTPException(
-                status_code=500, 
-                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다"
+                status_code=500,
+                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다",
             )
-        
+
         return {"summary": summary_text}
-                
+
     except HTTPException:
         raise
     except Exception as e:
@@ -94,7 +82,7 @@ async def cbm_ai_summary(request: dict):
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"Gemini API 오류: {str(e)}"
+            detail=f"Gemini API 오류: {str(e)}",
         )
 
 
@@ -108,7 +96,6 @@ async def chat(request: dict):
         if not message:
             raise HTTPException(status_code=400, detail="메시지가 필요합니다")
 
-        # 대화 히스토리 포함 프롬프트 구성
         history_text = ""
         if history:
             history_text = "\n\n이전 대화:\n"
@@ -124,28 +111,22 @@ async def chat(request: dict):
 
 AI:"""
 
+        print(f"🚀 chat using model: {MODEL_NAME}")
+
         result = await asyncio.to_thread(
-            model.generate_content,
-            prompt
+            client.models.generate_content,
+            model=MODEL_NAME,
+            contents=prompt,
         )
 
-        # 응답 텍스트 추출
-        response_text = None
-        if hasattr(result, 'text') and result.text:
-            response_text = result.text
-        elif hasattr(result, 'candidates') and result.candidates:
-            candidate = result.candidates[0]
-            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                if candidate.content.parts and len(candidate.content.parts) > 0:
-                    response_text = candidate.content.parts[0].text
-        elif hasattr(result, 'response'):
-            if hasattr(result.response, 'text'):
-                response_text = result.response.text
+        response_text = getattr(result, "text", None)
 
         if not response_text:
+            print(f"⚠️ Gemini 응답 형식 확인 필요: {type(result)}")
+            print(f"⚠️ result 속성: {dir(result)}")
             raise HTTPException(
                 status_code=500,
-                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다"
+                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다",
             )
 
         return {"response": response_text}
@@ -158,7 +139,7 @@ AI:"""
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"채팅 처리 오류: {str(e)}"
+            detail=f"채팅 처리 오류: {str(e)}",
         )
 
 
@@ -170,27 +151,25 @@ async def ask_question(request: dict):
         question = request.get("question", "")
         level = request.get("level", "normal")
         history = request.get("history", [])
-        
+
         if not question:
             raise HTTPException(status_code=400, detail="질문이 필요합니다")
-        
-        # 설명 레벨에 따른 지시사항
+
         level_instructions = {
             "beginner": "초보자가 이해하기 쉽게 일상 언어로 설명해주세요.",
             "normal": "일반 사용자가 이해할 수 있게 설명해주세요.",
-            "expert": "전문가 수준의 상세하고 기술적인 설명을 해주세요."
+            "expert": "전문가 수준의 상세하고 기술적인 설명을 해주세요.",
         }
-        
+
         level_instruction = level_instructions.get(level, level_instructions["normal"])
-        
-        # 대화 히스토리 포함 프롬프트 구성
+
         history_text = ""
         if history:
             history_text = "\n\n이전 대화:\n"
             for msg in history[-3:]:  # 최근 3개만 포함
                 role = "사용자" if msg.get("role") == "user" else "AI"
                 history_text += f"{role}: {msg.get('content', '')}\n"
-        
+
         prompt = f"""드론 비행 로그 분석 결과에 대한 질문에 답변해주세요.
 
 {level_instruction}
@@ -202,33 +181,27 @@ async def ask_question(request: dict):
 사용자 질문: {question}
 
 답변:"""
-        
+
+        print(f"🚀 ask_question using model: {MODEL_NAME}")
+
         result = await asyncio.to_thread(
-            model.generate_content,
-            prompt
+            client.models.generate_content,
+            model=MODEL_NAME,
+            contents=prompt,
         )
-        
-        # 응답 텍스트 추출
-        answer_text = None
-        if hasattr(result, 'text') and result.text:
-            answer_text = result.text
-        elif hasattr(result, 'candidates') and result.candidates:
-            candidate = result.candidates[0]
-            if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
-                if candidate.content.parts and len(candidate.content.parts) > 0:
-                    answer_text = candidate.content.parts[0].text
-        elif hasattr(result, 'response'):
-            if hasattr(result.response, 'text'):
-                answer_text = result.response.text
-        
+
+        answer_text = getattr(result, "text", None)
+
         if not answer_text:
+            print(f"⚠️ Gemini 응답 형식 확인 필요: {type(result)}")
+            print(f"⚠️ result 속성: {dir(result)}")
             raise HTTPException(
                 status_code=500,
-                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다"
+                detail="Gemini API 응답에서 텍스트를 추출할 수 없습니다",
             )
-        
+
         return {"answer": answer_text}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -237,5 +210,5 @@ async def ask_question(request: dict):
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"질문 처리 오류: {str(e)}"
+            detail=f"질문 처리 오류: {str(e)}",
         )
