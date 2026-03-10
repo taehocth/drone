@@ -125,21 +125,21 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   // WS 수신 즉시 반영(리렌더 X): targetRef
   const targetRef = useRef<DroneData | null>(null)
 
-  // 부드러운 화면용 스무딩 값(계산용)
+  // 부드러운 화면용 스무딩 값(계산용) — speed는 여기서 스무딩하지 않음
   const smoothRef = useRef<DroneData>({})
 
   // 스무딩 dt 계산용
   const lastTsRef = useRef<number>(performance.now())
 
-  // “마지막 수신 시각” (UI 신뢰도/지연 체감 개선에 사용)
+  // "마지막 수신 시각" (UI 신뢰도/지연 체감 개선에 사용)
   const lastRxAtRef = useRef<number>(0)
 
   // 콘솔 delay 로그 샘플링(DevTools 오버헤드 줄이기)
   const lastDelayLogAtRef = useRef<number>(0)
 
   // delay 계산 보정용 (client clock skew 대응)
-  const delayBaseRef = useRef<number | null>(null) // raw delay의 기준(최소값)
-  const delayBaseUpdatedAtRef = useRef<number>(0) // 기준 갱신 시각(성능/드리프트 대응)
+  const delayBaseRef = useRef<number | null>(null)
+  const delayBaseUpdatedAtRef = useRef<number>(0)
 
   /* =========================
    * Connect / Disconnect
@@ -183,17 +183,21 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
       if (typeof msg.sysid !== "number") return
 
+      // ✅ 속력: 서버가 계산한 speed_m_s 우선 사용, 없으면 vx/vy로 fallback
+      // → 이중 계산 제거, 소스 통일로 값 불일치 방지
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
-      const speed =
-        typeof vx === "number" && typeof vy === "number"
-          ? Math.sqrt(vx * vx + vy * vy)
-          : undefined
+      const speed: number | undefined =
+        typeof msg.speed_m_s === "number"
+          ? msg.speed_m_s
+          : typeof vx === "number" && typeof vy === "number"
+            ? Math.sqrt(vx * vx + vy * vy)
+            : undefined
 
-      // ✅ 수신 시각 기록(화면에서 “LIVE/STALE” 표시할 때도 유용)
+      // 수신 시각 기록
       lastRxAtRef.current = performance.now()
 
-      // (선택) server_ts 기반 delay 로그는 1초에 1번만
+      // server_ts 기반 delay 로그 (1초에 1번만)
       if (msg.server_ts) {
         const nowPerf = performance.now()
         if (nowPerf - lastDelayLogAtRef.current >= 1000) {
@@ -202,14 +206,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           const serverMs = new Date(msg.server_ts).getTime()
           if (!Number.isFinite(serverMs)) return
 
-          // raw: (클라 wall-clock - 서버 timestamp)
           const raw = Date.now() - serverMs
 
-          // ✅ 기준값(base) 자동 보정:
-          // - raw 최소값을 "기준"으로 잡으면 (시계 오차 + 최소 지연)을 흡수
-          // - 실제 표시는 raw - base로 항상 0 이상이 됨
-          //
-          // 드리프트/환경변화 대응: 30초마다 기준 재학습 허용
           const BASE_RECALIBRATE_MS = 30_000
           const nowWall = Date.now()
 
@@ -221,18 +219,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             delayBaseRef.current = raw
             delayBaseUpdatedAtRef.current = nowWall
           }
-
-          // console.log("⏱ Telemetry delay(ms):", corrected, {
-          //   raw,
-          //   base,
-          //   server_ts: msg.server_ts,
-          // })
         }
       }
 
-      // =========================
-      // ✅ ALT JUMP DEBUG LOG (5m 이상 점프)
-      // =========================
+      // ALT JUMP DEBUG LOG (5m 이상 점프)
       const alt = msg.position?.alt
       const lastAlt = targetRef.current?.altitude
 
@@ -246,7 +236,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             jump,
             gpsFixType: msg.gps?.fix_type,
             gpsSatellites: msg.gps?.satellites,
-            // 서버가 어떤 alt를 쓰는지 식별 힌트(있으면 같이)
             rawAlt: msg.position?.alt,
             relAlt: msg.position?.rel_alt,
             amslAlt: msg.position?.amsl_alt,
@@ -257,7 +246,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         }
       }
 
-      // ✅ 화면 반영은 “따로” (여기서는 ref만 갱신)
+      // ref만 갱신 (리렌더는 setInterval에서 담당)
       targetRef.current = {
         sysid: msg.sysid,
         altitude: msg.position?.alt,
@@ -275,6 +264,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
 
+        // ✅ 스무딩 없이 수신값 그대로 저장 (RAF에서 스무딩 적용 안 함)
         speed,
         timestamp: msg.server_ts,
       }
@@ -313,8 +303,9 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   }
 
   /* =========================
-   * RAF Loop (Smoothing only)
-   *  - 계산만 하고 setState는 하지 않음 (중요)
+   * RAF Loop (Smoothing)
+   *  - altitude, roll, pitch, yaw만 스무딩
+   *  - speed는 스무딩 없이 수신값 즉시 반영 (딜레이 제거)
    * ========================= */
 
   useEffect(() => {
@@ -327,7 +318,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
         lastTsRef.current = now
 
-        // smoothing 강도: dt * 20 (기존 유지)
         const alpha = Math.min(dt * 20, 1)
         const prev = smoothRef.current
 
@@ -339,10 +329,9 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               ? lerp(prev.altitude, target.altitude, alpha)
               : target.altitude,
 
-          speed:
-            prev.speed != null && target.speed != null
-              ? lerp(prev.speed, target.speed, alpha)
-              : target.speed,
+          // ✅ speed: 스무딩 제거 — target 값 즉시 반영
+          // lerp를 적용하면 약 300ms 지연이 생기므로 제거
+          speed: target.speed,
 
           roll:
             prev.roll != null && target.roll != null
@@ -369,19 +358,17 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   }, [])
 
   /* =========================
-   * UI Snapshot (throttled)
-   *  - setState를 매 프레임이 아니라 50ms(20Hz)로 제한
-   *  - 사용자 체감 지연(1초 수준) 제거에 가장 효과적
+   * UI Snapshot (throttled at 20Hz)
+   *  - setState를 50ms 간격으로 제한
    * ========================= */
 
   useEffect(() => {
-    const UI_HZ = 20 // ✅ 20Hz = 50ms (부드럽고 “즉시”처럼 보임)
+    const UI_HZ = 20
     const UI_INTERVAL_MS = Math.round(1000 / UI_HZ)
 
     const id = window.setInterval(() => {
       const next = smoothRef.current
 
-      // 연결 중인데 값이 아직 없으면 굳이 렌더하지 않음
       if (!next || Object.keys(next).length === 0) return
 
       setRenderData({
