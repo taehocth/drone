@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import {
   Card,
   CardHeader,
@@ -96,7 +96,7 @@ export interface AnalysisResult {
       lng: number
       alt?: number
       time?: number
-      }[]
+    }[]
   }
 }
 type FlightReviewAnalyzerCardProps = {
@@ -106,7 +106,7 @@ type FlightReviewAnalyzerCardProps = {
 export function FlightReviewAnalyzerCard({
   onAnalysisChange,
 }: FlightReviewAnalyzerCardProps = {}) {
-  const [data, setData] = useState<ParsedLog[]>([])
+  const [, setData] = useState<ParsedLog[]>([])
   const [summary, setSummary] = useState<string>("")
   const [aiSummary, setAiSummary] = useState<string>("")
   const [isLoadingAI, setIsLoadingAI] = useState(false)
@@ -114,6 +114,9 @@ export function FlightReviewAnalyzerCard({
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(
     null,
   )
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const uploadTimerRef = useRef<number | null>(null)
 
   // 대화형 AI 기능
   const [explanationLevel, setExplanationLevel] =
@@ -141,6 +144,7 @@ export function FlightReviewAnalyzerCard({
     setShowAiDialog(false)
     setPendingAiRequest(null)
     onAnalysisChange?.(null)
+    startUploadProgress()
 
     if (file.name.endsWith(".ulg")) {
       await parseUlgFile(file)
@@ -150,6 +154,7 @@ export function FlightReviewAnalyzerCard({
       setSummary(
         "지원하지 않는 파일 형식입니다. CSV 또는 ULG 파일을 업로드해주세요.",
       )
+      stopUploadProgress(false)
     }
   }
 
@@ -162,6 +167,7 @@ export function FlightReviewAnalyzerCard({
         if (!result.data || result.data.length === 0) {
           setSummary("CSV 파일이 비어 있거나 잘못된 형식입니다.")
           onAnalysisChange?.(null)
+          stopUploadProgress(false)
           return
         }
         const parsed: ParsedLog[] = result.data.map((row: any) => ({
@@ -172,11 +178,13 @@ export function FlightReviewAnalyzerCard({
         }))
         setData(parsed)
         generateSummary(parsed)
+        stopUploadProgress(true)
       },
       error: (err) => {
         console.error(err)
         setSummary("CSV 파일을 읽는 중 오류가 발생했습니다.")
         onAnalysisChange?.(null)
+        stopUploadProgress(false)
       },
     })
   }
@@ -188,11 +196,12 @@ export function FlightReviewAnalyzerCard({
       formData.append("file", file)
 
       // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1")
         ? `${apiBaseUrl}/logs/analyze`
         : `${apiBaseUrl}/api/v1/logs/analyze`
-      
+
       const res = await fetch(apiUrl, {
         method: "POST",
         body: formData,
@@ -201,6 +210,7 @@ export function FlightReviewAnalyzerCard({
       if (!res.ok) {
         setSummary(`ULG 파일 업로드 실패 (${res.status} ${res.statusText})`)
         onAnalysisChange?.(null)
+        stopUploadProgress(false)
         return
       }
 
@@ -208,6 +218,7 @@ export function FlightReviewAnalyzerCard({
       if (!result || !result.data) {
         setSummary(result.error || "ULG 파일 처리 실패 (서버 응답 오류)")
         onAnalysisChange?.(null)
+        stopUploadProgress(false)
         return
       }
 
@@ -223,17 +234,55 @@ export function FlightReviewAnalyzerCard({
       if (parsed.length === 0) {
         setSummary("ULG 파일에서 데이터를 추출하지 못했습니다.")
         onAnalysisChange?.(null)
+        stopUploadProgress(false)
         return
       }
 
       setData(parsed)
       // ✅ 백엔드 summary 함께 전달
       generateSummary(parsed, result.summary ?? {})
+      stopUploadProgress(true)
     } catch (err) {
       console.error(err)
       setSummary("ULG 파일 처리 실패 (서버 연결 오류)")
       onAnalysisChange?.(null)
+      stopUploadProgress(false)
     }
+  }
+  const startUploadProgress = () => {
+    setIsUploading(true)
+    setUploadProgress(8)
+
+    if (uploadTimerRef.current) {
+      window.clearInterval(uploadTimerRef.current)
+    }
+
+    uploadTimerRef.current = window.setInterval(() => {
+      setUploadProgress((prev) => {
+        if (prev >= 90) return prev
+        const bump = Math.random() * 8 + 4
+        return Math.min(90, prev + bump)
+      })
+    }, 420)
+  }
+
+  const stopUploadProgress = (success: boolean) => {
+    if (uploadTimerRef.current) {
+      window.clearInterval(uploadTimerRef.current)
+      uploadTimerRef.current = null
+    }
+
+    if (!success) {
+      setIsUploading(false)
+      setUploadProgress(0)
+      return
+    }
+
+    setUploadProgress(100)
+    window.setTimeout(() => {
+      setIsUploading(false)
+      setUploadProgress(0)
+    }, 600)
   }
 
   // 🤖 로그 자동 분석
@@ -310,11 +359,12 @@ export function FlightReviewAnalyzerCard({
 
     try {
       // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1")
         ? `${apiBaseUrl}/gemini/cbm/ai-summary`
         : `${apiBaseUrl}/api/v1/gemini/cbm/ai-summary`
-      
+
       const res = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -378,11 +428,12 @@ export function FlightReviewAnalyzerCard({
 
     try {
       // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1")
         ? `${apiBaseUrl}/gemini/cbm/ask-question`
         : `${apiBaseUrl}/api/v1/gemini/cbm/ask-question`
-      
+
       const res = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -426,11 +477,12 @@ export function FlightReviewAnalyzerCard({
     if (analysisResult) {
       setIsLoadingAI(true)
       // 환경 변수 또는 기본값 사용 (개발 환경: localhost:8000, 프로덕션: api.localhost)
-      const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
-      const apiUrl = apiBaseUrl.endsWith("/api/v1") 
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1")
         ? `${apiBaseUrl}/gemini/cbm/ai-summary`
         : `${apiBaseUrl}/api/v1/gemini/cbm/ai-summary`
-      
+
       fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -481,6 +533,20 @@ export function FlightReviewAnalyzerCard({
             className="hidden"
           />
         </label>
+        {isUploading && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 dark:border-emerald-900/40 dark:bg-emerald-900/20">
+            <div className="flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-200">
+              <span>로그 업로드 처리 중...</span>
+              <span>{Math.round(uploadProgress)}%</span>
+            </div>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-100 dark:bg-emerald-900/40">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-emerald-300 transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         {/* 기본 분석 결과 */}
         {summary && (

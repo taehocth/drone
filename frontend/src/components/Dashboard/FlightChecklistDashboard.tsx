@@ -128,7 +128,6 @@ const manualMetas: ExtendedManualChecklist[] = [
 
 const defaultStructures: Record<string, Record<string, string[]>> = {
   operation: {
-
     "조종기 점검": ["기체 전원 인가 전 조종기 전원 on", "유선 조종기 확인"],
     "Main Body 점검": [
       "Main Frame (카울 크랙 점검)",
@@ -172,11 +171,7 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
     ],
   },
   "post-flight": {
-    "배터리": [
-      "배터리 잔량 체크",
-      "기체 전원 케이블 분리",
-      "배터리 사이클 표기",
-    ],
+    배터리: ["배터리 잔량 체크", "기체 전원 케이블 분리", "배터리 사이클 표기"],
     "기체 점검": [
       "Main Frame 크랙 점검",
       "Arm Frame 크랙 점검",
@@ -190,22 +185,24 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
     ],
   },
   "regular-maintenance": {
-    "노트북": ["노트북 배터리 상태 확인", "운영 소프트웨어 버전 확인"],
-    "배터리": [
+    노트북: [
+      "노트북 배터리 상태 확인",
+      "운영 소프트웨어 버전 확인",
+      "Ocam 녹화 확인",
+    ],
+    배터리: [
       "P900 배터리 ",
       "반고체 배터리 최소 2세트 (4팩)",
       "배터리 충전기",
       "셀 체커기",
     ],
-    "조종기": ["무선 조종기", "유선 조종기"],
-    "기타": [
-      "보령시 휴대폰",
-      "인터콤",
+    조종기: ["무선 조종기", "유선 조종기"],
+    기타: [
+      "배송 휴대폰",
+      "인터컴",
       "배송물품 보호팩, 공기 주입기",
       "예비 기체",
     ],
-
-
   },
   "periodic-maintenance": {
     " Main body 점검": [
@@ -241,7 +238,6 @@ const defaultStructures: Record<string, Record<string, string[]>> = {
       "비상 착륙 기능 테스트",
     ],
   },
-
 }
 
 const getDefaultStructureFor = (manualId: string) =>
@@ -251,7 +247,7 @@ const getCategoriesForManual = (manualId: string): string[] => {
   const structure = defaultStructures[manualId]
   if (!structure) return []
   return Object.keys(structure)
-}  
+}
 
 export function FlightChecklistDashboard() {
   const [itemsByManual, setItemsByManual] = useState<
@@ -305,10 +301,7 @@ export function FlightChecklistDashboard() {
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(
-      "savedChecklists",
-      JSON.stringify(savedChecklists),
-    )
+    localStorage.setItem("savedChecklists", JSON.stringify(savedChecklists))
   }, [savedChecklists])
 
   // 매뉴얼 업서트 + 실시간 구독 + 비어있을 때 시드
@@ -743,50 +736,48 @@ export function FlightChecklistDashboard() {
             </DialogHeader>
 
             <div className="grid gap-3 py-3">
-            <div className="grid gap-2">
-  <label className="text-sm font-medium">매뉴얼</label>
-  <select
-    className="w-full rounded-md border px-3 py-2 text-sm"
-    value={newItem.manualId}
-    onChange={(e) =>
-      setNewItem((p) => ({
-        ...p,
-        manualId: e.target.value,
-        category: "", // 🔥 매뉴얼 바뀌면 카테고리 초기화
-      }))
-    }
-  >
-    <option value="">선택하세요</option>
-    {manualMetas.map((m) => (
-      <option key={m.id} value={m.id}>
-        {m.title}
-      </option>
-    ))}
-  </select>
-</div>
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">매뉴얼</label>
+                <select
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  value={newItem.manualId}
+                  onChange={(e) =>
+                    setNewItem((p) => ({
+                      ...p,
+                      manualId: e.target.value,
+                      category: "", // 🔥 매뉴얼 바뀌면 카테고리 초기화
+                    }))
+                  }
+                >
+                  <option value="">선택하세요</option>
+                  {manualMetas.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">카테고리</label>
+                <select
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  value={newItem.category}
+                  onChange={(e) =>
+                    setNewItem((p) => ({ ...p, category: e.target.value }))
+                  }
+                  disabled={!newItem.manualId}
+                >
+                  <option value="">선택하세요</option>
 
-<div className="grid gap-2">
-  <label className="text-sm font-medium">카테고리</label>
-  <select
-    className="w-full rounded-md border px-3 py-2 text-sm"
-    value={newItem.category}
-    onChange={(e) =>
-      setNewItem((p) => ({ ...p, category: e.target.value }))
-    }
-    disabled={!newItem.manualId}
-  >
-    <option value="">선택하세요</option>
-
-    {newItem.manualId &&
-      getCategoriesForManual(newItem.manualId).map((c) => (
-        <option key={c} value={c}>
-          {c}
-        </option>
-      ))}
-  </select>
-</div>
-
+                  {newItem.manualId &&
+                    getCategoriesForManual(newItem.manualId).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                </select>
+              </div>
 
               <div className="grid gap-2">
                 <label className="text-sm font-medium">제목</label>
@@ -1006,33 +997,33 @@ export function FlightChecklistDashboard() {
                               </span>
                             </button>
                             <div className="flex items-center gap-2">
-                            <Button
-  size="sm"
-  variant="ghost"
-  onClick={(e) => {
-    e.stopPropagation()
-    handleToggleAllInCategory(
-      meta.id,
-      category,
-      catItems,
-    )
-  }}
-  className={`h-7 px-2 text-xs flex items-center gap-1
-    ${
-      catStatus.isAllCompleted
-        ? "text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30"
-        : "text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700"
-    }
-  `}
-  title={
-    catStatus.isAllCompleted
-      ? "모두 체크 해제"
-      : "모두 체크"
-  }
->
-  <ListChecks className="h-3.5 w-3.5" />
-  {catStatus.isAllCompleted ? "전체 해제" : "전체 선택"}
-</Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggleAllInCategory(
+                                    meta.id,
+                                    category,
+                                    catItems,
+                                  )
+                                }}
+                                className={`flex h-7 items-center gap-1 px-2 text-xs ${
+                                  catStatus.isAllCompleted
+                                    ? "text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30"
+                                    : "text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700"
+                                } `}
+                                title={
+                                  catStatus.isAllCompleted
+                                    ? "모두 체크 해제"
+                                    : "모두 체크"
+                                }
+                              >
+                                <ListChecks className="h-3.5 w-3.5" />
+                                {catStatus.isAllCompleted
+                                  ? "전체 해제"
+                                  : "전체 선택"}
+                              </Button>
                               {catStatus.isAllCompleted && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
@@ -1064,58 +1055,69 @@ export function FlightChecklistDashboard() {
                                   const title = item.title ?? ""
 
                                   return (
-<div
-  key={itemId}
-  role="button"
-  tabIndex={0}
-  onClick={() =>
-    handleCheckboxChange(meta.id, itemId, !done)
-  }
-  onKeyDown={(e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault()
-      handleCheckboxChange(meta.id, itemId, !done)
-    }
-  }}
-  className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2 transition-colors ${
-    done
-      ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
-      : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
-  }`}
->
-  {/* 체크박스는 시각 요소만 */}
-  <Checkbox
-    checked={done}
-    tabIndex={-1}
-    onClick={(e) => e.stopPropagation()}
-    className="mt-1"
-  />
+                                    <div
+                                      key={itemId}
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={() =>
+                                        handleCheckboxChange(
+                                          meta.id,
+                                          itemId,
+                                          !done,
+                                        )
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (
+                                          e.key === "Enter" ||
+                                          e.key === " "
+                                        ) {
+                                          e.preventDefault()
+                                          handleCheckboxChange(
+                                            meta.id,
+                                            itemId,
+                                            !done,
+                                          )
+                                        }
+                                      }}
+                                      className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2 transition-colors ${
+                                        done
+                                          ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                                          : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800"
+                                      }`}
+                                    >
+                                      {/* 체크박스는 시각 요소만 */}
+                                      <Checkbox
+                                        checked={done}
+                                        tabIndex={-1}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="mt-1"
+                                      />
 
-  {/* label ❌ → 그냥 span */}
-  <div className="min-w-0 flex-1">
-    <span
-      className={`block cursor-pointer font-medium ${
-        done
-          ? "text-green-700 line-through dark:text-green-400"
-          : "text-gray-900 dark:text-gray-100"
-      }`}
-    >
-      {title}
-    </span>
+                                      {/* label ❌ → 그냥 span */}
+                                      <div className="min-w-0 flex-1">
+                                        <span
+                                          className={`block cursor-pointer font-medium ${
+                                            done
+                                              ? "text-green-700 line-through dark:text-green-400"
+                                              : "text-gray-900 dark:text-gray-100"
+                                          }`}
+                                        >
+                                          {title}
+                                        </span>
 
-    {desc !== "" && (
-      <p
-        className={`text-sm ${
-          done
-            ? "text-green-600 dark:text-green-300"
-            : "text-muted-foreground"
-        }`}
-      >
-        {desc}
-      </p>
-    )}
-  </div>
-</div>
+                                        {desc !== "" && (
+                                          <p
+                                            className={`text-sm ${
+                                              done
+                                                ? "text-green-600 dark:text-green-300"
+                                                : "text-muted-foreground"
+                                            }`}
+                                          >
+                                            {desc}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
                                   )
                                 })
                               )}
