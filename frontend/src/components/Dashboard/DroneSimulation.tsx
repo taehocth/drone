@@ -222,9 +222,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             delayBaseUpdatedAtRef.current = nowWall
           }
 
-          const base = delayBaseRef.current ?? 0
-          const corrected = Math.max(0, raw - base)
-
           // console.log("⏱ Telemetry delay(ms):", corrected, {
           //   raw,
           //   base,
@@ -421,7 +418,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
    * ========================= */
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <DroneSimulationCard
         data={renderData}
         connected={connected}

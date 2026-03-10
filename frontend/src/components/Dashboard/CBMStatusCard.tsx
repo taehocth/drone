@@ -75,21 +75,21 @@ export function CBMStatusCard() {
   }
 
   return (
-    <Card className="shadow-md transition-all hover:shadow-lg">
-      <CardHeader>
+    <Card className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+      <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60">
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-600" />
           상태 기반 정비 (CBM)
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-3 pt-4">
         {data.length === 0 ? (
-          <p className="text-sm text-gray-500">데이터 수신 대기 중...</p>
+          <p className="text-sm text-slate-500">데이터 수신 대기 중...</p>
         ) : (
           data.map((sys, idx) => (
             <div
               key={`${sys.system}-${idx}`}
-              className={`flex items-center justify-between border-b pb-1 ${colorMap[sys.level]}`}
+              className={`flex items-center justify-between rounded-xl border border-slate-200/60 bg-slate-50/80 px-3 py-2 ${colorMap[sys.level]} dark:border-slate-700/60 dark:bg-slate-800/60`}
             >
               <div className="flex items-center gap-2">
                 {iconMap[sys.system] ?? <CheckCircle className="h-5 w-5" />}

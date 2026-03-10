@@ -165,31 +165,37 @@ export function RealtimeCBMStatusCard({
 
   const iconMap: Record<string, JSX.Element> = {
     Battery: <Battery className="h-5 w-5 text-amber-500" />,
-    ESC: <Thermometer className="h-5 w-5 text-red-500" />,
+    ESC: <Thermometer className="h-5 w-5 text-rose-500" />,
     FCC: <AlertTriangle className="h-5 w-5 text-orange-500" />,
-    GNSS: <Satellite className="h-5 w-5 text-blue-500" />,
+    GNSS: <Satellite className="h-5 w-5 text-sky-500" />,
   }
 
   const colorMap: Record<"safe" | "warning" | "danger", string> = {
-    safe: "text-green-600",
-    warning: "text-yellow-600",
-    danger: "text-red-600",
+    safe: "text-emerald-600 dark:text-emerald-300",
+    warning: "text-amber-600 dark:text-amber-300",
+    danger: "text-rose-600 dark:text-rose-300",
+  }
+
+  const rowTone: Record<"safe" | "warning" | "danger", string> = {
+    safe: "bg-emerald-50/60 border-emerald-200/70 dark:bg-emerald-900/20 dark:border-emerald-900/40",
+    warning: "bg-amber-50/60 border-amber-200/70 dark:bg-amber-900/20 dark:border-amber-900/40",
+    danger: "bg-rose-50/60 border-rose-200/70 dark:bg-rose-900/20 dark:border-rose-900/40",
   }
 
   return (
-    <Card className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
-      <CardHeader>
+    <Card className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.35)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+      <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60">
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-600" />
           상태 기반 정비 (CBM)
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="divide-y divide-slate-200/60 dark:divide-slate-800/60">
+      <CardContent className="space-y-3 pt-4">
         {data.map((sys, idx) => (
           <div
             key={`${sys.system}-${idx}`}
-            className={`flex items-center justify-between py-2 ${colorMap[sys.level]}`}
+            className={`flex items-center justify-between rounded-xl border px-3 py-2 ${rowTone[sys.level]} ${colorMap[sys.level]}`}
           >
             <div className="flex items-center gap-2">
               {iconMap[sys.system] ?? <CheckCircle className="h-5 w-5" />}

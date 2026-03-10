@@ -107,11 +107,11 @@ export function GeminiChatCard() {
   }
 
   return (
-    <Card className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800/60 dark:bg-slate-900/60">
-      <CardHeader className="rounded-t-2xl bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-800/20">
+    <Card className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_44px_-32px_rgba(15,23,42,0.4)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+      <CardHeader className="rounded-t-3xl border-b border-slate-200/60 bg-gradient-to-r from-purple-50 via-white to-sky-50 dark:border-slate-800/60 dark:from-purple-900/30 dark:via-slate-900/40 dark:to-sky-900/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="rounded-full bg-gradient-to-br from-purple-500 to-pink-500 p-2">
+            <div className="rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 p-2 shadow-sm">
               <Sparkles className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -134,16 +134,16 @@ export function GeminiChatCard() {
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4 pt-4">
+      <CardContent className="space-y-4 pt-5">
         {/* 채팅 메시지 영역 */}
-        <div className="space-y-3 rounded-lg border border-slate-200/60 bg-slate-50 p-4 dark:border-slate-700/60 dark:bg-slate-900/50">
+        <div className="space-y-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 p-4 shadow-inner dark:border-slate-700/60 dark:bg-slate-900/50">
           {messages.length === 0 ? (
             <div className="py-12 text-center">
-              <Sparkles className="mx-auto mb-3 h-12 w-12 text-gray-300 dark:text-gray-600" />
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <Sparkles className="mx-auto mb-3 h-12 w-12 text-slate-300 dark:text-slate-600" />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 AI와 대화를 시작해보세요
               </p>
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                 드론 관련 질문이나 일반적인 질문을 해보세요
               </p>
             </div>
@@ -154,8 +154,8 @@ export function GeminiChatCard() {
                   key={idx}
                   className={`rounded-lg p-3 ${
                     msg.role === "user"
-                      ? "ml-8 bg-blue-500 text-white"
-                      : "mr-8 bg-white dark:bg-gray-800"
+                      ? "ml-10 bg-gradient-to-r from-indigo-500 to-sky-500 text-white shadow-md"
+                      : "mr-10 border border-slate-200/70 bg-white/90 shadow-sm dark:border-slate-700/60 dark:bg-slate-900/80"
                   }`}
                 >
                   <div className="mb-1 flex items-center gap-2">
@@ -182,10 +182,10 @@ export function GeminiChatCard() {
 
               {/* 로딩 인디케이터 */}
               {isLoading && (
-                <div className="mr-8 rounded-lg bg-white p-3 dark:bg-gray-800">
+                <div className="mr-10 rounded-lg border border-slate-200/70 bg-white/90 p-3 shadow-sm dark:border-slate-700/60 dark:bg-slate-900/80">
                   <div className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
                       AI가 생각 중...
                     </span>
                   </div>
@@ -203,13 +203,13 @@ export function GeminiChatCard() {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="min-h-[80px] resize-none"
+              className="min-h-[90px] resize-none border-slate-200/70 bg-white/80 focus-visible:ring-indigo-400/40 dark:border-slate-700/60 dark:bg-slate-900/70"
               disabled={isLoading}
             />
             <Button
               onClick={sendMessage}
               disabled={!inputMessage.trim() || isLoading}
-              className="self-end bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+              className="self-end bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm hover:from-purple-600 hover:to-indigo-600"
               size="sm"
             >
               {isLoading ? (

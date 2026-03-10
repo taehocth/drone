@@ -273,14 +273,14 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
         : "text-red-600"
 
   return (
-    <Card className="w-full shadow-md transition-all dark:bg-gray-900">
-      <CardHeader>
+    <Card className="w-full rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+      <CardHeader className="border-b border-slate-200/60 pb-4 dark:border-slate-800/60">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Cloud className="h-5 w-5" />
             기상 정보
           </CardTitle>
-          <Badge variant="outline" className="text-xs">
+          <Badge variant="outline" className="border-slate-200/70 text-xs dark:border-slate-700/60">
             {weatherData?.lastUpdate || "--:--:--"}
           </Badge>
         </div>
@@ -292,7 +292,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
               !clickedCoordinates && setShowDropdown(!showDropdown)
             }
             disabled={!!clickedCoordinates}
-            className="flex w-full items-center justify-between rounded-lg border p-2 hover:bg-gray-50 dark:hover:bg-gray-800"
+            className="flex w-full items-center justify-between rounded-xl border border-slate-200/70 bg-white/80 p-2 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-slate-700/70 dark:bg-slate-900/70 dark:hover:bg-slate-800"
           >
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-gray-500" />
@@ -315,7 +315,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
           </button>
 
           {showDropdown && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border bg-white shadow-lg">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-xl border border-slate-200/70 bg-white/95 shadow-xl backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95">
               {REGIONS.map((region) => (
                 <button
                   key={region.id}
@@ -323,7 +323,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
                     setSelectedRegion(region)
                     setShowDropdown(false)
                   }}
-                  className="flex w-full items-center gap-2 p-2 hover:bg-gray-100"
+                  className="flex w-full items-center gap-2 p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
                   <MapPin className="h-4 w-4 text-gray-400" />
                   <div>
@@ -344,7 +344,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
           <>
             {/* 주요 기상 요약 */}
             <div
-              className={`flex items-center justify-between rounded-lg p-3 ${
+              className={`flex items-center justify-between rounded-2xl border border-transparent p-4 ${
                 weatherData.safetyLevel === "safe"
                   ? "bg-green-50 dark:bg-green-900/20"
                   : weatherData.safetyLevel === "caution"
@@ -378,8 +378,8 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
             </div>
 
             {/* 세부 데이터 */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <Droplets className="h-4 w-4 text-blue-500" />
                 <div>
                   <div className="text-xs text-gray-600">습도</div>
@@ -387,7 +387,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <Wind className="h-4 w-4 text-green-500" />
                 <div>
                   <div className="text-xs text-gray-600">풍속</div>
@@ -414,7 +414,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <Eye className="h-4 w-4 text-purple-500" />
                 <div>
                   <div className="text-xs text-gray-600">시정</div>
@@ -424,7 +424,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <CloudRain className="h-4 w-4 text-blue-600" />
                 <div>
                   <div className="text-xs text-gray-600">강수량</div>
@@ -434,7 +434,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
                 </div>
               </div>
 
-              <div className="col-span-2 flex items-center gap-2 rounded bg-gray-50 p-2 dark:bg-gray-800">
+              <div className="col-span-1 flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 sm:col-span-2 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <Activity className="h-4 w-4 text-red-500" />
                 <div>
                   <div className="text-xs text-gray-600">자기장 (Kp)</div>
@@ -455,7 +455,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
             </div>
 
             {/* 안전 메시지 */}
-            <div className="rounded border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:bg-yellow-900/20">
+            <div className="rounded-xl border border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:border-yellow-800/60 dark:bg-yellow-900/20">
               <div className="flex items-center gap-2">
                 <AlertTriangle className={`h-4 w-4 ${getSafetyColor()}`} />
                 <span className={`font-medium ${getSafetyColor()}`}>
@@ -469,13 +469,13 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
 
             {/* 자기장 경보 */}
             {weatherData.kpIndex != null && weatherData.kpIndex >= 5 && (
-              <div className="rounded bg-red-100 p-2 text-center text-sm text-red-700">
+              <div className="rounded border border-red-200/80 bg-red-100 p-2 text-center text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
                 ⚠️ 지자기 폭풍 경보: GPS 이상 가능성 있음
               </div>
             )}
           </>
         ) : (
-          <div className="p-3 text-center text-gray-500">
+          <div className="p-3 text-center text-gray-500 animate-pulse">
             날씨 데이터를 불러오는 중...
           </div>
         )}
