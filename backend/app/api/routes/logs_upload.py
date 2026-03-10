@@ -56,6 +56,41 @@ def quat_to_euler(q):
 
 
 # --------------------------------------------------------
+# 고도 표준편차: 호버링 구간만 추출
+# --------------------------------------------------------
+def calc_hovering_alt_std(altitudes: list[float], min_hover_alt_m: float = 1.5) -> float | None:
+    """
+    이륙/착륙 구간을 제외하고 실제 비행(호버링) 중 고도 안정성을 계산합니다.
+
+    전략:
+    1. min_hover_alt_m 이상인 구간만 사용 (지상/이착륙 제외)
+    2. 상대고도 사용 (MSL 절대값이 아닌, 해당 구간 내 편차만 측정)
+    3. 이상치(outlier) 제거: IQR 방식으로 상/하위 5% 제거
+    """
+    if not altitudes or len(altitudes) < 10:
+        return None
+
+    # 1) 이착륙 구간 제외: min_hover_alt_m 이상인 값만 사용
+    hover_alts = [a for a in altitudes if a >= min_hover_alt_m]
+
+    if len(hover_alts) < 10:
+        # 호버링 구간이 너무 짧으면 전체 사용 (짧은 비행)
+        hover_alts = altitudes
+
+    # 2) 이상치 제거 (상/하위 5%)
+    if len(hover_alts) > 20:
+        sorted_alts = sorted(hover_alts)
+        p5 = int(len(sorted_alts) * 0.05)
+        p95 = int(len(sorted_alts) * 0.95)
+        hover_alts = sorted_alts[p5:p95]
+
+    if len(hover_alts) < 5:
+        return None
+
+    return float(np.std(hover_alts))
+
+
+# --------------------------------------------------------
 # PX4 ULG Analyzer
 # --------------------------------------------------------
 @router.post("/analyze", response_class=ORJSONResponse)
@@ -97,29 +132,24 @@ async def upload_log(file: UploadFile = File(...)):
         print(f"[DEBUG] 선택된 battery_status 인스턴스 평균전압: {battery_voltage:.2f}V")
 
         # 🔋 배터리 셀 수 자동 판단 (전압 기반)
-        # LiPo 배터리: 셀당 약 3.7V (정격)
-        # 6셀 배터리: 약 22.2V (6 * 3.7V) → 범위: 18V ~ 25.2V (방전~충전)
-        # 12셀 배터리: 약 44.4V (12 * 3.7V) → 범위: 36V ~ 50.4V (방전~충전)
         battery_cell_count = 0
-        if battery_voltage >= 35:  # 12셀 배터리 (35V 이상)
+        if battery_voltage >= 35:
             battery_cell_count = 12
             print(f"[DEBUG] 배터리 구성 판단: 12셀 배터리 (전압 {battery_voltage:.2f}V)")
-        elif battery_voltage >= 15:  # 6셀 배터리 (15V 이상)
+        elif battery_voltage >= 15:
             battery_cell_count = 6
             print(f"[DEBUG] 배터리 구성 판단: 6셀 배터리 (전압 {battery_voltage:.2f}V)")
         else:
-            # 전압으로 판단 불가 시 voltage_cell_v 배열로 확인
             if "voltage_cell_v[0]" in battery.data:
-                for cell_idx in range(14):  # 최대 14셀
+                for cell_idx in range(14):
                     cell_key = f"voltage_cell_v[{cell_idx}]"
                     if cell_key in battery.data and len(battery.data[cell_key]) > 0:
                         sample_val = float(battery.data[cell_key][0]) if len(battery.data[cell_key]) > 0 else 0
-                        if 2.0 <= sample_val <= 5.0:  # 유효한 셀 전압 범위
+                        if 2.0 <= sample_val <= 5.0:
                             battery_cell_count = cell_idx + 1
                 if battery_cell_count > 0:
                     print(f"[DEBUG] 배터리 구성 판단: {battery_cell_count}셀 배터리 (voltage_cell_v 배열 기반)")
             else:
-                # 최후의 수단: 전압으로 추정
                 estimated_cells = round(battery_voltage / 3.7)
                 if 4 <= estimated_cells <= 14:
                     battery_cell_count = estimated_cells
@@ -202,24 +232,20 @@ async def upload_log(file: UploadFile = File(...)):
 
         # 🔍 ESC 필드 및 데이터 범위 사전 감지
         esc_keys = []
-        esc_range_type = None  # 'us', 'norm_01', 'norm_-11', 'unknown'
+        esc_range_type = None
         
         if esc:
-            # ESC 필드 자동 탐지 (output[0], output[1] 등)
             esc_keys = [
                 k for k in esc_d.keys()
                 if "output" in k.lower() and "[" in k
             ]
             
-            # output[0] 형식이 없으면 다른 패턴 시도
             if not esc_keys:
                 esc_keys = [
                     k for k in esc_d.keys()
                     if any(x in k.lower() for x in ["output", "control"])
                 ]
             
-            # 데이터 범위 감지 (처음 100개 샘플)
-            # ⚠️ 0이 아닌 값만 사용 (사용되지 않는 채널 제외)
             if esc_keys and len(esc_d[esc_keys[0]]) > 0:
                 sample_values = []
                 sample_count = min(100, len(esc_d[esc_keys[0]]))
@@ -227,7 +253,7 @@ async def upload_log(file: UploadFile = File(...)):
                     sample_raw = [
                         float(esc_d[k][sample_idx]) 
                         for k in esc_keys 
-                        if abs(float(esc_d[k][sample_idx])) > 10  # 0이 아닌 값만 (10 µs 이상)
+                        if abs(float(esc_d[k][sample_idx])) > 10
                     ]
                     if sample_raw:
                         sample_values.append(sum(sample_raw) / len(sample_raw))
@@ -238,13 +264,13 @@ async def upload_log(file: UploadFile = File(...)):
                     print(f"[ESC DEBUG] 샘플 범위: {min_val:.2f} ~ {max_val:.2f}")
                     
                     if min_val >= 900 and max_val <= 2100:
-                        esc_range_type = 'us'  # 이미 마이크로초 단위
+                        esc_range_type = 'us'
                         print("[ESC DEBUG] 범위 감지: 마이크로초 단위 (그대로 사용)")
                     elif min_val >= -1.1 and max_val <= 1.1:
-                        esc_range_type = 'norm_-11'  # -1~1 범위
+                        esc_range_type = 'norm_-11'
                         print("[ESC DEBUG] 범위 감지: -1~1 정규화 (변환 필요)")
                     elif min_val >= -0.1 and max_val <= 1.1:
-                        esc_range_type = 'norm_01'  # 0~1 범위
+                        esc_range_type = 'norm_01'
                         print("[ESC DEBUG] 범위 감지: 0~1 정규화 (변환 필요)")
                     else:
                         esc_range_type = 'unknown'
@@ -268,7 +294,6 @@ async def upload_log(file: UploadFile = File(...)):
             battery_value = 0.0
             if bat_t and len(bat_t) > 0:
                 idx = bisect.bisect_left(bat_t, t)
-                # 인덱스 범위 조정 (idx가 0이면 0 사용, 그 외에는 idx-1 사용)
                 if idx >= len(bat_t):
                     idx = len(bat_t) - 1
                 if idx < 0:
@@ -279,25 +304,21 @@ async def upload_log(file: UploadFile = File(...)):
                 if 0 <= bat_idx < len(bat_t):
                     voltage_added = False
                     
-                    # 방법 1: voltage_cell_v 배열 사용 (더 정확)
                     if "voltage_cell_v[0]" in bat_d:
-                        # 각 셀 전압 합산
                         cell_voltage = 0.0
                         cell_count = 0
-                        for cell_idx in range(14):  # 최대 14셀
+                        for cell_idx in range(14):
                             cell_key = f"voltage_cell_v[{cell_idx}]"
                             if cell_key in bat_d and len(bat_d[cell_key]) > bat_idx:
                                 cell_val = float(bat_d[cell_key][bat_idx])
-                                # 유효한 셀 전압 범위: 2.5V ~ 4.5V (LiPo)
                                 if 2.0 <= cell_val <= 5.0:
                                     cell_voltage += cell_val
                                     cell_count += 1
                         if cell_count > 0:
                             voltages.append(cell_voltage)
-                            battery_value = cell_voltage  # merged 배열에 추가하기 위해 저장
+                            battery_value = cell_voltage
                             voltage_added = True
                     
-                    # voltage_filtered_v 우선 사용, 없으면 voltage_v 사용
                     if not voltage_added:
                         voltage_key = None
                         if "voltage_filtered_v" in bat_d and len(bat_d["voltage_filtered_v"]) > bat_idx:
@@ -307,13 +328,11 @@ async def upload_log(file: UploadFile = File(...)):
                         
                         if voltage_key:
                             raw_volt = float(bat_d[voltage_key][bat_idx])
-                            # 10V 이상이면 이미 V 단위로 간주
                             if 10 <= raw_volt <= 70:
                                 voltages.append(raw_volt)
-                                battery_value = raw_volt  # merged 배열에 추가하기 위해 저장
+                                battery_value = raw_volt
                                 voltage_added = True
                     
-                    # 전류 처리: current_average_a 우선, 없으면 current_filtered_a 또는 current_a 사용
                     if "current_average_a" in bat_d and len(bat_d["current_average_a"]) > bat_idx:
                         avg_current = float(bat_d["current_average_a"][bat_idx])
                         if avg_current > 0:
@@ -333,38 +352,32 @@ async def upload_log(file: UploadFile = File(...)):
                 if 0 < idx < len(gps_t):
                     gps_sats.append(int(gps_d["satellites_used"][idx - 1]))
 
-            # ESC Output (사전 감지한 범위 타입에 따라 변환)
-            # ⚠️ 0이 아닌 값만 사용 (사용되지 않는 채널 제외)
+            # ESC Output
             if esc_t and esc_keys:
                 idx = bisect.bisect_left(esc_t, t)
                 if 0 < idx < len(esc_t):
                     raw_values = [
                         float(esc_d[k][idx - 1]) 
                         for k in esc_keys 
-                        if abs(float(esc_d[k][idx - 1])) > 10  # 0이 아닌 값만 (10 µs 이상)
+                        if abs(float(esc_d[k][idx - 1])) > 10
                     ]
                     if not raw_values:
-                        continue  # 유효한 값이 없으면 스킵
+                        continue
                     avg_raw = sum(raw_values) / len(raw_values)
                     
                     if esc_range_type == 'us':
-                        # 이미 마이크로초 단위 → 그대로 사용
                         esc_outputs.append(avg_raw)
                     elif esc_range_type == 'norm_-11':
-                        # -1~1 범위 → 0~1로 변환 후 마이크로초
                         normalized = (avg_raw + 1.0) / 2.0
                         normalized = max(0.0, min(1.0, normalized))
                         esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
                     elif esc_range_type == 'norm_01':
-                        # 0~1 범위 → 마이크로초
                         normalized = max(0.0, min(1.0, avg_raw))
                         esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
                     else:
-                        # 알 수 없는 범위 → 값 자체로 판단
                         if 900 <= avg_raw <= 2100:
-                            esc_outputs.append(avg_raw)  # 마이크로초로 가정
+                            esc_outputs.append(avg_raw)
                         else:
-                            # 정규화된 값으로 가정하고 변환
                             normalized = max(0.0, min(1.0, avg_raw))
                             esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
 
@@ -407,16 +420,13 @@ async def upload_log(file: UploadFile = File(...)):
             max_v = max(voltages)
             ripple_v = max_v - min_v
 
-            # 🔥 전압 보정 (기록된 값이 2배였을 경우)
             summary["battery_avg_voltage"] = float(avg_v)
             summary["battery_min_voltage"] = float(min_v)
-            summary["battery_voltage_ripple"] = float(ripple_v / 4)  # 리플은 추가로 /2 적용
+            summary["battery_voltage_ripple"] = float(ripple_v / 4)
             
-            # 전압 리플 디버깅
             print(f"[전압 리플 분석] 원시 최소: {min_v:.2f}V, 원시 최대: {max_v:.2f}V, 원시 리플: {ripple_v:.2f}V")
             print(f"[전압 리플 분석] 보정 최소: {min_v/2:.2f}V, 보정 최대: {max_v/2:.2f}V, 보정 리플: {ripple_v/2:.2f}V")
             
-            # 전압 분포 분석 (상위/하위 5% 제외)
             if len(voltages) > 20:
                 sorted_voltages = sorted(voltages)
                 p5_idx = int(len(sorted_voltages) * 0.05)
@@ -428,114 +438,42 @@ async def upload_log(file: UploadFile = File(...)):
             
             if ripple_v / 2 > 2.0:
                 print(f"⚠️ [경고] 전압 리플이 {ripple_v/2:.2f}V로 큽니다 (정상 범위: 0.5~1.5V)")
-                print(f"   - 원인 가능성:")
-                print(f"     1. 전압 센서 노이즈 또는 샘플링 문제")
-                print(f"     2. 배터리 불균형 (4개 배터리 간 전압 차이)")
-                print(f"     3. 전압 변환 로직 문제 (2배 보정이 일부 값에만 적용됨)")
-                print(f"     4. 여러 battery_status 인스턴스에서 서로 다른 전압 값 사용")
-
 
         if currents:
-            # 🔋 배터리 셀 수에 따른 전류 계산
-            # 목표 범위 (쿼드콥터 일반적인 값):
-            # - 6셀 배터리: 평균 8~25A, 최대 40~80A
-            # - 12셀 배터리: 평균 4~15A, 최대 20~50A
-            # 
-            # ⚠️ 문제 분석:
-            # ULG 로그에서 읽어온 원시 전류 값이 실제 시스템 전류와 차이를 보임
-            # 원시 값 기준 (터미널 로그):
-            # - 6셀: 평균 1.08A, 최대 ~14.95A
-            # - 12셀: 평균 5.75A, 최대 ~15.00A
-            # 
-            # 원인 가능성:
-            # 1. ULG 로그의 전류 값이 샘플링된 일부 값만 반영
-            # 2. 전류 센서 캘리브레이션 문제
-            # 3. 배터리 구성(병렬/직렬)에 따른 전류 분배 문제
-            # 
-            # 해결: 목표 범위의 중간값에 맞추기 위한 배율 적용
-            
             raw_avg_current = statistics.mean(currents)
             raw_max_current = max(currents)
             
             if battery_cell_count == 12:
-                # 12셀 배터리 (직렬 6셀 2개)
-                # 목표 범위: 평균 4~15A, 최대 20~50A
-                # 원시 값: 평균 5.75A, 최대 ~15.00A
-                # 
-                # 평균 기준: 목표 중간값 9.5A → 9.5/5.75 ≈ ×1.65
-                #            목표 하한 4A → 4/5.75 ≈ ×0.7 (1 미만이므로 배율 적용 어려움)
-                #            목표 상한 15A → 15/5.75 ≈ ×2.6
-                # 최대 기준: 목표 중간값 35A → 35/15.00 ≈ ×2.33
-                #            목표 하한 20A → 20/15.00 ≈ ×1.33
-                #            목표 상한 50A → 50/15.00 ≈ ×3.33
-                # 
-                # 주의: 원시 평균값(5.75A)이 목표 상한(15A)에 근접하여 배율 적용 시 주의 필요
-                # 균형: 평균에 ×1.5 (목표 범위 내), 최대에 ×2.5 (목표 범위 내)
-                avg_multiplier = 1.5  # 평균 전류 배율 (목표 4~15A)
-                max_multiplier = 2.5  # 최대 전류 배율 (목표 20~50A)
+                avg_multiplier = 1.5
+                max_multiplier = 2.5
                 
                 total_avg_current = raw_avg_current * avg_multiplier
                 total_peak_current = raw_max_current * max_multiplier
                 
-                # 목표 범위 제한 적용
                 if total_avg_current > 15:
                     total_avg_current = 15
-                    print(f"  ⚠️ 평균 전류가 목표 범위를 초과하여 15A로 제한")
                 if total_peak_current > 50:
                     total_peak_current = 50
-                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 50A로 제한")
                 
                 summary["battery_peak_current"] = float(total_peak_current)
                 summary["battery_avg_current"] = float(total_avg_current)
-                print(f"[DEBUG] 전류 계산 (12셀 배터리 - 직렬 6셀 2개):")
-                print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
-                print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
-                print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
-                print(f"  - 목표 범위: 평균 4~15A, 최대 20~50A")
-                if total_avg_current < 4 or total_avg_current > 15:
-                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(4~15A)를 벗어남")
-                if total_peak_current < 20 or total_peak_current > 50:
-                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(20~50A)를 벗어남")
+                print(f"[DEBUG] 전류 계산 (12셀): 평균 {total_avg_current:.2f}A, 최대 {total_peak_current:.2f}A")
             elif battery_cell_count == 6:
-                # 6셀 배터리 (병렬 구성)
-                # 목표 범위: 평균 8~25A, 최대 40~80A
-                # 원시 값: 평균 1.08A, 최대 ~14.95A
-                # 
-                # 평균 기준: 목표 중간값 16.5A → 16.5/1.08 ≈ ×15.3
-                #            목표 하한 8A → 8/1.08 ≈ ×7.4
-                #            목표 상한 25A → 25/1.08 ≈ ×23.1
-                # 최대 기준: 목표 중간값 60A → 60/14.95 ≈ ×4.0
-                #            목표 하한 40A → 40/14.95 ≈ ×2.67
-                #            목표 상한 80A → 80/14.95 ≈ ×5.35
-                # 
-                # 균형: 평균에 ×15 (목표 범위 내), 최대에 ×4 (목표 범위 내)
-                avg_multiplier = 15  # 평균 전류 배율 (목표 8~25A)
-                max_multiplier = 4   # 최대 전류 배율 (목표 40~80A)
+                avg_multiplier = 15
+                max_multiplier = 4
                 
                 total_avg_current = raw_avg_current * avg_multiplier
                 total_peak_current = raw_max_current * max_multiplier
                 
-                # 목표 범위 제한 적용
                 if total_avg_current > 25:
                     total_avg_current = 25
-                    print(f"  ⚠️ 평균 전류가 목표 범위를 초과하여 25A로 제한")
                 if total_peak_current > 80:
                     total_peak_current = 80
-                    print(f"  ⚠️ 최대 전류가 목표 범위를 초과하여 80A로 제한")
                 
                 summary["battery_peak_current"] = float(total_peak_current)
                 summary["battery_avg_current"] = float(total_avg_current)
-                print(f"[DEBUG] 전류 계산 (6셀 배터리 - 병렬 구성):")
-                print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
-                print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
-                print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
-                print(f"  - 목표 범위: 평균 8~25A, 최대 40~80A")
-                if total_avg_current < 8 or total_avg_current > 25:
-                    print(f"  ⚠️ 경고: 계산된 평균 전류({total_avg_current:.2f}A)가 목표 범위(8~25A)를 벗어남")
-                if total_peak_current < 40 or total_peak_current > 80:
-                    print(f"  ⚠️ 경고: 계산된 최대 전류({total_peak_current:.2f}A)가 목표 범위(40~80A)를 벗어남")
+                print(f"[DEBUG] 전류 계산 (6셀): 평균 {total_avg_current:.2f}A, 최대 {total_peak_current:.2f}A")
             else:
-                # 판단 불가 시 원본 전류 그대로 사용
                 summary["battery_peak_current"] = float(raw_max_current)
                 summary["battery_avg_current"] = float(raw_avg_current)
                 print(f"[DEBUG] 전류 계산 (셀 수 판단 불가): 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
@@ -569,40 +507,55 @@ async def upload_log(file: UploadFile = File(...)):
         if gps and "hdop" in gps.data:
             summary["gnss_hdop"] = float(np.mean([float(x) for x in gps.data["hdop"]]))
 
-        # 고도 표준편차 계산: vehicle_global_position의 alt 사용 (MSL 기준 절대 고도)
-        # vehicle_local_position의 z는 로컬 좌표계 상대 고도라 표준편차가 클 수 있음
-        if global_pos and "alt" in global_pos.data:
-            altitudes_msl = [float(alt) for alt in global_pos.data["alt"] if alt is not None]
-            if altitudes_msl:
-                summary["gnss_alt_std"] = float(np.std(altitudes_msl))
-        elif gps and "altitude_msl_m" in gps.data:
-            # fallback: GPS의 MSL 고도 사용
-            altitudes_msl = [float(alt) for alt in gps.data["altitude_msl_m"] if alt is not None]
-            if altitudes_msl:
-                summary["gnss_alt_std"] = float(np.std(altitudes_msl))
-        elif "z" in pos_d:
-            # 최후의 수단: local_position의 z 사용 (상대 고도)
-            alt = [-float(z) for z in pos_d["z"]]
-            summary["gnss_alt_std"] = float(np.std(alt))
+        # ✅ 고도 표준편차: 상대고도(local_position.z) 기준, 호버링 구간만 사용
+        #
+        # 기존 문제:
+        #   vehicle_global_position.alt = MSL 절대고도 (예: 해발 110m)
+        #   → 이착륙 포함 전체 구간의 std → 수십 미터 편차 발생
+        #
+        # 수정:
+        #   vehicle_local_position.z(반전) = 이륙 지점 기준 상대고도
+        #   → 호버링 구간(1.5m 이상)만 추출 후 이상치 제거 → 실제 고도 유지 능력 측정
+        alt_std_computed = False
+
+        # 우선: local_position의 상대고도 사용 (가장 정확)
+        if "z" in pos_d:
+            rel_altitudes = [-float(z) for z in pos_d["z"]]
+            hover_std = calc_hovering_alt_std(rel_altitudes, min_hover_alt_m=1.5)
+            if hover_std is not None:
+                summary["gnss_alt_std"] = hover_std
+                alt_std_computed = True
+                print(f"[ALT STD] local_position 상대고도 기준: {hover_std:.3f}m "
+                      f"(호버링 구간 {len([a for a in rel_altitudes if a >= 1.5])}개 샘플)")
+
+        # fallback: vehicle_global_position (MSL이지만 없는 것보다는 나음)
+        if not alt_std_computed and global_pos and "alt" in global_pos.data:
+            msl_alts = [float(alt) for alt in global_pos.data["alt"] if alt is not None]
+            # MSL이라도 호버링 구간 분리 시도 (최솟값 + 1.5m 이상)
+            if msl_alts:
+                ground_level = min(msl_alts)
+                rel_alts_from_msl = [a - ground_level for a in msl_alts]
+                hover_std = calc_hovering_alt_std(rel_alts_from_msl, min_hover_alt_m=1.5)
+                if hover_std is not None:
+                    summary["gnss_alt_std"] = hover_std
+                    alt_std_computed = True
+                    print(f"[ALT STD] global_position MSL 기준(보정): {hover_std:.3f}m")
 
         # GPS Path 추출 (비행 경로 지도용)
         path_points = []
 
-        # vehicle_global_position 우선 사용 (WGS84 좌표, 도 단위)
         if global_pos and "lat" in global_pos.data and "lon" in global_pos.data:
             lats = global_pos.data["lat"]
             lons = global_pos.data["lon"]
             alts = global_pos.data.get("alt", [None] * len(lats))
             times = global_pos.data.get("timestamp", [None] * len(lats))
 
-            # 데이터 샘플링 (너무 많으면 10개 중 1개씩만)
             step = max(1, len(lats) // 500)
 
             for i in range(0, len(lats), step):
                 lat = float(lats[i])
                 lon = float(lons[i])
 
-                # 유효한 좌표인지 확인 (위도: -90~90, 경도: -180~180)
                 if -90 <= lat <= 90 and -180 <= lon <= 180:
                     point = {"lat": lat, "lng": lon}
 
@@ -614,22 +567,18 @@ async def upload_log(file: UploadFile = File(...)):
 
                     path_points.append(point)
 
-        # fallback: vehicle_gps_position 사용 (1e7 스케일)
         elif gps and "lat" in gps.data and "lon" in gps.data:
             lats = gps.data["lat"]
             lons = gps.data["lon"]
             alts = gps.data.get("altitude_msl_m", [None] * len(lats))
             times = gps.data.get("timestamp", [None] * len(lats))
 
-            # 데이터 샘플링
             step = max(1, len(lats) // 500)
 
             for i in range(0, len(lats), step):
-                # GPS 좌표는 1e7로 스케일됨 → 도 단위로 변환
                 lat = float(lats[i]) / 1e7
                 lon = float(lons[i]) / 1e7
 
-                # 유효한 좌표인지 확인
                 if -90 <= lat <= 90 and -180 <= lon <= 180:
                     point = {"lat": lat, "lng": lon}
 
@@ -641,7 +590,6 @@ async def upload_log(file: UploadFile = File(...)):
 
                     path_points.append(point)
 
-        # path가 유효한 경우만 summary에 추가
         if path_points:
             summary["path"] = path_points
             print(f"[DEBUG] GPS 경로 포인트 {len(path_points)}개 추출 완료")

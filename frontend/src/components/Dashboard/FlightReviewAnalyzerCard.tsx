@@ -323,10 +323,10 @@ export function FlightReviewAnalyzerCard({
       1,
     )}m, 평균 속도는 ${avgSpeed.toFixed(1)}m/s였습니다.`
 
-    if (batteryDrop > 3)
-      summaryText += ` 배터리 소모율이 ${batteryDrop.toFixed(1)}%로 확인되었습니다.`
-    if (maxAlt > 120)
-      summaryText += ` 비행 고도가 120m 이상으로, 비가시권(BVLOS) 가능성이 있습니다.`
+    // if (batteryDrop > 3)
+    //   summaryText += ` 배터리 소모율이 ${batteryDrop.toFixed(1)}%로 확인되었습니다.`
+    if (maxAlt > 50)
+      summaryText += ` 비행 고도가 50m 이상으로, 비가시권(BVLOS) 가능성이 있습니다.`
 
     const rapidDesc = data.some(
       (d, i, arr) => i > 0 && arr[i - 1].altitude - d.altitude > 40,
