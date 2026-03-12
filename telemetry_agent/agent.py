@@ -48,6 +48,15 @@ def fmt_age(v) -> str:
         return str(v)
 
 
+def fmt_num(v, unit: str = "") -> str:
+    if v is None:
+        return "None"
+    try:
+        return f"{float(v):.2f}{unit}"
+    except Exception:
+        return str(v)
+
+
 def scan_serial_ports_detailed() -> List[Tuple[str, str]]:
     """
     Returns list of (device, description)
@@ -199,7 +208,7 @@ class TelemetryAgent:
                     print(f"[Agent]  SYSID: {self.sysid}")
                     return True
 
-                except Exception as e:
+                except Exception:
                     # 실패하면 다음 baud/포트 시도
                     continue
 
@@ -259,10 +268,18 @@ class TelemetryAgent:
                 return
 
             if t == "GLOBAL_POSITION_INT":
+                # ✅ 화면에 쓸 실제 고도는 relative_alt만 사용
+                # - relative_alt: 홈포인트 기준 상대고도 (mm → m)
+                # - alt: AMSL 절대고도 (mm → m), 디버깅용으로만 별도 저장
+                relative_alt_m = (float(msg.relative_alt) / 1000.0) if msg.relative_alt is not None else None
+                amsl_alt_m = (float(msg.alt) / 1000.0) if msg.alt is not None else None
+
                 self._cache["position"] = {
                     "lat": (float(msg.lat) / 1e7) if msg.lat is not None else None,
                     "lon": (float(msg.lon) / 1e7) if msg.lon is not None else None,
-                    "alt": (float(msg.relative_alt) / 1000.0) if msg.relative_alt is not None else None,
+                    "alt": relative_alt_m,          # ✅ UI/서버 기본 고도
+                    "relative_alt": relative_alt_m, # ✅ 명시적 보관
+                    "amsl_alt": amsl_alt_m,         # ✅ 디버깅용
                 }
                 self._last_update["position"] = ts
                 return
@@ -277,13 +294,22 @@ class TelemetryAgent:
                 return
 
             if t == "VFR_HUD":
+                # ✅ 주의:
+                # 이전에는 여기서 self._cache["position"]["alt"] = float(msg.alt) 로
+                # relative_alt 기반 고도를 덮어써서 고도 튐 현상이 생길 수 있었음.
+                # 이제는 덮어쓰지 않고, 디버깅용 보조값으로만 저장함.
                 if self._cache.get("position") is None:
-                    self._cache["position"] = {"lat": None, "lon": None, "alt": None}
+                    self._cache["position"] = {
+                        "lat": None,
+                        "lon": None,
+                        "alt": None,
+                        "relative_alt": None,
+                        "amsl_alt": None,
+                    }
 
                 if getattr(msg, "alt", None) is not None:
                     try:
-                        self._cache["position"]["alt"] = float(msg.alt)
-                        self._last_update["position"] = ts
+                        self._cache["position"]["vfr_alt"] = float(msg.alt)  # 디버깅용
                     except Exception:
                         pass
 
@@ -312,6 +338,7 @@ class TelemetryAgent:
     def build_snapshot(self) -> dict:
         with self._lock:
             vel = self._cache.get("velocity")
+            pos = self._cache.get("position")
 
             speed_m_s = None
             if isinstance(vel, dict):
@@ -325,7 +352,7 @@ class TelemetryAgent:
             snap = {
                 "sysid": self._cache.get("sysid"),
                 "attitude": self._cache.get("attitude"),
-                "position": self._cache.get("position"),
+                "position": pos,
                 "velocity": vel,
                 "speed_m_s": speed_m_s,
                 "battery": self._cache.get("battery"),
@@ -364,12 +391,19 @@ class TelemetryAgent:
                     spd = snap.get("speed_m_s")
                     spd_str = (f"{spd:.2f}m/s" if is_num(spd) else "None")
 
+                    pos = snap.get("position") or {}
+                    alt_str = fmt_num(pos.get("alt"), "m")
+                    rel_alt_str = fmt_num(pos.get("relative_alt"), "m")
+                    amsl_alt_str = fmt_num(pos.get("amsl_alt"), "m")
+                    vfr_alt_str = fmt_num(pos.get("vfr_alt"), "m")
+
                     print(
                         f"[Agent] PUSH sysid={snap.get('sysid')} status={res.status_code} "
                         f"(age attitude={fmt_age(age.get('attitude'))} "
                         f"pos={fmt_age(age.get('position'))} "
                         f"vel={fmt_age(age.get('velocity'))} "
-                        f"speed={spd_str})"
+                        f"speed={spd_str} "
+                        f"alt={alt_str} rel={rel_alt_str} amsl={amsl_alt_str} vfr={vfr_alt_str})"
                     )
 
             except Exception as e:
