@@ -63,24 +63,5 @@ function UserSettings() {
     </DashboardBackground>
   )
 
-    // <div maxW="full">
-    //   <h2 size="lg" textAlign={{ base: "center", md: "left" }} py={12}>
-    //     User Settings
-    //   </h2>
-    //   <Tabs variant="enclosed">
-    //     <TabList>
-    //       {finalTabs.map((tab, index) => (
-    //         <Tab key={index}>{tab.title}</Tab>
-    //       ))}
-    //     </TabList>
-    //     <TabPanels>
-    //       {finalTabs.map((tab, index) => (
-    //         <TabPanel key={index}>
-    //           <tab.component />
-    //         </TabPanel>
-    //       ))}
-    //     </TabPanels>
-    //   </Tabs>
-    // </div>
-  )
+  
 }
