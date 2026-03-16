@@ -19,8 +19,13 @@ PWM_MAX_US = 2000.0
 PWM_RANGE_US = PWM_MAX_US - PWM_MIN_US
 
 STABLE_SPEED_THRESHOLD = 1.0   # m/s 이하를 안정/저속 구간으로 간주
+STABLE_VERTICAL_RATE_THRESHOLD = 0.3  # m/s 이하를 고도 안정 구간으로 간주
 MIN_STABLE_ALT_SAMPLES = 10
 ALT_SMOOTH_WINDOW = 21         # detrend용 moving average window
+
+GNSS_LOSS_SAT_THRESHOLD = 3
+GNSS_LOSS_HDOP_THRESHOLD = 2.5
+GNSS_LOSS_FIXTYPE_THRESHOLD = 3
 
 
 # --------------------------------------------------------
@@ -81,9 +86,11 @@ def quat_to_euler(q):
 def moving_average(arr: np.ndarray, window: int) -> np.ndarray:
     if len(arr) == 0:
         return arr
+
     window = max(3, int(window))
     if window % 2 == 0:
         window += 1
+
     if len(arr) < window:
         return np.full_like(arr, np.mean(arr), dtype=float)
 
@@ -91,50 +98,6 @@ def moving_average(arr: np.ndarray, window: int) -> np.ndarray:
     pad = window // 2
     padded = np.pad(arr, (pad, pad), mode="edge")
     return np.convolve(padded, kernel, mode="valid")
-
-
-def compute_altitude_stability_metrics(altitudes, speeds):
-    """
-    altitudes: 절대고도(MSL 또는 GPS altitude)
-    speeds:    해당 시점의 ground speed
-    """
-    result = {}
-
-    if not altitudes:
-        return result
-
-    alt_arr = np.array([safe_float(x) for x in altitudes], dtype=float)
-    alt_arr = alt_arr[~np.isnan(alt_arr)]
-    if len(alt_arr) == 0:
-        return result
-
-    # 1) 기존 방식에 해당하는 raw std (비행 전체 spread)
-    result["gnss_alt_std_raw"] = float(np.std(alt_arr))
-
-    # 2) detrend residual std
-    smooth = moving_average(alt_arr, ALT_SMOOTH_WINDOW)
-    residual = alt_arr - smooth
-    result["gnss_alt_noise_std"] = float(np.std(residual))
-
-    # 3) 안정 구간(speed < threshold)만 사용한 std
-    stable_pairs = []
-    for a, s in zip(altitudes, speeds):
-        fa = safe_float(a)
-        fs = safe_float(s)
-        if fa is None or fs is None:
-            continue
-        if fs <= STABLE_SPEED_THRESHOLD:
-            stable_pairs.append(fa)
-
-    if len(stable_pairs) >= MIN_STABLE_ALT_SAMPLES:
-        result["gnss_alt_std"] = float(np.std(stable_pairs))
-        result["gnss_alt_stable_sample_count"] = int(len(stable_pairs))
-    else:
-        # 안정 구간이 너무 적으면 residual noise를 대표값으로 사용
-        result["gnss_alt_std"] = float(np.std(residual))
-        result["gnss_alt_stable_sample_count"] = int(len(stable_pairs))
-
-    return result
 
 
 def pick_previous_index(ts_list, t):
@@ -146,6 +109,90 @@ def pick_previous_index(ts_list, t):
     if idx >= len(ts_list):
         return len(ts_list) - 1
     return idx - 1
+
+
+def count_loss_events(bool_list):
+    count = 0
+    in_loss = False
+
+    for flag in bool_list:
+        if flag and not in_loss:
+            count += 1
+            in_loss = True
+        elif not flag:
+            in_loss = False
+
+    return count
+
+
+def compute_altitude_stability_metrics(altitudes, speeds, times):
+    """
+    altitudes: 절대고도(MSL 또는 GPS altitude)
+    speeds:    해당 시점의 ground speed
+    times:     해당 시점의 상대시간(sec)
+    """
+    result = {}
+
+    if not altitudes or not speeds or not times:
+        return result
+
+    n = min(len(altitudes), len(speeds), len(times))
+    if n < 3:
+        return result
+
+    altitudes = altitudes[:n]
+    speeds = speeds[:n]
+    times = times[:n]
+
+    alt_arr = np.array([safe_float(x) for x in altitudes], dtype=float)
+    speed_arr = np.array([safe_float(x) for x in speeds], dtype=float)
+    time_arr = np.array([safe_float(x) for x in times], dtype=float)
+
+    valid_mask = ~np.isnan(alt_arr) & ~np.isnan(speed_arr) & ~np.isnan(time_arr)
+    alt_arr = alt_arr[valid_mask]
+    speed_arr = speed_arr[valid_mask]
+    time_arr = time_arr[valid_mask]
+
+    if len(alt_arr) < 3:
+        return result
+
+    # 1) 전체 절대고도 분산
+    result["gnss_alt_std_raw"] = float(np.std(alt_arr))
+
+    # 2) detrend 후 noise residual 표준편차
+    smooth = moving_average(alt_arr, ALT_SMOOTH_WINDOW)
+    residual = alt_arr - smooth
+    result["gnss_alt_noise_std"] = float(np.std(residual))
+
+    # 3) 저속 + 수직속도 안정 구간만 추출
+    stable_alts = []
+    vertical_rates = []
+
+    for i in range(1, len(alt_arr)):
+        dt = time_arr[i] - time_arr[i - 1]
+        if dt <= 0:
+            continue
+
+        dz = alt_arr[i] - alt_arr[i - 1]
+        vz = dz / dt
+        vertical_rates.append(vz)
+
+        if speed_arr[i] <= STABLE_SPEED_THRESHOLD and abs(vz) <= STABLE_VERTICAL_RATE_THRESHOLD:
+            stable_alts.append(alt_arr[i])
+
+    if len(stable_alts) >= MIN_STABLE_ALT_SAMPLES:
+        result["gnss_alt_std"] = float(np.std(stable_alts))
+        result["gnss_alt_stable_sample_count"] = int(len(stable_alts))
+    else:
+        # 안정 샘플이 부족하면 residual noise를 대체값으로 사용
+        result["gnss_alt_std"] = float(np.std(residual))
+        result["gnss_alt_stable_sample_count"] = int(len(stable_alts))
+
+    if vertical_rates:
+        result["gnss_alt_avg_vertical_rate"] = float(np.mean(np.abs(vertical_rates)))
+        result["gnss_alt_max_vertical_rate"] = float(np.max(np.abs(vertical_rates)))
+
+    return result
 
 
 # --------------------------------------------------------
@@ -342,6 +389,7 @@ async def upload_log(file: UploadFile = File(...)):
         # GNSS altitude stability용 동기화 데이터
         synced_abs_altitudes = []
         synced_speeds = []
+        synced_times = []
 
         for i in range(len(pos_d["timestamp"])):
             t = rel_time(pos_d["timestamp"][i])
@@ -472,6 +520,7 @@ async def upload_log(file: UploadFile = File(...)):
             if abs_alt is not None:
                 synced_abs_altitudes.append(abs_alt)
                 synced_speeds.append(speed)
+                synced_times.append(t)
 
             merged.append({
                 "time": t,
@@ -602,10 +651,33 @@ async def upload_log(file: UploadFile = File(...)):
                 ) * 180 / math.pi
             )
 
-        # GPS
+        # --------------------------------------------------------
+        # GPS / GNSS summary
+        # --------------------------------------------------------
         if gps_sats:
             summary["gnss_avg_sat"] = float(statistics.mean(gps_sats))
-            summary["gnss_signal_loss_count"] = len([s for s in gps_sats if s <= 3])
+
+        if gps:
+            print("\n========== GPS RAW DEBUG ==========")
+
+            if "satellites_used" in gps.data and len(gps.data["satellites_used"]) > 0:
+                sats_all = [int(x) for x in gps.data["satellites_used"]]
+                print("[GPS] satellites_used sample:", sats_all[:30])
+                print("[GPS] satellites_used min/max:", min(sats_all), max(sats_all))
+
+            if "fix_type" in gps.data and len(gps.data["fix_type"]) > 0:
+                fix_all = [int(x) for x in gps.data["fix_type"]]
+                print("[GPS] fix_type sample:", fix_all[:30])
+                print("[GPS] fix_type unique:", sorted(set(fix_all)))
+
+            if "hdop" in gps.data and len(gps.data["hdop"]) > 0:
+                hdops_all = [safe_float(x) for x in gps.data["hdop"]]
+                hdops_all = [x for x in hdops_all if x is not None]
+                print("[GPS] hdop sample:", hdops_all[:30])
+                if hdops_all:
+                    print("[GPS] hdop min/max:", min(hdops_all), max(hdops_all))
+
+            print("===================================\n")
 
         if gps and "hdop" in gps.data:
             hdops = [safe_float(x) for x in gps.data["hdop"]]
@@ -613,12 +685,51 @@ async def upload_log(file: UploadFile = File(...)):
             if hdops:
                 summary["gnss_hdop"] = float(np.mean(hdops))
 
+        if gps and "fix_type" in gps.data:
+            fix_types = [safe_float(x) for x in gps.data["fix_type"]]
+            fix_types = [x for x in fix_types if x is not None]
+            if fix_types:
+                summary["gnss_fix_type_avg"] = float(np.mean(fix_types))
+
+        # GNSS 손실 이벤트 계산
+        loss_flags = []
+        if gps and "timestamp" in gps.data:
+            gps_len = len(gps.data["timestamp"])
+
+            for i in range(gps_len):
+                sat = None
+                fix = None
+                hdop = None
+
+                if "satellites_used" in gps.data and i < len(gps.data["satellites_used"]):
+                    sat = safe_float(gps.data["satellites_used"][i], None)
+
+                if "fix_type" in gps.data and i < len(gps.data["fix_type"]):
+                    fix = safe_float(gps.data["fix_type"][i], None)
+
+                if "hdop" in gps.data and i < len(gps.data["hdop"]):
+                    hdop = safe_float(gps.data["hdop"][i], None)
+
+                is_loss = False
+
+                if fix is not None and fix < GNSS_LOSS_FIXTYPE_THRESHOLD:
+                    is_loss = True
+                elif sat is not None and sat <= GNSS_LOSS_SAT_THRESHOLD:
+                    is_loss = True
+                elif hdop is not None and hdop > GNSS_LOSS_HDOP_THRESHOLD:
+                    is_loss = True
+
+                loss_flags.append(is_loss)
+
+        summary["gnss_signal_loss_count"] = int(count_loss_events(loss_flags)) if loss_flags else 0
+
         # --------------------------------------------------------
         # GNSS altitude stability
         # --------------------------------------------------------
         alt_metrics = compute_altitude_stability_metrics(
             altitudes=synced_abs_altitudes,
             speeds=synced_speeds,
+            times=synced_times,
         )
         summary.update(alt_metrics)
 
@@ -630,14 +741,17 @@ async def upload_log(file: UploadFile = File(...)):
             print(f"[GNSS ALT] noise std: {summary.get('gnss_alt_noise_std')}")
             print(f"[GNSS ALT] stable std: {summary.get('gnss_alt_std')}")
             print(f"[GNSS ALT] stable samples: {summary.get('gnss_alt_stable_sample_count')}")
+            print(f"[GNSS ALT] avg |vz|: {summary.get('gnss_alt_avg_vertical_rate')}")
             print("========================================\n")
         else:
-            # fallback: 진짜 최후의 수단
+            # fallback: 최후의 수단
             if "z" in pos_d:
                 alt = [-float(z) for z in pos_d["z"]]
                 if alt:
-                    summary["gnss_alt_std_raw"] = float(np.std(alt))
-                    summary["gnss_alt_noise_std"] = float(np.std(np.array(alt) - moving_average(np.array(alt, dtype=float), ALT_SMOOTH_WINDOW)))
+                    alt_arr = np.array(alt, dtype=float)
+                    smooth = moving_average(alt_arr, ALT_SMOOTH_WINDOW)
+                    summary["gnss_alt_std_raw"] = float(np.std(alt_arr))
+                    summary["gnss_alt_noise_std"] = float(np.std(alt_arr - smooth))
                     summary["gnss_alt_std"] = summary["gnss_alt_noise_std"]
                     summary["gnss_alt_stable_sample_count"] = 0
 
