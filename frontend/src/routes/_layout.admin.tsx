@@ -11,7 +11,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { DataTable } from "@/components/ui/data-table"
 import { userColumns } from "@/components/Admin/UserColumns"
 import AddUserDialog from "@/components/Admin/AddUserDialog"
-import { DashboardBackground } from "@/components/layout/DashboardBackground"
 
 // =======================
 // Search Schema
@@ -46,7 +45,7 @@ function getUsersQueryOptions({ page }: { page: number }) {
 // =======================
 function Admin() {
   return (
-    <DashboardBackground variant="admin">
+    <>
       <Navbar>
         <Typography variant="h2" className="mt-4">
           사용자 관리
@@ -55,7 +54,7 @@ function Admin() {
 
       <AddUserDialog />
       <UsersTable />
-    </DashboardBackground>
+    </>
   )
 }
 

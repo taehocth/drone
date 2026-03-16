@@ -11,7 +11,6 @@ import { PaginationFooter } from "@/components/Common/PaginationFooter"
 import { Typography } from "@/components/Common/Typography"
 import { DataTable } from "@/components/ui/data-table"
 import { itemColumns } from "@/components/Items/ItemColumns"
-import { DashboardBackground } from "@/components/layout/DashboardBackground"
 
 // =======================
 // Search Schema
@@ -46,7 +45,7 @@ function getItemsQueryOptions({ page }: { page: number }) {
 // =======================
 function Items() {
   return (
-    <DashboardBackground variant="items">
+    <>
       <Navbar>
         <Typography variant="h2" className="mt-4">
           기체 관리
@@ -55,7 +54,7 @@ function Items() {
 
       <AddItemDialog />
       <ItemsTable />
-    </DashboardBackground>
+    </>
   )
 }
 
