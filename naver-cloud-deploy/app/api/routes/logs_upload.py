@@ -211,7 +211,7 @@ async def upload_log(file: UploadFile = File(...)):
         ulog = ULog(tmp_path)
         print(f"[DEBUG] Loaded ULog — topics: {len(ulog.data_list)}")
 
-        # ⭐ Debug: 전체 토픽 목록 출력
+        # 전체 토픽 목록 출력
         print("=============== ULOG TOPIC LIST ===============")
         for d in ulog.data_list:
             print(f"- {d.name} → {list(d.data.keys())}")
@@ -224,7 +224,6 @@ async def upload_log(file: UploadFile = File(...)):
         if not battery_list:
             raise HTTPException(status_code=400, detail="battery_status 토픽 없음")
 
-        # 각 인스턴스의 평균 전압 계산하여 가장 정상적인 배터리 선택
         def avg_voltage(b):
             if "voltage_v" in b.data:
                 v = [float(x) for x in b.data["voltage_v"] if safe_float(x, 0) > 0]
@@ -235,7 +234,7 @@ async def upload_log(file: UploadFile = File(...)):
         battery_voltage = avg_voltage(battery)
         print(f"[DEBUG] 선택된 battery_status 인스턴스 평균전압: {battery_voltage:.2f}V")
 
-        # 🔋 배터리 셀 수 자동 판단 (전압 기반)
+        # 배터리 셀 수 자동 판단
         battery_cell_count = 0
         if battery_voltage >= 35:
             battery_cell_count = 12
@@ -265,25 +264,22 @@ async def upload_log(file: UploadFile = File(...)):
         attitude = next((d for d in ulog.data_list if d.name == "vehicle_attitude"), None)
         estimator_att = next((d for d in ulog.data_list if d.name == "estimator_attitude"), None)
 
-        esc_status = next((d for d in ulog.data_list if d.name == "esc_status"), None)
-        imu_status = next((d for d in ulog.data_list if d.name == "vehicle_imu_status"), None)
-
         if not local_pos:
             raise HTTPException(status_code=400, detail="필수 토픽 vehicle_local_position 없음")
 
-        # --------------------------------------------------------
         # ESC RAW 디버그
-        # --------------------------------------------------------
         print("\n\n=========== ESC RAW DEBUG ===========")
         if esc:
             esc_keys_debug = list(esc.data.keys())
             print("[ESC KEYS]:", esc_keys_debug)
             for k in esc_keys_debug:
-                print(f"[{k}] 첫 20개 값:", esc.data[k][:20])
+                try:
+                    print(f"[{k}] 첫 20개 값:", esc.data[k][:20])
+                except Exception:
+                    print(f"[{k}] 값 출력 실패")
         else:
             print("❌ actuator_outputs 토픽 없음")
         print("=====================================\n\n")
-        # --------------------------------------------------------
 
         min_ts = float(local_pos.data["timestamp"][0])
         rel_time = lambda t: (float(t) - min_ts) / 1_000_000
@@ -301,7 +297,7 @@ async def upload_log(file: UploadFile = File(...)):
         est_t, est_d = extract(estimator_att)
         pos_t, pos_d = extract(local_pos)
 
-        # 배터리 원시 데이터 확인 (모든 인스턴스)
+        # 배터리 원시 데이터 확인
         print("\n========== BATTERY RAW DEBUG (ALL INSTANCES) ==========")
         print(f"[DEBUG] 발견된 battery_status 인스턴스 수: {len(battery_list)}")
 
@@ -354,11 +350,15 @@ async def upload_log(file: UploadFile = File(...)):
                 sample_values = []
                 sample_count = min(100, len(esc_d[esc_keys[0]]))
                 for sample_idx in range(sample_count):
-                    sample_raw = [
-                        float(esc_d[k][sample_idx])
-                        for k in esc_keys
-                        if abs(float(esc_d[k][sample_idx])) > 10
-                    ]
+                    sample_raw = []
+                    for k in esc_keys:
+                        try:
+                            v = float(esc_d[k][sample_idx])
+                            if abs(v) > 10:
+                                sample_raw.append(v)
+                        except Exception:
+                            continue
+
                     if sample_raw:
                         sample_values.append(sum(sample_raw) / len(sample_raw))
 
@@ -386,7 +386,6 @@ async def upload_log(file: UploadFile = File(...)):
         gps_sats = []
         esc_outputs = []
 
-        # GNSS altitude stability용 동기화 데이터
         synced_abs_altitudes = []
         synced_speeds = []
         synced_times = []
@@ -407,7 +406,6 @@ async def upload_log(file: UploadFile = File(...)):
                 if bat_idx is not None and 0 <= bat_idx < len(bat_t):
                     voltage_added = False
 
-                    # 방법 1: voltage_cell_v 배열 사용
                     if "voltage_cell_v[0]" in bat_d:
                         cell_voltage = 0.0
                         cell_count = 0
@@ -423,7 +421,6 @@ async def upload_log(file: UploadFile = File(...)):
                             battery_value = cell_voltage
                             voltage_added = True
 
-                    # 방법 2: voltage_filtered_v / voltage_v 사용
                     if not voltage_added:
                         voltage_key = None
                         if "voltage_filtered_v" in bat_d and len(bat_d["voltage_filtered_v"]) > bat_idx:
@@ -456,18 +453,21 @@ async def upload_log(file: UploadFile = File(...)):
                 gps_idx = pick_previous_index(gps_t, t)
                 if gps_idx is not None and gps_idx < len(gps_d["satellites_used"]):
                     sat_val = safe_float(gps_d["satellites_used"][gps_idx], None)
-                    if sat_val is not None:
+                    if sat_val is not None and sat_val >= 0:
                         gps_sats.append(int(sat_val))
 
             # ESC Output
             if esc_t and esc_keys:
                 esc_idx = pick_previous_index(esc_t, t)
                 if esc_idx is not None and 0 <= esc_idx < len(esc_t):
-                    raw_values = [
-                        float(esc_d[k][esc_idx])
-                        for k in esc_keys
-                        if abs(float(esc_d[k][esc_idx])) > 10
-                    ]
+                    raw_values = []
+                    for k in esc_keys:
+                        try:
+                            v = float(esc_d[k][esc_idx])
+                            if abs(v) > 10:
+                                raw_values.append(v)
+                        except Exception:
+                            continue
 
                     if raw_values:
                         avg_raw = sum(raw_values) / len(raw_values)
@@ -492,20 +492,26 @@ async def upload_log(file: UploadFile = File(...)):
             if att_t and "q[0]" in att_d:
                 att_idx = pick_previous_index(att_t, t)
                 if att_idx is not None and att_idx < len(att_t):
-                    q = [float(att_d[f"q[{j}]"][att_idx]) for j in range(4)]
-                    r, p, _ = quat_to_euler(q)
-                    roll_vals.append(r)
-                    pitch_vals.append(p)
+                    try:
+                        q = [float(att_d[f"q[{j}]"][att_idx]) for j in range(4)]
+                        r, p, _ = quat_to_euler(q)
+                        roll_vals.append(r)
+                        pitch_vals.append(p)
+                    except Exception:
+                        pass
 
             elif est_t and "q[0]" in est_d:
                 est_idx = pick_previous_index(est_t, t)
                 if est_idx is not None and est_idx < len(est_t):
-                    q = [float(est_d[f"q[{j}]"][est_idx]) for j in range(4)]
-                    r, p, _ = quat_to_euler(q)
-                    roll_vals.append(r)
-                    pitch_vals.append(p)
+                    try:
+                        q = [float(est_d[f"q[{j}]"][est_idx]) for j in range(4)]
+                        r, p, _ = quat_to_euler(q)
+                        roll_vals.append(r)
+                        pitch_vals.append(p)
+                    except Exception:
+                        pass
 
-            # GNSS absolute altitude sync for stability metric
+            # GNSS absolute altitude sync
             abs_alt = None
             if global_pos_t and "alt" in global_pos_d:
                 g_idx = pick_previous_index(global_pos_t, t)
@@ -593,11 +599,6 @@ async def upload_log(file: UploadFile = File(...)):
 
                 summary["battery_peak_current"] = float(total_peak_current)
                 summary["battery_avg_current"] = float(total_avg_current)
-                print("[DEBUG] 전류 계산 (12셀 배터리 - 직렬 6셀 2개):")
-                print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
-                print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
-                print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
-                print("  - 목표 범위: 평균 4~15A, 최대 20~50A")
 
             elif battery_cell_count == 6:
                 avg_multiplier = 15
@@ -615,16 +616,10 @@ async def upload_log(file: UploadFile = File(...)):
 
                 summary["battery_peak_current"] = float(total_peak_current)
                 summary["battery_avg_current"] = float(total_avg_current)
-                print("[DEBUG] 전류 계산 (6셀 배터리 - 병렬 구성):")
-                print(f"  - 원시 전류: 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
-                print(f"  - 평균 전류 (배율 ×{avg_multiplier}): {total_avg_current:.2f}A")
-                print(f"  - 최대 전류 (배율 ×{max_multiplier}): {total_peak_current:.2f}A")
-                print("  - 목표 범위: 평균 8~25A, 최대 40~80A")
 
             else:
                 summary["battery_peak_current"] = float(raw_max_current)
                 summary["battery_avg_current"] = float(raw_avg_current)
-                print(f"[DEBUG] 전류 계산 (셀 수 판단 불가): 평균 {raw_avg_current:.2f}A, 최대 {raw_max_current:.2f}A")
 
         # Temperature
         if battery and "temperature" in battery.data:
@@ -651,9 +646,7 @@ async def upload_log(file: UploadFile = File(...)):
                 ) * 180 / math.pi
             )
 
-        # --------------------------------------------------------
         # GPS / GNSS summary
-        # --------------------------------------------------------
         if gps_sats:
             summary["gnss_avg_sat"] = float(statistics.mean(gps_sats))
 
@@ -661,14 +654,18 @@ async def upload_log(file: UploadFile = File(...)):
             print("\n========== GPS RAW DEBUG ==========")
 
             if "satellites_used" in gps.data and len(gps.data["satellites_used"]) > 0:
-                sats_all = [int(x) for x in gps.data["satellites_used"]]
+                sats_all = [safe_float(x) for x in gps.data["satellites_used"]]
+                sats_all = [int(x) for x in sats_all if x is not None and x >= 0]
                 print("[GPS] satellites_used sample:", sats_all[:30])
-                print("[GPS] satellites_used min/max:", min(sats_all), max(sats_all))
+                if sats_all:
+                    print("[GPS] satellites_used min/max:", min(sats_all), max(sats_all))
 
             if "fix_type" in gps.data and len(gps.data["fix_type"]) > 0:
-                fix_all = [int(x) for x in gps.data["fix_type"]]
+                fix_all = [safe_float(x) for x in gps.data["fix_type"]]
+                fix_all = [int(x) for x in fix_all if x is not None]
                 print("[GPS] fix_type sample:", fix_all[:30])
-                print("[GPS] fix_type unique:", sorted(set(fix_all)))
+                if fix_all:
+                    print("[GPS] fix_type unique:", sorted(set(fix_all)))
 
             if "hdop" in gps.data and len(gps.data["hdop"]) > 0:
                 hdops_all = [safe_float(x) for x in gps.data["hdop"]]
@@ -723,9 +720,7 @@ async def upload_log(file: UploadFile = File(...)):
 
         summary["gnss_signal_loss_count"] = int(count_loss_events(loss_flags)) if loss_flags else 0
 
-        # --------------------------------------------------------
         # GNSS altitude stability
-        # --------------------------------------------------------
         alt_metrics = compute_altitude_stability_metrics(
             altitudes=synced_abs_altitudes,
             speeds=synced_speeds,
@@ -744,7 +739,6 @@ async def upload_log(file: UploadFile = File(...)):
             print(f"[GNSS ALT] avg |vz|: {summary.get('gnss_alt_avg_vertical_rate')}")
             print("========================================\n")
         else:
-            # fallback: 최후의 수단
             if "z" in pos_d:
                 alt = [-float(z) for z in pos_d["z"]]
                 if alt:
@@ -755,7 +749,7 @@ async def upload_log(file: UploadFile = File(...)):
                     summary["gnss_alt_std"] = summary["gnss_alt_noise_std"]
                     summary["gnss_alt_stable_sample_count"] = 0
 
-        # GPS Path 추출 (비행 경로 지도용)
+        # GPS Path 추출
         path_points = []
 
         if global_pos and "lat" in global_pos.data and "lon" in global_pos.data:
@@ -826,7 +820,7 @@ async def upload_log(file: UploadFile = File(...)):
         if speeds:
             summary["max_ground_speed"] = float(max(speeds))
 
-        # 실제 상승률/하강률 계산 (dz / dt)
+        # 실제 상승률/하강률 계산
         if len(merged) > 1:
             climb_rates = []
             for i in range(1, len(merged)):
