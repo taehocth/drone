@@ -170,18 +170,7 @@ export function UavDashboard() {
         : "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden scroll-smooth bg-gradient-to-b from-slate-50 via-white to-slate-100/60 p-4 text-slate-900 md:p-6 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70 dark:text-slate-100">
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.16),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(129,140,248,0.22),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(14,165,233,0.18),transparent_50%)] dark:bg-[radial-gradient(circle_at_30%_20%,rgba(56,189,248,0.2),transparent_50%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(244,114,182,0.16),transparent_55%)] dark:bg-[radial-gradient(circle_at_70%_80%,rgba(236,72,153,0.2),transparent_55%)]" />
-        <div className="absolute left-[-20%] top-[-25%] h-[520px] w-[520px] animate-[pulse_9s_ease-in-out_infinite] rounded-full bg-indigo-500/30 blur-[160px] dark:bg-indigo-500/20" />
-        <div className="absolute right-[-15%] top-[10%] h-[420px] w-[420px] animate-[pulse_11s_ease-in-out_infinite] rounded-full bg-cyan-400/25 blur-[150px] dark:bg-cyan-400/20" />
-        <div className="absolute bottom-[-30%] left-[25%] h-[520px] w-[520px] animate-[pulse_13s_ease-in-out_infinite] rounded-full bg-fuchsia-400/20 blur-[180px] dark:bg-fuchsia-400/20" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(15,23,42,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(15,23,42,0.05)_1px,transparent_1px)] bg-[size:40px_40px] opacity-50 dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(15,23,42,0.06),transparent_70%)] dark:bg-[radial-gradient(circle_at_center,rgba(148,163,184,0.08),transparent_70%)]" />
-        <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(120deg,rgba(15,23,42,0.12),transparent_40%,rgba(15,23,42,0.12))] dark:opacity-[0.15]" />
-      </div>
+    <div className="relative min-h-screen overflow-x-hidden scroll-smooth p-4 text-slate-900 md:p-6 dark:text-slate-100">
 
       <div className="mx-auto max-w-7xl space-y-10 lg:space-y-12">
         {/* Gemini AI 채팅 */}

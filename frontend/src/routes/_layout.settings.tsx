@@ -19,6 +19,7 @@ import ChangePassword from "../components/UserSettings/ChangePassword"
 import DeleteAccount from "../components/UserSettings/DeleteAccount"
 import UserInformation from "../components/UserSettings/UserInformation"
 import { Typography } from "@/components/Common/Typography"
+import { DashboardBackground } from "@/components/layout/DashboardBackground"
 
 const tabsConfig = [
   { title: "My profile", component: UserInformation },
@@ -39,23 +40,28 @@ function UserSettings() {
     : tabsConfig
 
   return (
-    <>
-      <Typography variant="h2">사용자 설정</Typography>
-      <Tabs defaultValue="account" className="w-[400px]">
-        <TabsList>
-          {finalTabs.map((tab, index) => (
-            <TabsTrigger key={`${tab.title}${index}`} value={tab.title}>
-              {tab.title}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {finalTabs.map((tab, index) => (
-          <TabsContent key={index} value={tab.title}>
-            <tab.component />
-          </TabsContent>
-        ))}
-      </Tabs>
-    </>
+    <DashboardBackground variant="settings">
+      <div className="container">
+        <div className="m-4 pt-12">
+          <Typography variant="h2">사용자 설정</Typography>
+          <Tabs defaultValue="account" className="mt-6 w-[400px]">
+            <TabsList>
+              {finalTabs.map((tab, index) => (
+                <TabsTrigger key={`${tab.title}${index}`} value={tab.title}>
+                  {tab.title}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {finalTabs.map((tab, index) => (
+              <TabsContent key={index} value={tab.title}>
+                <tab.component />
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
+      </div>
+    </DashboardBackground>
+  )
 
     // <div maxW="full">
     //   <h2 size="lg" textAlign={{ base: "center", md: "left" }} py={12}>
