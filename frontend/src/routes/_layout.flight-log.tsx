@@ -7,11 +7,9 @@ export const Route = createFileRoute("/_layout/flight-log")({
 
 function FlightLog() {
   return (
-    <div className="page page-flight-log">
-      <div className="container page-shell">
-        <div className="m-4 pt-12 page-content">
-          <FlightLogDashboard />
-        </div>
+    <div className="container">
+      <div className="m-4 pt-12 page-content">
+        <FlightLogDashboard />
       </div>
     </div>
   )

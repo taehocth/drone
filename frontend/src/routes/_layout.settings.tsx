@@ -39,27 +39,25 @@ function UserSettings() {
     : tabsConfig
 
   return (
-    <div className="page page-settings">
-      <div className="container page-shell">
-        <div className="m-4 pt-12 page-content">
-          <div className="page-hero">
-            <Typography variant="h2">사용자 설정</Typography>
-          </div>
-          <Tabs defaultValue="account" className="w-[400px]">
-            <TabsList>
-              {finalTabs.map((tab, index) => (
-                <TabsTrigger key={`${tab.title}${index}`} value={tab.title}>
-                  {tab.title}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {finalTabs.map((tab, index) => (
-              <TabsContent key={index} value={tab.title}>
-                <tab.component />
-              </TabsContent>
-            ))}
-          </Tabs>
+    <div className="container">
+      <div className="m-4 pt-12 page-content">
+        <div className="page-hero">
+          <Typography variant="h2">사용자 설정</Typography>
         </div>
+        <Tabs defaultValue="account" className="w-[400px]">
+          <TabsList>
+            {finalTabs.map((tab, index) => (
+              <TabsTrigger key={`${tab.title}${index}`} value={tab.title}>
+                {tab.title}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {finalTabs.map((tab, index) => (
+            <TabsContent key={index} value={tab.title}>
+              <tab.component />
+            </TabsContent>
+          ))}
+        </Tabs>
       </div>
     </div>
   )

@@ -15,14 +15,12 @@ function Checklist() {
   })
 
   return (
-    <div className="page page-checklist">
-      <div className="container page-shell">
-        <div className="m-4 pt-12 page-content">
-          <div className="page-hero">
-            <PageTitle>{formattedDate}자 비행 체크리스트</PageTitle>
-          </div>
-          <FlightChecklistDashboard />
+    <div className="container">
+      <div className="m-4 pt-12 page-content">
+        <div className="page-hero">
+          <PageTitle>{formattedDate}자 비행 체크리스트</PageTitle>
         </div>
+        <FlightChecklistDashboard />
       </div>
     </div>
   )
