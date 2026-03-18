@@ -294,7 +294,7 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            <div className="rounded-[28px] border border-transparent bg-transparent p-4 shadow-none ring-0 transition-all duration-300">
+            <div className="rounded-[28px] border border-slate-200/60 bg-white p-4 shadow-sm ring-1 ring-white/70 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900 dark:ring-slate-800/70">
               <DroneSimulation
                 onConnectionChange={setDroneConnected}
                 onData={setDroneData}
@@ -302,7 +302,7 @@ export function UavDashboard() {
             </div>
 
             {/* 실시간 비행 모니터링 임계값 알림 */}
-            <div className="rounded-[28px] border border-transparent bg-transparent p-4 shadow-none ring-0 transition-all duration-300">
+            <div className="rounded-[28px] border border-slate-200/60 bg-white p-4 shadow-sm ring-1 ring-white/70 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900 dark:ring-slate-800/70">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 p-2 shadow-sm">
