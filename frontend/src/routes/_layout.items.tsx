@@ -45,16 +45,22 @@ function getItemsQueryOptions({ page }: { page: number }) {
 // =======================
 function Items() {
   return (
-    <>
-      <Navbar>
-        <Typography variant="h2" className="mt-4">
-          기체 관리
-        </Typography>
-      </Navbar>
+    <div className="page page-items">
+      <div className="container page-shell">
+        <div className="m-4 pt-12 page-content">
+          <div className="page-hero">
+            <Navbar>
+              <Typography variant="h2" className="mt-4">
+                기체 관리
+              </Typography>
+            </Navbar>
+          </div>
 
-      <AddItemDialog />
-      <ItemsTable />
-    </>
+          <AddItemDialog />
+          <ItemsTable />
+        </div>
+      </div>
+    </div>
   )
 }
 

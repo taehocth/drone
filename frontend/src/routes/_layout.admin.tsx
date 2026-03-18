@@ -45,16 +45,22 @@ function getUsersQueryOptions({ page }: { page: number }) {
 // =======================
 function Admin() {
   return (
-    <>
-      <Navbar>
-        <Typography variant="h2" className="mt-4">
-          사용자 관리
-        </Typography>
-      </Navbar>
+    <div className="page page-admin">
+      <div className="container page-shell">
+        <div className="m-4 pt-12 page-content">
+          <div className="page-hero">
+            <Navbar>
+              <Typography variant="h2" className="mt-4">
+                사용자 관리
+              </Typography>
+            </Navbar>
+          </div>
 
-      <AddUserDialog />
-      <UsersTable />
-    </>
+          <AddUserDialog />
+          <UsersTable />
+        </div>
+      </div>
+    </div>
   )
 }
 

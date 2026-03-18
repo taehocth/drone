@@ -8,11 +8,15 @@ function UAVStatus() {
   const params = Route.useParams() as { uav?: string }
 
   return (
-    <div className="w-full">
-      <div>
-        <Link to="/">go back</Link>
+    <div className="page page-uav">
+      <div className="container page-shell">
+        <div className="m-4 pt-12 page-content">
+          <div className="page-hero">
+            <Link to="/">go back</Link>
+          </div>
+          {params.uav}
+        </div>
       </div>
-      {params.uav}
     </div>
   )
 }

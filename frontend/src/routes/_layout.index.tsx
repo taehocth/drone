@@ -12,13 +12,17 @@ export const Route = createFileRoute("/_layout/")({
 
 function Dashboard() {
   return (
-    <div className="container">
-      <div className="m-4 pt-12">
-        <PageTitle>대시보드</PageTitle>
-        <Typography variant="h4">실시간 비행 상태</Typography>
-        <UavDashboard />
-        <Separator />
-        <div className="flex h-[40vh] w-full items-center justify-center"></div>
+    <div className="page page-dashboard">
+      <div className="container page-shell">
+        <div className="m-4 pt-12 page-content">
+          <div className="page-hero">
+            <PageTitle>대시보드</PageTitle>
+            <Typography variant="h4">실시간 비행 상태</Typography>
+          </div>
+          <UavDashboard />
+          <Separator />
+          <div className="flex h-[40vh] w-full items-center justify-center"></div>
+        </div>
       </div>
     </div>
   )

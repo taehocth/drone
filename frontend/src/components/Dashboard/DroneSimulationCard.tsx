@@ -74,8 +74,8 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
       : "대기 중"
 
   return (
-    <Card className="mx-auto w-full max-w-none rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.4)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
-      <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60">
+    <Card className="mx-auto w-full max-w-none rounded-3xl border border-transparent bg-transparent shadow-none ring-0">
+      <CardHeader className="flex flex-row items-center justify-between border-b border-transparent">
         <CardTitle className="flex items-center gap-2">
           <Gauge className="h-5 w-5 text-blue-500" />
           드론 상태
@@ -115,7 +115,7 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
         <Row label="고도" value={v(data.altitude, " m")} />
         <Row label="속도" value={v(data.speed, " m/s")} />
 
-        <div className="flex justify-between rounded-xl border border-slate-200/60 bg-slate-50/80 px-3 py-2 dark:border-slate-700/60 dark:bg-slate-800/60">
+        <div className="flex justify-between rounded-xl border border-slate-200/40 bg-transparent px-3 py-2 dark:border-slate-700/40">
           <span>배터리</span>
           <span className="flex items-center gap-1">
             <Battery className="h-4 w-4" />
@@ -171,7 +171,7 @@ function Row({
 }) {
   return (
     <div
-      className={`flex justify-between rounded-xl border border-slate-200/60 bg-slate-50/80 px-3 py-2 dark:border-slate-700/60 dark:bg-slate-800/60 ${className ?? ""}`}
+      className={`flex justify-between rounded-xl border border-slate-200/40 bg-transparent px-3 py-2 dark:border-slate-700/40 ${className ?? ""}`}
     >
       <span>{label}</span>
       <span>{value}</span>
