@@ -1,3 +1,4 @@
+import os
 import time
 import threading
 import math
@@ -12,7 +13,7 @@ from serial.tools import list_ports
 # CONFIG
 # =====================================================
 
-SERVER_BASE_URL = "https://hanuldrone.duckdns.org"
+SERVER_BASE_URL = os.getenv("SERVER_BASE_URL", "https://hanuldrone.duckdns.org")
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 
 BAUD_RATES = [57600, 115200, 921600]
@@ -21,10 +22,15 @@ STALE_WARN_SEC = 3.0
 HTTP_TIMEOUT_SEC = 5.0
 VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 
+# ✅ 기체 식별용
+DRONE_ID = os.getenv("DRONE_ID", "drone-001")
+LTE_IP = os.getenv("LTE_IP", "")  # 예: 10.0.0.21 / 공인IP / 사설IP 등
+VEHICLE_NAME = os.getenv("VEHICLE_NAME", DRONE_ID)
+
 # ✅ 포트 우선순위/필터
-PREFERRED_PORTS = ["COM6"]  # 필요하면 ["COM6","COM7"] 처럼 추가 가능
-EXCLUDE_IF_DESC_CONTAINS = ["bluetooth"]  # description에 포함되면 제외 (case-insensitive)
-USB_HINTS = ["usb", "serial", "stm", "px4", "cube", "fmu"]  # description에 있으면 우선
+PREFERRED_PORTS = [p.strip() for p in os.getenv("PREFERRED_PORTS", "COM6").split(",") if p.strip()]
+EXCLUDE_IF_DESC_CONTAINS = ["bluetooth"]
+USB_HINTS = ["usb", "serial", "stm", "px4", "cube", "fmu"]
 
 
 # =====================================================
@@ -58,9 +64,6 @@ def fmt_num(v, unit: str = "") -> str:
 
 
 def scan_serial_ports_detailed() -> List[Tuple[str, str]]:
-    """
-    Returns list of (device, description)
-    """
     out: List[Tuple[str, str]] = []
     for p in list_ports.comports():
         dev = getattr(p, "device", None) or ""
@@ -81,24 +84,19 @@ def should_exclude_port(device: str, desc: str) -> bool:
 
 
 def port_score(device: str, desc: str) -> int:
-    """
-    Higher score = tried earlier (after preferred ports)
-    """
     s = (desc or "").lower()
     d = (device or "").lower()
 
     score = 0
-    # USB/Serial 힌트
+
     for h in USB_HINTS:
         if h and (h in s or h in d):
             score += 10
 
-    # COM 숫자가 클수록 가끔 USB 쪽인 경우가 있어 약간 가산(취향)
-    # (원치 않으면 삭제해도 됨)
     if d.startswith("com"):
         try:
             n = int(d.replace("com", "").strip())
-            score += min(n, 20) // 5  # 최대 +4 정도
+            score += min(n, 20) // 5
         except Exception:
             pass
 
@@ -106,22 +104,15 @@ def port_score(device: str, desc: str) -> int:
 
 
 def build_try_port_list() -> List[str]:
-    """
-    1) Preferred ports (exists) first
-    2) Non-excluded ports sorted by score desc
-    """
     detailed = scan_serial_ports_detailed()
     if not detailed:
         return []
 
-    # exclude bluetooth etc.
     filtered = [(dev, desc) for (dev, desc) in detailed if not should_exclude_port(dev, desc)]
 
-    # preferred first (only if present)
     present = {dev for (dev, _) in filtered}
     preferred = [p for p in PREFERRED_PORTS if p in present]
 
-    # remaining ports sorted by heuristic score
     remaining = [(dev, desc) for (dev, desc) in filtered if dev not in preferred]
     remaining_sorted = sorted(remaining, key=lambda x: port_score(x[0], x[1]), reverse=True)
 
@@ -137,6 +128,8 @@ class TelemetryAgent:
     def __init__(self):
         self.mav: Optional[mavutil.mavfile] = None
         self.sysid: Optional[int] = None
+        self.connected_port: Optional[str] = None
+        self.connected_baud: Optional[int] = None
         self.running = True
 
         self._cache: Dict[str, Any] = {
@@ -161,7 +154,7 @@ class TelemetryAgent:
         self._session = requests.Session()
 
     # -------------------------------------------------
-    # Connect to telemetry (COM6 우선 + Bluetooth 제외)
+    # Connect to telemetry
     # -------------------------------------------------
     def connect_any(self) -> bool:
         print("[Agent] Scanning serial ports...")
@@ -179,11 +172,8 @@ class TelemetryAgent:
                     print(f"[Agent] Trying {port} @ {baud}")
 
                     mav = mavutil.mavlink_connection(port, baud=baud)
-
-                    # ✅ heartbeat 확인 (여기서 걸리면 '진짜 MAVLink'임)
                     mav.wait_heartbeat(timeout=5)
 
-                    # ✅ sysid 확정
                     hb = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
                     sysid = None
                     if hb is not None:
@@ -192,12 +182,13 @@ class TelemetryAgent:
                         except Exception:
                             sysid = None
 
-                    # fallback
                     if sysid is None:
                         sysid = getattr(mav, "target_system", None)
 
                     self.mav = mav
                     self.sysid = sysid
+                    self.connected_port = port
+                    self.connected_baud = baud
 
                     with self._lock:
                         self._cache["sysid"] = self.sysid
@@ -206,10 +197,11 @@ class TelemetryAgent:
                     print(f"[Agent]  Port : {port}")
                     print(f"[Agent]  Baud : {baud}")
                     print(f"[Agent]  SYSID: {self.sysid}")
+                    print(f"[Agent]  DRONE_ID: {DRONE_ID}")
+                    print(f"[Agent]  LTE_IP: {LTE_IP or '(empty)'}")
                     return True
 
                 except Exception:
-                    # 실패하면 다음 baud/포트 시도
                     continue
 
         print("[Agent] Failed to connect to any telemetry")
@@ -235,7 +227,6 @@ class TelemetryAgent:
         ts = now_ts()
 
         with self._lock:
-            # sysid 유지/갱신
             try:
                 self._cache["sysid"] = msg.get_srcSystem()
             except Exception:
@@ -268,18 +259,15 @@ class TelemetryAgent:
                 return
 
             if t == "GLOBAL_POSITION_INT":
-                # ✅ 화면에 쓸 실제 고도는 relative_alt만 사용
-                # - relative_alt: 홈포인트 기준 상대고도 (mm → m)
-                # - alt: AMSL 절대고도 (mm → m), 디버깅용으로만 별도 저장
                 relative_alt_m = (float(msg.relative_alt) / 1000.0) if msg.relative_alt is not None else None
                 amsl_alt_m = (float(msg.alt) / 1000.0) if msg.alt is not None else None
 
                 self._cache["position"] = {
                     "lat": (float(msg.lat) / 1e7) if msg.lat is not None else None,
                     "lon": (float(msg.lon) / 1e7) if msg.lon is not None else None,
-                    "alt": relative_alt_m,          # ✅ UI/서버 기본 고도
-                    "relative_alt": relative_alt_m, # ✅ 명시적 보관
-                    "amsl_alt": amsl_alt_m,         # ✅ 디버깅용
+                    "alt": relative_alt_m,
+                    "relative_alt": relative_alt_m,
+                    "amsl_alt": amsl_alt_m,
                 }
                 self._last_update["position"] = ts
                 return
@@ -294,10 +282,6 @@ class TelemetryAgent:
                 return
 
             if t == "VFR_HUD":
-                # ✅ 주의:
-                # 이전에는 여기서 self._cache["position"]["alt"] = float(msg.alt) 로
-                # relative_alt 기반 고도를 덮어써서 고도 튐 현상이 생길 수 있었음.
-                # 이제는 덮어쓰지 않고, 디버깅용 보조값으로만 저장함.
                 if self._cache.get("position") is None:
                     self._cache["position"] = {
                         "lat": None,
@@ -309,7 +293,7 @@ class TelemetryAgent:
 
                 if getattr(msg, "alt", None) is not None:
                     try:
-                        self._cache["position"]["vfr_alt"] = float(msg.alt)  # 디버깅용
+                        self._cache["position"]["vfr_alt"] = float(msg.alt)
                     except Exception:
                         pass
 
@@ -350,7 +334,14 @@ class TelemetryAgent:
                     speed_m_s = abs(vx)
 
             snap = {
+                "drone_id": DRONE_ID,
+                "vehicle_name": VEHICLE_NAME,
+                "lte_ip": LTE_IP or None,
                 "sysid": self._cache.get("sysid"),
+                "source": {
+                    "port": self.connected_port,
+                    "baud": self.connected_baud,
+                },
                 "attitude": self._cache.get("attitude"),
                 "position": pos,
                 "velocity": vel,
@@ -398,7 +389,9 @@ class TelemetryAgent:
                     vfr_alt_str = fmt_num(pos.get("vfr_alt"), "m")
 
                     print(
-                        f"[Agent] PUSH sysid={snap.get('sysid')} status={res.status_code} "
+                        f"[Agent] PUSH drone_id={snap.get('drone_id')} "
+                        f"lte_ip={snap.get('lte_ip')} "
+                        f"sysid={snap.get('sysid')} status={res.status_code} "
                         f"(age attitude={fmt_age(age.get('attitude'))} "
                         f"pos={fmt_age(age.get('position'))} "
                         f"vel={fmt_age(age.get('velocity'))} "

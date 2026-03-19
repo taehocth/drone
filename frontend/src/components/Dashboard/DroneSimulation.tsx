@@ -1,5 +1,3 @@
-// frontend/src/components/Dashboard/DroneSimulation.tsx
-
 import React, { useState, useRef, useEffect } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
@@ -26,6 +24,10 @@ export interface DroneData {
 
   timestamp?: string
   sysid?: number
+
+  droneId?: string
+  lteIp?: string
+  online?: boolean
 }
 
 /* =========================
@@ -120,26 +122,44 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
+  // ✅ 연결 대상 입력값
+  const [droneIdInput, setDroneIdInput] = useState("")
+  const [lteIpInput, setLteIpInput] = useState("")
+
+  // ✅ 현재 실제 연결에 사용 중인 값
+  const [activeDroneId, setActiveDroneId] = useState("")
+  const [activeLteIp, setActiveLteIp] = useState("")
+
   const wsRef = useRef<WebSocket | null>(null)
 
   // WS 수신 즉시 반영(리렌더 X): targetRef
   const targetRef = useRef<DroneData | null>(null)
 
-  // 부드러운 화면용 스무딩 값(계산용) — speed는 여기서 스무딩하지 않음
+  // 부드러운 화면용 스무딩 값(계산용)
   const smoothRef = useRef<DroneData>({})
 
   // 스무딩 dt 계산용
   const lastTsRef = useRef<number>(performance.now())
 
-  // "마지막 수신 시각" (UI 신뢰도/지연 체감 개선에 사용)
+  // 마지막 수신 시각
   const lastRxAtRef = useRef<number>(0)
 
-  // 콘솔 delay 로그 샘플링(DevTools 오버헤드 줄이기)
+  // 콘솔 delay 로그 샘플링
   const lastDelayLogAtRef = useRef<number>(0)
 
-  // delay 계산 보정용 (client clock skew 대응)
+  // delay 계산 보정용
   const delayBaseRef = useRef<number | null>(null)
   const delayBaseUpdatedAtRef = useRef<number>(0)
+
+  const resetConnectionState = () => {
+    setConnected(false)
+    setRenderData({})
+    targetRef.current = null
+    smoothRef.current = {}
+    lastRxAtRef.current = 0
+    delayBaseRef.current = null
+    delayBaseUpdatedAtRef.current = 0
+  }
 
   /* =========================
    * Connect / Disconnect
@@ -147,6 +167,14 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
   const connect = () => {
     if (wsRef.current) return
+
+    const droneId = droneIdInput.trim()
+    const lteIp = lteIpInput.trim()
+
+    if (!droneId && !lteIp) {
+      console.error("❌ drone_id 또는 lte_ip 중 하나는 입력해야 함")
+      return
+    }
 
     const TELEMETRY_WS_BASE = getTelemetryEnvBase()
     if (!TELEMETRY_WS_BASE) {
@@ -165,12 +193,23 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       return
     }
 
-    const ws = new WebSocket(wsUrl)
+    const url = new URL(wsUrl)
+
+    if (droneId) {
+      url.searchParams.set("drone_id", droneId)
+    } else if (lteIp) {
+      url.searchParams.set("lte_ip", lteIp)
+    }
+
+    const finalWsUrl = url.toString()
+    const ws = new WebSocket(finalWsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {
       setConnected(true)
-      console.log("✅ Telemetry WS connected:", wsUrl)
+      setActiveDroneId(droneId)
+      setActiveLteIp(lteIp)
+      console.log("✅ Telemetry WS connected:", finalWsUrl)
     }
 
     ws.onmessage = (event) => {
@@ -181,10 +220,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         return
       }
 
+      if (msg?.ok === false) {
+        console.error("❌ WS server error:", msg)
+        return
+      }
+
       if (typeof msg.sysid !== "number") return
 
-      // ✅ 속력: 서버가 계산한 speed_m_s 우선 사용, 없으면 vx/vy로 fallback
-      // → 이중 계산 제거, 소스 통일로 값 불일치 방지
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
       const speed: number | undefined =
@@ -194,10 +236,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             ? Math.sqrt(vx * vx + vy * vy)
             : undefined
 
-      // 수신 시각 기록
       lastRxAtRef.current = performance.now()
 
-      // server_ts 기반 delay 로그 (1초에 1번만)
       if (msg.server_ts) {
         const nowPerf = performance.now()
         if (nowPerf - lastDelayLogAtRef.current >= 1000) {
@@ -207,7 +247,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           if (!Number.isFinite(serverMs)) return
 
           const raw = Date.now() - serverMs
-
           const BASE_RECALIBRATE_MS = 30_000
           const nowWall = Date.now()
 
@@ -222,7 +261,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         }
       }
 
-      // ALT JUMP DEBUG LOG (5m 이상 점프)
       const alt = msg.position?.alt
       const lastAlt = targetRef.current?.altitude
 
@@ -230,6 +268,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         const jump = alt - lastAlt
         if (Math.abs(jump) >= 5) {
           console.warn("⚠️ ALT JUMP", {
+            droneId: msg.drone_id,
+            lteIp: msg.lte_ip,
             sysid: msg.sysid,
             alt,
             lastAlt,
@@ -237,17 +277,19 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             gpsFixType: msg.gps?.fix_type,
             gpsSatellites: msg.gps?.satellites,
             rawAlt: msg.position?.alt,
-            relAlt: msg.position?.rel_alt,
+            relAlt: msg.position?.relative_alt,
             amslAlt: msg.position?.amsl_alt,
-            baroAlt: msg.baro?.alt,
-            source: msg.position?.source,
+            source: msg.source,
             server_ts: msg.server_ts,
           })
         }
       }
 
-      // ref만 갱신 (리렌더는 setInterval에서 담당)
       targetRef.current = {
+        droneId: msg.drone_id,
+        lteIp: msg.lte_ip,
+        online: typeof msg.online === "boolean" ? msg.online : undefined,
+
         sysid: msg.sysid,
         altitude: msg.position?.alt,
         latitude: msg.position?.lat,
@@ -264,7 +306,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         pitch: radToDeg(msg.attitude?.pitch),
         yaw: radToDeg(msg.attitude?.yaw),
 
-        // ✅ 스무딩 없이 수신값 그대로 저장 (RAF에서 스무딩 적용 안 함)
         speed,
         timestamp: msg.server_ts,
       }
@@ -272,7 +313,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
     ws.onerror = () => {
       console.error("❌ Telemetry WS error", {
-        url: wsUrl,
+        url: finalWsUrl,
         readyState: ws.readyState,
       })
     }
@@ -281,31 +322,23 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       console.warn(
         `🔌 Telemetry WS disconnected (code=${event.code}, reason=${event.reason || "no reason"})`,
       )
-      setConnected(false)
       wsRef.current = null
-      targetRef.current = null
-      smoothRef.current = {}
-      lastRxAtRef.current = 0
-      delayBaseRef.current = null
-      delayBaseUpdatedAtRef.current = 0
+      setActiveDroneId("")
+      setActiveLteIp("")
+      resetConnectionState()
     }
   }
 
   const disconnect = () => {
     wsRef.current?.close()
     wsRef.current = null
-    setConnected(false)
-    targetRef.current = null
-    smoothRef.current = {}
-    lastRxAtRef.current = 0
-    delayBaseRef.current = null
-    delayBaseUpdatedAtRef.current = 0
+    setActiveDroneId("")
+    setActiveLteIp("")
+    resetConnectionState()
   }
 
   /* =========================
    * RAF Loop (Smoothing)
-   *  - altitude, roll, pitch, yaw만 스무딩
-   *  - speed는 스무딩 없이 수신값 즉시 반영 (딜레이 제거)
    * ========================= */
 
   useEffect(() => {
@@ -329,8 +362,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               ? lerp(prev.altitude, target.altitude, alpha)
               : target.altitude,
 
-          // ✅ speed: 스무딩 제거 — target 값 즉시 반영
-          // lerp를 적용하면 약 300ms 지연이 생기므로 제거
           speed: target.speed,
 
           roll:
@@ -358,8 +389,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   }, [])
 
   /* =========================
-   * UI Snapshot (throttled at 20Hz)
-   *  - setState를 50ms 간격으로 제한
+   * UI Snapshot
    * ========================= */
 
   useEffect(() => {
@@ -389,14 +419,17 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
   useEffect(() => {
     if (!onData) return
+
     if (!connected) {
       onData(null)
       return
     }
+
     if (!renderData || Object.keys(renderData).length === 0) {
       onData(null)
       return
     }
+
     onData(renderData)
   }, [connected, renderData, onData])
 
@@ -406,6 +439,80 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            기체 연결 대상 선택
+          </h3>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            drone_id 또는 LTE IP 중 하나를 입력한 뒤 연결하세요.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+              Drone ID
+            </label>
+            <input
+              type="text"
+              value={droneIdInput}
+              onChange={(e) => setDroneIdInput(e.target.value)}
+              placeholder="예: drone-001"
+              disabled={connected}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+              LTE IP
+            </label>
+            <input
+              type="text"
+              value={lteIpInput}
+              onChange={(e) => setLteIpInput(e.target.value)}
+              placeholder="예: 10.0.0.21"
+              disabled={connected}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={connect}
+            disabled={connected}
+            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+          >
+            연결
+          </button>
+
+          <button
+            type="button"
+            onClick={disconnect}
+            disabled={!connected}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            연결 해제
+          </button>
+
+          <div className="ml-auto text-xs text-slate-500 dark:text-slate-400">
+            {connected ? (
+              <span>
+                연결 중:
+                {activeDroneId ? ` drone_id=${activeDroneId}` : ""}
+                {activeDroneId && activeLteIp ? " / " : ""}
+                {activeLteIp ? ` lte_ip=${activeLteIp}` : ""}
+              </span>
+            ) : (
+              <span>현재 연결 안 됨</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       <DroneSimulationCard
         data={renderData}
         connected={connected}
