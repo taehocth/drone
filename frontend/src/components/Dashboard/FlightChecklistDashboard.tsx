@@ -35,7 +35,6 @@ import {
   BarChart3,
   Check,
   CheckCircle,
-  CheckSquare,
   ChevronDown,
   ChevronRight,
   Download,
@@ -46,7 +45,6 @@ import {
   Save,
   Settings,
   Shield,
-  Square,
   Target,
   Trash2,
   ListChecks,
@@ -500,15 +498,36 @@ export function FlightChecklistDashboard() {
     }
   }
 
-  const handleDeleteItem = async (manualId: string, itemId: string) => {
+  const handleDeleteCategory = async (
+    manualId: string,
+    category: string,
+    items: ChecklistItem[],
+  ) => {
+    const confirmed = confirm(
+      `'${category}' 카테고리의 모든 항목을 삭제할까요?`,
+    )
+    if (!confirmed) return
+
+    setItemsByManual((prev) => ({
+      ...prev,
+      [manualId]: (prev[manualId] || []).filter(
+        (item) => normalizeCategory(item.category || "기타") !== category,
+      ),
+    }))
+
     try {
-      await deleteChecklistItem(manualId, itemId)
+      await Promise.all(
+        items.map((item) => {
+          if (item.id) {
+            return deleteChecklistItem(manualId, item.id)
+          }
+          return Promise.resolve()
+        }),
+      )
     } catch (e) {
-      console.error("deleteChecklistItem error", e)
+      console.error("deleteCategory error", e)
     }
   }
-
-  const handleSaveChecklist = () => setIsSaveDialogOpen(true)
 
   const confirmSaveChecklist = () => {
     const timestamp = new Date().toLocaleString("ko-KR")
@@ -1023,6 +1042,23 @@ export function FlightChecklistDashboard() {
                                 {catStatus.isAllCompleted
                                   ? "전체 해제"
                                   : "전체 선택"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleDeleteCategory(
+                                    meta.id,
+                                    category,
+                                    catItems,
+                                  )
+                                }}
+                                className="flex h-7 items-center gap-1 px-2 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30"
+                                title="카테고리 삭제"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                삭제
                               </Button>
                               {catStatus.isAllCompleted && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
