@@ -69,7 +69,9 @@ class VehicleRegistry:
         age = (now - last_seen).total_seconds()
         return age <= OFFLINE_THRESHOLD_SEC
 
-    def latest_flattened_by_drone_id(self, drone_id: str) -> Optional[Dict[str, Any]]:
+    def latest_flattened_by_drone_id(
+        self, drone_id: str
+    ) -> Optional[Dict[str, Any]]:
         with self._lock:
             item = self._vehicles_by_drone_id.get(drone_id)
             if not item:
@@ -161,3 +163,18 @@ def get_vehicle_registry() -> VehicleRegistry:
     if _registry is None:
         _registry = VehicleRegistry()
     return _registry
+
+
+def start_mavlink_background() -> None:
+    """
+    app.main 호환용 함수.
+
+    기존 프로젝트에서는 app.main 에서
+    start_mavlink_background 를 import 하고 있을 수 있음.
+    현재 구조에서는 외부 telemetry_agent 가
+    /api/v1/qgc/telemetry/push 로 데이터를 밀어주므로,
+    서버 내부에서 별도 MAVLink 수집 스레드를 시작하지 않아도 됨.
+
+    따라서 여기서는 import 에러 방지용 no-op 으로 둔다.
+    """
+    return None
