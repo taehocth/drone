@@ -498,34 +498,19 @@ export function FlightChecklistDashboard() {
     }
   }
 
-  const handleDeleteCategory = async (
-    manualId: string,
-    category: string,
-    items: ChecklistItem[],
-  ) => {
-    const confirmed = confirm(
-      `'${category}' 카테고리의 모든 항목을 삭제할까요?`,
-    )
+  const handleDeleteItem = async (manualId: string, itemId: string) => {
+    const confirmed = confirm("이 항목을 삭제할까요?")
     if (!confirmed) return
 
     setItemsByManual((prev) => ({
       ...prev,
-      [manualId]: (prev[manualId] || []).filter(
-        (item) => normalizeCategory(item.category || "기타") !== category,
-      ),
+      [manualId]: (prev[manualId] || []).filter((item) => item.id !== itemId),
     }))
 
     try {
-      await Promise.all(
-        items.map((item) => {
-          if (item.id) {
-            return deleteChecklistItem(manualId, item.id)
-          }
-          return Promise.resolve()
-        }),
-      )
+      await deleteChecklistItem(manualId, itemId)
     } catch (e) {
-      console.error("deleteCategory error", e)
+      console.error("deleteChecklistItem error", e)
     }
   }
 
@@ -1043,23 +1028,6 @@ export function FlightChecklistDashboard() {
                                   ? "전체 해제"
                                   : "전체 선택"}
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDeleteCategory(
-                                    meta.id,
-                                    category,
-                                    catItems,
-                                  )
-                                }}
-                                className="flex h-7 items-center gap-1 px-2 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30"
-                                title="카테고리 삭제"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                삭제
-                              </Button>
                               {catStatus.isAllCompleted && (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               )}
@@ -1153,6 +1121,20 @@ export function FlightChecklistDashboard() {
                                           </p>
                                         )}
                                       </div>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (item.id) {
+                                            handleDeleteItem(meta.id, item.id)
+                                          }
+                                        }}
+                                        className="rounded-full p-1 text-gray-400 transition hover:bg-gray-100 hover:text-red-600 dark:hover:bg-gray-800"
+                                        title="항목 삭제"
+                                        aria-label="항목 삭제"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
                                     </div>
                                   )
                                 })
