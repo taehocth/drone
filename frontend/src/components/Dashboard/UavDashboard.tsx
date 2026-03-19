@@ -38,6 +38,59 @@ const HelpHint = ({ text }: { text: string }) => (
   </button>
 )
 
+const formatLastUpdate = (timestamp?: string | number | null) => {
+  if (!timestamp) return "-"
+  const ms =
+    typeof timestamp === "number" ? timestamp : new Date(timestamp).getTime()
+  if (Number.isNaN(ms)) return "-"
+  const diffSec = Math.max(0, Math.floor((Date.now() - ms) / 1000))
+  if (diffSec < 5) return "방금"
+  if (diffSec < 60) return `${diffSec}초 전`
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin}분 전`
+  const diffHr = Math.floor(diffMin / 60)
+  return `${diffHr}시간 전`
+}
+
+const getNextAction = ({
+  droneConnected,
+  droneData,
+  alertLevel,
+}: {
+  droneConnected: boolean
+  droneData: DroneData | null
+  alertLevel: "safe" | "caution" | "danger"
+}) => {
+  if (!droneConnected) {
+    return {
+      tone: "text-amber-700 dark:text-amber-300",
+      label: "다음 단계: 드론 연결을 먼저 완료하세요.",
+    }
+  }
+  if (!droneData) {
+    return {
+      tone: "text-amber-700 dark:text-amber-300",
+      label: "다음 단계: 데이터 수신을 기다리는 중입니다.",
+    }
+  }
+  if (alertLevel === "danger") {
+    return {
+      tone: "text-red-700 dark:text-red-300",
+      label: "주의: 위험 경고가 있습니다. 임계값 알림 상세를 확인하세요.",
+    }
+  }
+  if (alertLevel === "caution") {
+    return {
+      tone: "text-amber-700 dark:text-amber-300",
+      label: "확인: 주의 항목이 있습니다. 알림 카드에서 원인을 확인하세요.",
+    }
+  }
+  return {
+    tone: "text-emerald-700 dark:text-emerald-300",
+    label: "정상: 현재 주요 지표가 안정적입니다.",
+  }
+}
+
 // ==========================
 // UAV Dashboard Component
 // ==========================
@@ -180,6 +233,9 @@ export function UavDashboard() {
         ? "bg-amber-500/10 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
         : "bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
 
+  const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
+  const nextAction = getNextAction({ droneConnected, droneData, alertLevel })
+
   return (
     <div className="relative min-h-screen overflow-x-hidden scroll-smooth p-4 text-slate-900 md:p-6 dark:text-slate-100">
       <div className="mx-auto max-w-7xl space-y-10 lg:space-y-12">
@@ -229,31 +285,57 @@ export function UavDashboard() {
         </div>
 
         {/* 운영 상태 요약 */}
-        {/* <div className="sticky top-4 z-20 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/60 bg-white/85 px-5 py-3 text-sm text-slate-600 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.35)] backdrop-blur-md ring-1 ring-white/70 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-800/70">
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              운영 상태
-            </span>
-            <span>비행 모드: {droneData ? "AUTO" : "-"}</span>
-            <span>위성: {droneData ? "12" : "-"}</span>
-            <span>링크 품질: {droneConnected ? "양호" : "-"}</span>
-            <span>마지막 업데이트: {droneData ? "방금" : "-"}</span>
+        <div className="sticky top-4 z-20 space-y-2 rounded-2xl border border-slate-200/60 bg-white/85 px-5 py-3 text-sm text-slate-600 shadow-[0_16px_40px_-30px_rgba(15,23,42,0.35)] ring-1 ring-white/70 backdrop-blur-md transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900/80 dark:text-slate-300 dark:ring-slate-800/70">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                운영 상태
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">연결</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${connectionTone}`}
+                >
+                  {connectionLabel}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">
+                  마지막 업데이트
+                </span>
+                <span className="font-semibold text-slate-700 dark:text-slate-200">
+                  {lastUpdateLabel}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="text-slate-500 dark:text-slate-400">알림</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowAlertDetails((prev) =>
+                      alerts.length ? !prev : prev,
+                    )
+                  }
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
+                  aria-expanded={showAlertDetails}
+                  aria-label="알림 상세 보기"
+                  disabled={!alerts.length}
+                >
+                  {alerts.length ? `${alerts.length}건` : "없음"}
+                </button>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <HelpHint text="초보자용 요약입니다. 연결/업데이트/알림을 먼저 확인하고, 아래 카드로 세부를 점검하세요." />
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-            <span>알림</span>
-            <button
-              type="button"
-              onClick={() =>
-                setShowAlertDetails((prev) => (alerts.length ? !prev : prev))
-              }
-              className={`rounded-full px-3 py-1 transition ${alertTone} ${alerts.length ? "hover:opacity-80" : ""}`}
-              aria-expanded={showAlertDetails}
-              aria-label="알림 상세 보기"
-            >
-              {alerts.length ? `${alerts.length}건 감지` : "이상 없음"}
-            </button>
+          <div
+            className={`text-xs font-semibold ${nextAction.tone} md:text-sm`}
+            aria-live="polite"
+          >
+            {nextAction.label}
           </div>
-        </div> */}
+        </div>
 
         {/* 드론 위치 */}
         <Card className="relative gap-0 overflow-hidden rounded-[30px] border-transparent bg-transparent shadow-none ring-0 transition-all duration-300">
@@ -313,7 +395,7 @@ export function UavDashboard() {
             </div>
             <div className="relative rounded-[28px] border border-slate-200/60 bg-white p-4 shadow-sm ring-1 ring-white/70 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900 dark:ring-slate-800/70">
               <div className="absolute right-4 top-4">
-                <HelpHint text="기체의 자세, 속도, 배터리, 위치가 실시간으로 표시됩니다. 연결되면 자동 업데이트됩니다." />
+                <HelpHint text="기체의 자세, 속도, 배터리, 위치가 실시간으로 표시됩니다." />
               </div>
               <DroneSimulation
                 onConnectionChange={setDroneConnected}
@@ -321,10 +403,38 @@ export function UavDashboard() {
               />
             </div>
 
+            {!droneConnected && (
+              <div className="rounded-[28px] border border-amber-200/60 bg-amber-50/70 p-4 text-sm text-amber-900 shadow-sm ring-1 ring-white/70 dark:border-amber-900/40 dark:bg-amber-900/15 dark:text-amber-100 dark:ring-slate-800/70">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-2xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
+                    <AlertTriangle className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-semibold">
+                      연결이 안 될 때 이렇게 해보세요
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-900/90 dark:text-amber-100/90">
+                      <li>
+                        드론 전원 및 통신 모듈(LTE/RFD) 상태를 확인합니다.
+                      </li>
+                      <li>
+                        지상국(GCS)와 동일 네트워크/포트를 사용하는지
+                        확인합니다.
+                      </li>
+                      <li>
+                        연결 후에도 값이 안 보이면 “마지막 업데이트”가
+                        갱신되는지 확인합니다.
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 실시간 비행 모니터링 임계값 알림 */}
             <div className="relative rounded-[28px] border border-slate-200/60 bg-white p-4 shadow-sm ring-1 ring-white/70 transition-all duration-300 dark:border-slate-800/60 dark:bg-slate-900 dark:ring-slate-800/70">
               <div className="absolute right-4 top-4">
-                <HelpHint text="배터리/고도/속도/GPS/지연 상태를 기준으로 경고가 표시됩니다. 필요 시 우측 버튼으로 상세를 확인하세요." />
+                <HelpHint text="배터리/고도/속도/GPS/지연 상태를 기준으로 경고가 표시됩니다." />
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
