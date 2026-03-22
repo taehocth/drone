@@ -227,7 +227,15 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       }
 
       if (msg?.ok === false) {
-        console.error("❌ WS server error:", msg)
+        if (msg?.error === "no_data") {
+          // 해당 기체 데이터 없음 → 화면 초기화
+          // (기존: last_payload 캐시로 이전 기체 데이터가 계속 표시되던 문제 해결)
+          targetRef.current = null
+          smoothRef.current = {}
+          setRenderData({})
+        } else {
+          console.error("WS server error:", msg)
+        }
         return
       }
 

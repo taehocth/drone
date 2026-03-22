@@ -55,12 +55,10 @@ async def qgc_ws(websocket: WebSocket):
     await websocket.accept()
 
     registry = get_vehicle_registry()
-    last_payload = None
 
     drone_id = websocket.query_params.get("drone_id")
     lte_ip = websocket.query_params.get("lte_ip")
 
-    # 최소 하나는 있어야 특정 기체 구독 가능
     if not drone_id and not lte_ip:
         await websocket.send_json({
             "ok": False,
@@ -71,6 +69,7 @@ async def qgc_ws(websocket: WebSocket):
 
     try:
         while True:
+            # 매 루프마다 registry에서 새로 조회 (캐시 없음)
             payload = None
 
             if drone_id:
@@ -79,14 +78,23 @@ async def qgc_ws(websocket: WebSocket):
                 payload = registry.latest_flattened_by_lte_ip(lte_ip)
 
             if payload:
-                last_payload = payload
-
-            if last_payload:
-                out = dict(last_payload)
+                # 데이터가 있으면 정상 전송
+                out = dict(payload)
                 out["server_ts"] = datetime.now(
                     timezone(timedelta(hours=9))
                 ).isoformat()
                 await websocket.send_json(out)
+            else:
+                # [변경] 데이터 없음 → 명확하게 빈 신호 전송
+                # 기존: last_payload 캐시를 계속 보냄 → 다른 기체 선택해도 이전 데이터 표시
+                # 변경: 해당 lte_ip/drone_id 기체 데이터가 없으면 ok=False 신호 전송
+                #        프론트엔드에서 이 신호를 받으면 "데이터 없음" 상태로 처리
+                await websocket.send_json({
+                    "ok": False,
+                    "error": "no_data",
+                    "lte_ip": lte_ip,
+                    "drone_id": drone_id,
+                })
 
             await asyncio.sleep(0.1)
 
