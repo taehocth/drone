@@ -35,25 +35,36 @@ export const DroneSimulationCard = memo(function DroneSimulationCard({
   const lastMapEmitRef = useRef(0)
 
   useEffect(() => {
-    const now = performance.now()
-    if (now - lastMapEmitRef.current < 200) return // 🔥 5Hz 제한
-    lastMapEmitRef.current = now
-
+    // [변경] connected=false 또는 데이터 없음 → 지도 마커 숨김 신호 전송
+    // 기존: latitude/longitude 없으면 아무것도 안 해서 이전 기체 위치가 지도에 남음
     if (
-      typeof data.latitude === "number" &&
-      typeof data.longitude === "number"
+      !connected ||
+      typeof data.latitude !== "number" ||
+      typeof data.longitude !== "number"
     ) {
       window.dispatchEvent(
         new CustomEvent("dronePositionUpdate", {
-          detail: {
-            lat: data.latitude,
-            lng: data.longitude,
-            yaw: data.yawInt ?? 0, // 🔥 정수 yaw
-          },
+          detail: { hidden: true },
         }),
       )
+      return
     }
-  }, [data.latitude, data.longitude, data.yawInt])
+
+    const now = performance.now()
+    if (now - lastMapEmitRef.current < 200) return // 5Hz 제한
+    lastMapEmitRef.current = now
+
+    window.dispatchEvent(
+      new CustomEvent("dronePositionUpdate", {
+        detail: {
+          lat: data.latitude,
+          lng: data.longitude,
+          yaw: data.yawInt ?? 0,
+          hidden: false,
+        },
+      }),
+    )
+  }, [connected, data.latitude, data.longitude, data.yawInt])
 
   useEffect(() => {
     if (!connected) setUiConnecting(false)
