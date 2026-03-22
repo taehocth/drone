@@ -2,11 +2,10 @@ import os
 import time
 import threading
 import math
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any
 
 import requests
 from pymavlink import mavutil
-from serial.tools import list_ports
 
 
 # =====================================================
@@ -16,21 +15,43 @@ from serial.tools import list_ports
 SERVER_BASE_URL = os.getenv("SERVER_BASE_URL", "https://hanuldrone.duckdns.org")
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 
-BAUD_RATES = [57600, 115200, 921600]
 PUSH_INTERVAL_SEC = 0.1
-STALE_WARN_SEC = 3.0
 HTTP_TIMEOUT_SEC = 5.0
 VFR_VEL_FALLBACK_AFTER_SEC = 0.5
+LTE_HEARTBEAT_TIMEOUT_SEC = 8.0
+LTE_RETRY_SEC = 3.0
 
-# ✅ 기체 식별용
+# ✅ 기체 식별 / 검색용
 DRONE_ID = os.getenv("DRONE_ID", "drone-001")
-LTE_IP = os.getenv("LTE_IP", "")  # 예: 10.0.0.21 / 공인IP / 사설IP 등
 VEHICLE_NAME = os.getenv("VEHICLE_NAME", DRONE_ID)
 
-# ✅ 포트 우선순위/필터
-PREFERRED_PORTS = [p.strip() for p in os.getenv("PREFERRED_PORTS", "COM6").split(",") if p.strip()]
-EXCLUDE_IF_DESC_CONTAINS = ["bluetooth"]
-USB_HINTS = ["usb", "serial", "stm", "px4", "cube", "fmu"]
+# ✅ 실제 pymavlink 접속용 문자열
+#    예: tcp:3.36.81.238:51067
+LTE_CONNECTION = os.getenv("LTE_CONNECTION", "").strip()
+
+# ✅ 웹페이지 검색용 LTE IP (포트 포함)
+#
+#    [변경 사항]
+#    기존: LTE_IP = "3.36.81.238"          → 포트 없이 IP만 저장
+#    변경: LTE_IP = "3.36.81.238:51067"    → 포트 포함하여 저장
+#
+#    이유: 같은 IP(3.36.81.238)에 포트가 다른 기체 3대가 존재하므로
+#          IP만으로는 기체를 구분할 수 없음.
+#          LTE_IP에 포트를 포함시켜 각 기체를 고유하게 식별함.
+#
+#    설정 방법 (각 기체 agent 실행 시 환경변수로 지정):
+#      기체 1: LTE_IP=3.36.81.238:51067  LTE_CONNECTION=tcp:3.36.81.238:51067
+#      기체 2: LTE_IP=3.36.81.238:51568  LTE_CONNECTION=tcp:3.36.81.238:51568
+#      기체 3: LTE_IP=3.36.81.238:52066  LTE_CONNECTION=tcp:3.36.81.238:52066
+#
+#    LTE_IP 미설정 시 LTE_CONNECTION에서 자동 추출 (tcp: 제거)
+if os.getenv("LTE_IP", "").strip():
+    LTE_IP = os.getenv("LTE_IP", "").strip()
+elif LTE_CONNECTION:
+    # tcp:3.36.81.238:51067 → 3.36.81.238:51067
+    LTE_IP = LTE_CONNECTION.replace("tcp:", "").replace("udp:", "").strip()
+else:
+    LTE_IP = ""
 
 
 # =====================================================
@@ -63,73 +84,17 @@ def fmt_num(v, unit: str = "") -> str:
         return str(v)
 
 
-def scan_serial_ports_detailed() -> List[Tuple[str, str]]:
-    out: List[Tuple[str, str]] = []
-    for p in list_ports.comports():
-        dev = getattr(p, "device", None) or ""
-        desc = getattr(p, "description", None) or ""
-        if dev:
-            out.append((dev, desc))
-    return out
-
-
-def should_exclude_port(device: str, desc: str) -> bool:
-    d = (device or "").lower()
-    s = (desc or "").lower()
-    for key in EXCLUDE_IF_DESC_CONTAINS:
-        key = (key or "").lower()
-        if key and (key in d or key in s):
-            return True
-    return False
-
-
-def port_score(device: str, desc: str) -> int:
-    s = (desc or "").lower()
-    d = (device or "").lower()
-
-    score = 0
-
-    for h in USB_HINTS:
-        if h and (h in s or h in d):
-            score += 10
-
-    if d.startswith("com"):
-        try:
-            n = int(d.replace("com", "").strip())
-            score += min(n, 20) // 5
-        except Exception:
-            pass
-
-    return score
-
-
-def build_try_port_list() -> List[str]:
-    detailed = scan_serial_ports_detailed()
-    if not detailed:
-        return []
-
-    filtered = [(dev, desc) for (dev, desc) in detailed if not should_exclude_port(dev, desc)]
-
-    present = {dev for (dev, _) in filtered}
-    preferred = [p for p in PREFERRED_PORTS if p in present]
-
-    remaining = [(dev, desc) for (dev, desc) in filtered if dev not in preferred]
-    remaining_sorted = sorted(remaining, key=lambda x: port_score(x[0], x[1]), reverse=True)
-
-    ordered = preferred + [dev for (dev, _) in remaining_sorted]
-    return ordered
-
-
 # =====================================================
-# Telemetry Agent
+# Telemetry Agent (LTE ONLY)
 # =====================================================
 
 class TelemetryAgent:
     def __init__(self):
         self.mav: Optional[mavutil.mavfile] = None
         self.sysid: Optional[int] = None
-        self.connected_port: Optional[str] = None
-        self.connected_baud: Optional[int] = None
+
+        self.connected_source_type: Optional[str] = None   # "lte"
+        self.connected_endpoint: Optional[str] = None      # tcp:...
         self.running = True
 
         self._cache: Dict[str, Any] = {
@@ -154,58 +119,58 @@ class TelemetryAgent:
         self._session = requests.Session()
 
     # -------------------------------------------------
-    # Connect to telemetry
+    # LTE Connect
     # -------------------------------------------------
-    def connect_any(self) -> bool:
-        print("[Agent] Scanning serial ports...")
-
-        ports = build_try_port_list()
-        if not ports:
-            print("[Agent] No serial ports found (after filtering)")
+    def connect_lte(self) -> bool:
+        if not LTE_CONNECTION:
+            print("[Agent] LTE_CONNECTION is empty")
+            print("[Agent] Example: tcp:3.36.81.238:51067")
             return False
 
-        print("[Agent] Candidate ports (ordered):", ", ".join(ports))
+        try:
+            print(f"[Agent] Trying LTE: {LTE_CONNECTION}")
 
-        for port in ports:
-            for baud in BAUD_RATES:
+            mav = mavutil.mavlink_connection(LTE_CONNECTION)
+            mav.wait_heartbeat(timeout=LTE_HEARTBEAT_TIMEOUT_SEC)
+
+            hb = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
+            sysid = None
+
+            if hb is not None:
                 try:
-                    print(f"[Agent] Trying {port} @ {baud}")
-
-                    mav = mavutil.mavlink_connection(port, baud=baud)
-                    mav.wait_heartbeat(timeout=5)
-
-                    hb = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
-                    sysid = None
-                    if hb is not None:
-                        try:
-                            sysid = hb.get_srcSystem()
-                        except Exception:
-                            sysid = None
-
-                    if sysid is None:
-                        sysid = getattr(mav, "target_system", None)
-
-                    self.mav = mav
-                    self.sysid = sysid
-                    self.connected_port = port
-                    self.connected_baud = baud
-
-                    with self._lock:
-                        self._cache["sysid"] = self.sysid
-
-                    print("[Agent] Connected!")
-                    print(f"[Agent]  Port : {port}")
-                    print(f"[Agent]  Baud : {baud}")
-                    print(f"[Agent]  SYSID: {self.sysid}")
-                    print(f"[Agent]  DRONE_ID: {DRONE_ID}")
-                    print(f"[Agent]  LTE_IP: {LTE_IP or '(empty)'}")
-                    return True
-
+                    sysid = hb.get_srcSystem()
                 except Exception:
-                    continue
+                    sysid = None
 
-        print("[Agent] Failed to connect to any telemetry")
-        return False
+            if sysid is None:
+                sysid = getattr(mav, "target_system", None)
+
+            self.mav = mav
+            self.sysid = sysid
+            self.connected_source_type = "lte"
+            self.connected_endpoint = LTE_CONNECTION
+
+            with self._lock:
+                self._cache["sysid"] = self.sysid
+
+            print("[Agent] Connected via LTE!")
+            print(f"[Agent]  Endpoint    : {LTE_CONNECTION}")
+            print(f"[Agent]  SYSID       : {self.sysid}")
+            print(f"[Agent]  DRONE_ID    : {DRONE_ID}")
+            print(f"[Agent]  VEHICLE_NAME: {VEHICLE_NAME}")
+            print(f"[Agent]  LTE_IP      : {LTE_IP or '(empty)'}")
+            return True
+
+        except Exception as e:
+            print(f"[Agent] LTE connect failed: {e}")
+            self.mav = None
+            self.sysid = None
+            self.connected_source_type = None
+            self.connected_endpoint = None
+            return False
+
+    def connect_any(self) -> bool:
+        return self.connect_lte()
 
     # -------------------------------------------------
     # MAVLink Listen Loop
@@ -214,10 +179,17 @@ class TelemetryAgent:
         assert self.mav is not None
 
         while self.running:
-            msg = self.mav.recv_match(blocking=True, timeout=2)
-            if not msg:
-                continue
-            self.ingest_message(msg)
+            try:
+                msg = self.mav.recv_match(blocking=True, timeout=2)
+                if not msg:
+                    continue
+                self.ingest_message(msg)
+            except Exception as e:
+                print(f"[Agent] listen_loop error: {e}")
+                break
+
+        print("[Agent] listen_loop stopped")
+        self.running = False
 
     # -------------------------------------------------
     # MAVLink message → cache
@@ -336,11 +308,12 @@ class TelemetryAgent:
             snap = {
                 "drone_id": DRONE_ID,
                 "vehicle_name": VEHICLE_NAME,
+                # [변경] 포트 포함된 LTE_IP 전송 (예: "3.36.81.238:51067")
                 "lte_ip": LTE_IP or None,
                 "sysid": self._cache.get("sysid"),
                 "source": {
-                    "port": self.connected_port,
-                    "baud": self.connected_baud,
+                    "type": self.connected_source_type,
+                    "endpoint": self.connected_endpoint,
                 },
                 "attitude": self._cache.get("attitude"),
                 "position": pos,
@@ -391,12 +364,15 @@ class TelemetryAgent:
                     print(
                         f"[Agent] PUSH drone_id={snap.get('drone_id')} "
                         f"lte_ip={snap.get('lte_ip')} "
+                        f"source_type={snap.get('source', {}).get('type')} "
+                        f"endpoint={snap.get('source', {}).get('endpoint')} "
                         f"sysid={snap.get('sysid')} status={res.status_code} "
                         f"(age attitude={fmt_age(age.get('attitude'))} "
                         f"pos={fmt_age(age.get('position'))} "
                         f"vel={fmt_age(age.get('velocity'))} "
                         f"speed={spd_str} "
-                        f"alt={alt_str} rel={rel_alt_str} amsl={amsl_alt_str} vfr={vfr_alt_str})"
+                        f"alt={alt_str} rel={rel_alt_str} "
+                        f"amsl={amsl_alt_str} vfr={vfr_alt_str})"
                     )
 
             except Exception as e:
@@ -410,24 +386,34 @@ class TelemetryAgent:
     def run(self):
         while self.running:
             if self.connect_any():
-                threading.Thread(target=self.listen_loop, daemon=True).start()
-                threading.Thread(target=self.push_loop, daemon=True).start()
-                break
+                listen_thread = threading.Thread(target=self.listen_loop, daemon=True)
+                push_thread = threading.Thread(target=self.push_loop, daemon=True)
 
-            print("[Agent] Retry in 3 seconds...")
-            time.sleep(3)
+                listen_thread.start()
+                push_thread.start()
+                return
+
+            print(f"[Agent] Retry in {LTE_RETRY_SEC:.0f} seconds...")
+            time.sleep(LTE_RETRY_SEC)
 
 
 if __name__ == "__main__":
     print("===================================")
-    print(" Local Telemetry Agent (QGC 역할)")
+    print(" Local Telemetry Agent (LTE ONLY)")
     print("===================================")
+    print(f"[Agent] SERVER_BASE_URL = {SERVER_BASE_URL}")
+    print(f"[Agent] DRONE_ID        = {DRONE_ID}")
+    print(f"[Agent] VEHICLE_NAME    = {VEHICLE_NAME}")
+    print(f"[Agent] LTE_IP          = {LTE_IP or '(empty)'}")
+    print(f"[Agent] LTE_CONNECTION  = {LTE_CONNECTION or '(empty)'}")
 
     agent = TelemetryAgent()
     agent.run()
 
     try:
         while True:
+            if not agent.running:
+                break
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n[Agent] Shutting down...")

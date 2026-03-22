@@ -31,6 +31,29 @@ export interface DroneData {
 }
 
 /* =========================
+ * Drone 목록 정의
+ *
+ * [변경 사항]
+ * 기존: drone_id / lte_ip 텍스트 직접 입력
+ * 변경: 포트 3개를 카드로 고정 표시, 클릭하여 선택
+ *
+ * lteIp 값이 agent.py의 LTE_IP 환경변수와 일치해야 함
+ * agent.py에서 LTE_IP=3.36.81.238:51067 형태로 설정
+ * ========================= */
+
+interface DroneTarget {
+  label: string // UI 표시 이름
+  port: number // 포트 번호 (표시용)
+  lteIp: string // WS 쿼리 파라미터로 전달될 값 (포트 포함)
+}
+
+const DRONE_TARGETS: DroneTarget[] = [
+  { label: "기체 1", port: 51067, lteIp: "3.36.81.238:51067" },
+  { label: "기체 2", port: 51568, lteIp: "3.36.81.238:51568" },
+  { label: "기체 3", port: 52066, lteIp: "3.36.81.238:52066" },
+]
+
+/* =========================
  * Utils
  * ========================= */
 
@@ -122,32 +145,18 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [renderData, setRenderData] = useState<DroneData>({})
   const [connected, setConnected] = useState(false)
 
-  // ✅ 연결 대상 입력값
-  const [droneIdInput, setDroneIdInput] = useState("")
-  const [lteIpInput, setLteIpInput] = useState("")
+  // [변경] 선택된 기체 인덱스 (null = 미선택)
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
 
-  // ✅ 현재 실제 연결에 사용 중인 값
-  const [activeDroneId, setActiveDroneId] = useState("")
+  // 현재 연결된 기체 정보
   const [activeLteIp, setActiveLteIp] = useState("")
 
   const wsRef = useRef<WebSocket | null>(null)
-
-  // WS 수신 즉시 반영(리렌더 X): targetRef
   const targetRef = useRef<DroneData | null>(null)
-
-  // 부드러운 화면용 스무딩 값(계산용)
   const smoothRef = useRef<DroneData>({})
-
-  // 스무딩 dt 계산용
   const lastTsRef = useRef<number>(performance.now())
-
-  // 마지막 수신 시각
   const lastRxAtRef = useRef<number>(0)
-
-  // 콘솔 delay 로그 샘플링
   const lastDelayLogAtRef = useRef<number>(0)
-
-  // delay 계산 보정용
   const delayBaseRef = useRef<number | null>(null)
   const delayBaseUpdatedAtRef = useRef<number>(0)
 
@@ -165,16 +174,18 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
    * Connect / Disconnect
    * ========================= */
 
-  const connect = () => {
+  const connect = (idx?: number) => {
     if (wsRef.current) return
 
-    const droneId = droneIdInput.trim()
-    const lteIp = lteIpInput.trim()
-
-    if (!droneId && !lteIp) {
-      console.error("❌ drone_id 또는 lte_ip 중 하나는 입력해야 함")
+    // [변경] 인자로 받은 idx 우선, 없으면 state의 selectedIdx 사용
+    const targetIdx = idx !== undefined ? idx : selectedIdx
+    if (targetIdx === null || targetIdx === undefined) {
+      console.error("❌ 기체를 먼저 선택하세요")
       return
     }
+
+    const drone = DRONE_TARGETS[targetIdx]
+    if (!drone) return
 
     const TELEMETRY_WS_BASE = getTelemetryEnvBase()
     if (!TELEMETRY_WS_BASE) {
@@ -194,12 +205,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     }
 
     const url = new URL(wsUrl)
-
-    if (droneId) {
-      url.searchParams.set("drone_id", droneId)
-    } else if (lteIp) {
-      url.searchParams.set("lte_ip", lteIp)
-    }
+    // [변경] lte_ip에 포트 포함된 값 전달 (예: 3.36.81.238:51067)
+    url.searchParams.set("lte_ip", drone.lteIp)
 
     const finalWsUrl = url.toString()
     const ws = new WebSocket(finalWsUrl)
@@ -207,9 +214,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
     ws.onopen = () => {
       setConnected(true)
-      setActiveDroneId(droneId)
-      setActiveLteIp(lteIp)
-      console.log("✅ Telemetry WS connected:", finalWsUrl)
+      setActiveLteIp(drone.lteIp)
+      console.log(`✅ Telemetry WS connected [${drone.label}]:`, finalWsUrl)
     }
 
     ws.onmessage = (event) => {
@@ -276,11 +282,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             jump,
             gpsFixType: msg.gps?.fix_type,
             gpsSatellites: msg.gps?.satellites,
-            rawAlt: msg.position?.alt,
-            relAlt: msg.position?.relative_alt,
-            amslAlt: msg.position?.amsl_alt,
-            source: msg.source,
-            server_ts: msg.server_ts,
           })
         }
       }
@@ -323,7 +324,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         `🔌 Telemetry WS disconnected (code=${event.code}, reason=${event.reason || "no reason"})`,
       )
       wsRef.current = null
-      setActiveDroneId("")
       setActiveLteIp("")
       resetConnectionState()
     }
@@ -332,9 +332,30 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const disconnect = () => {
     wsRef.current?.close()
     wsRef.current = null
-    setActiveDroneId("")
     setActiveLteIp("")
     resetConnectionState()
+  }
+
+  /* =========================
+   * [변경] 기체 카드 클릭 핸들러
+   * - 미연결 상태: 선택만 함
+   * - 연결 중 상태: 기존 연결 해제 후 새 기체 연결
+   * ========================= */
+  const handleSelectDrone = (idx: number) => {
+    if (connected) {
+      // 이미 선택된 기체를 다시 클릭하면 무시
+      if (selectedIdx === idx) return
+      // 다른 기체 선택 시 기존 연결 끊고 새로 연결
+      wsRef.current?.close()
+      wsRef.current = null
+      setActiveLteIp("")
+      resetConnectionState()
+      setSelectedIdx(idx)
+      // 약간의 딜레이 후 연결 (close 처리 대기)
+      setTimeout(() => connect(idx), 100)
+    } else {
+      setSelectedIdx(idx)
+    }
   }
 
   /* =========================
@@ -389,7 +410,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   }, [])
 
   /* =========================
-   * UI Snapshot
+   * UI Snapshot (20Hz)
    * ========================= */
 
   useEffect(() => {
@@ -439,54 +460,69 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* ── 기체 선택 패널 ── */}
       <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            기체 연결 대상 선택
+            기체 선택
           </h3>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            drone_id 또는 LTE IP 중 하나를 입력한 뒤 연결하세요.
+            연결할 기체를 선택한 뒤 조회 시작을 누르세요. 연결 중에 다른 기체를
+            선택하면 자동으로 전환됩니다.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-              Drone ID
-            </label>
-            <input
-              type="text"
-              value={droneIdInput}
-              onChange={(e) => setDroneIdInput(e.target.value)}
-              placeholder="예: drone-001"
-              disabled={connected}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            />
-          </div>
+        {/* ── 기체 카드 3개 ── */}
+        <div className="grid grid-cols-3 gap-3">
+          {DRONE_TARGETS.map((drone, idx) => {
+            const isSelected = selectedIdx === idx
+            const isActive = connected && activeLteIp === drone.lteIp
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
-              LTE IP
-            </label>
-            <input
-              type="text"
-              value={lteIpInput}
-              onChange={(e) => setLteIpInput(e.target.value)}
-              placeholder="예: 10.0.0.21"
-              disabled={connected}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            />
-          </div>
+            return (
+              <button
+                key={drone.lteIp}
+                type="button"
+                onClick={() => handleSelectDrone(idx)}
+                className={[
+                  "relative flex flex-col items-start rounded-xl border px-4 py-3 text-left transition-all",
+                  isActive
+                    ? "border-emerald-400 bg-emerald-50 dark:border-emerald-500 dark:bg-emerald-950/40"
+                    : isSelected
+                      ? "border-slate-500 bg-slate-50 dark:border-slate-400 dark:bg-slate-800/60"
+                      : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-500 dark:hover:bg-slate-800/40",
+                ].join(" ")}
+              >
+                {/* 연결 중 표시 */}
+                {isActive && (
+                  <span className="absolute right-3 top-3 flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                )}
+
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {drone.label}
+                </span>
+                <span className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                  :{drone.port}
+                </span>
+                <span className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+                  {isActive ? "연결됨" : isSelected ? "선택됨" : "대기 중"}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
+        {/* ── 조회 버튼 ── */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={connect}
-            disabled={connected}
+            onClick={() => connect()}
+            disabled={connected || selectedIdx === null}
             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
           >
-            연결
+            조회 시작
           </button>
 
           <button
@@ -495,24 +531,20 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             disabled={!connected}
             className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            연결 해제
+            조회 해제
           </button>
 
           <div className="ml-auto text-xs text-slate-500 dark:text-slate-400">
             {connected ? (
-              <span>
-                연결 중:
-                {activeDroneId ? ` drone_id=${activeDroneId}` : ""}
-                {activeDroneId && activeLteIp ? " / " : ""}
-                {activeLteIp ? ` lte_ip=${activeLteIp}` : ""}
-              </span>
+              <span>조회 중: lte_ip={activeLteIp}</span>
             ) : (
-              <span>현재 연결 안 됨</span>
+              <span>현재 조회 안 됨</span>
             )}
           </div>
         </div>
       </div>
 
+      {/* ── 텔레메트리 카드 ── */}
       <DroneSimulationCard
         data={renderData}
         connected={connected}
