@@ -602,9 +602,27 @@ export function UavDashboard() {
 
   // ★ 3개 기체 전체 상태
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
-    { connected: false, data: null, flightStatus: "unknown" },
-    { connected: false, data: null, flightStatus: "unknown" },
-    { connected: false, data: null, flightStatus: "unknown" },
+    {
+      wsConnected: false,
+      droneActive: false,
+      connected: false,
+      data: null,
+      flightStatus: "unknown",
+    },
+    {
+      wsConnected: false,
+      droneActive: false,
+      connected: false,
+      data: null,
+      flightStatus: "unknown",
+    },
+    {
+      wsConnected: false,
+      droneActive: false,
+      connected: false,
+      data: null,
+      flightStatus: "unknown",
+    },
   ])
 
   // 섹션 접기/펼치기 상태
