@@ -645,6 +645,11 @@ export function UavDashboard() {
                     : undefined
                 }
                 onMapClick={(nx, ny) => setClickedCoordinates({ nx, ny })}
+                droneStats={{
+                  battery: droneData?.battery,
+                  altitude: droneData?.altitude,
+                  speed: droneData?.speed,
+                }}
               />
             </div>
           </CardContent>
