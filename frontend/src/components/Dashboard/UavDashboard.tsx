@@ -28,6 +28,7 @@ import {
   Navigation,
   Wrench,
 } from "lucide-react"
+import { createPortal } from "react-dom"
 
 // ==========================
 // 기본 지도 설정
@@ -844,52 +845,55 @@ export function UavDashboard() {
         flex-col items-end 로 버튼을 세로로 쌓고,
         채팅 패널은 버튼들 위에 자연스럽게 열립니다.
       */}
-      <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3">
-        {/* AI 채팅 패널 — 버튼 위로 열림 */}
-        {chatOpen && (
-          <div className="w-[min(420px,calc(100vw-3rem))] rounded-3xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800/60">
-              <div className="flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-indigo-500" />
-                <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                  AI 운영 상담
-                </span>
+      {createPortal(
+        <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3">
+          {/* AI 채팅 패널 — 버튼 위로 열림 */}
+          {chatOpen && (
+            <div className="w-[min(420px,calc(100vw-3rem))] rounded-3xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800/60">
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4 text-indigo-500" />
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                    AI 운영 상담
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setChatOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="p-4">
+                <GeminiChatCard />
+              </div>
             </div>
-            <div className="p-4">
-              <GeminiChatCard />
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* AI 상담 버튼 */}
-        <button
-          type="button"
-          onClick={() => setChatOpen((v) => !v)}
-          className="flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-200/40 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300 dark:shadow-none"
-          aria-label="AI 채팅 열기"
-        >
-          <MessageCircle className="h-4 w-4" />
-          AI 상담
-        </button>
+          {/* AI 상담 버튼 */}
+          <button
+            type="button"
+            onClick={() => setChatOpen((v) => !v)}
+            className="flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-200/40 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300 dark:shadow-none"
+            aria-label="AI 채팅 열기"
+          >
+            <MessageCircle className="h-4 w-4" />
+            AI 상담
+          </button>
 
-        {/* 맨 위로 버튼 — 항상 표시 */}
-        <button
-          type="button"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="rounded-full border border-slate-200/70 bg-white/90 p-3 text-slate-600 shadow-lg backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700/70 dark:bg-slate-900/80 dark:text-slate-300"
-          aria-label="맨 위로 이동"
-        >
-          <ArrowUp className="h-4 w-4" />
-        </button>
-      </div>
+          {/* 맨 위로 버튼 — 항상 표시 */}
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            className="rounded-full border border-slate-200/70 bg-white/90 p-3 text-slate-600 shadow-lg backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700/70 dark:bg-slate-900/80 dark:text-slate-300"
+            aria-label="맨 위로 이동"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
