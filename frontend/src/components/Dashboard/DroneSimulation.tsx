@@ -57,7 +57,7 @@ interface DroneTarget {
 const DRONE_TARGETS: DroneTarget[] = [
   { label: "DM4_1(중왕항)", port: 51067, lteIp: "3.36.81.238:51067" },
   { label: "DM4_2(기은리)", port: 51568, lteIp: "3.36.81.238:51568" },
-  { label: "DM3(삼길포항)", port: 51066, lteIp: "3.36.81.238:51066" },
+  { label: "DM3(삼길포항)", port: 52066, lteIp: "3.36.81.238:52066" },
 ]
 
 /* =========================
