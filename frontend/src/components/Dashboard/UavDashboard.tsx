@@ -35,6 +35,10 @@ import {
   CheckCircle2,
   XCircle,
   Wind,
+  Timer,
+  BatteryLow,
+  TrendingDown,
+  PlaneLanding,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -283,6 +287,295 @@ const StatusBadge = ({
     >
       {label}
     </span>
+  )
+}
+
+// ==========================
+// ★ 배터리 RTL 예측 훅
+// ==========================
+
+interface RtlPrediction {
+  /** 분당 배터리 소모율 (%) */
+  drainRatePerMin: number | null
+  /** 남은 비행 가능 시간 (초) — 안전 예비 20% 제외 */
+  remainingSec: number | null
+  /** 비행 경과 시간 (초) */
+  elapsedSec: number
+  /** RTL 권고 레벨 */
+  level: "safe" | "caution" | "danger" | "off"
+  /** 비행 시작 배터리 % */
+  startBattery: number | null
+}
+
+/** RTL 안전 예비 배터리 % — 이 아래로는 비행 불가로 판단 */
+const RTL_RESERVE_PCT = 20
+
+function useRtlPrediction(
+  droneActive: boolean,
+  battery: number | undefined | null,
+): RtlPrediction {
+  // 비행 시작 시점 스냅샷
+  const startRef = useRef<{ battery: number; time: number } | null>(null)
+  const [elapsedSec, setElapsedSec] = useState(0)
+
+  // droneActive가 켜질 때 스냅샷 기록, 꺼질 때 초기화
+  useEffect(() => {
+    if (droneActive && battery != null) {
+      if (!startRef.current) {
+        startRef.current = { battery, time: Date.now() }
+      }
+    } else {
+      startRef.current = null
+      setElapsedSec(0)
+    }
+  }, [droneActive]) // battery 의도적으로 제외 — 시작 시점만 캡처
+
+  // 1초마다 경과 시간 갱신
+  useEffect(() => {
+    if (!droneActive) return
+    const id = setInterval(() => {
+      if (startRef.current) {
+        setElapsedSec(Math.floor((Date.now() - startRef.current.time) / 1000))
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [droneActive])
+
+  if (!droneActive || battery == null || startRef.current == null) {
+    return {
+      drainRatePerMin: null,
+      remainingSec: null,
+      elapsedSec: 0,
+      level: "off",
+      startBattery: null,
+    }
+  }
+
+  const elapsedMin = elapsedSec / 60
+  const consumed = startRef.current.battery - battery
+
+  // 최소 30초 이상 경과 + 0.1% 이상 소모돼야 유의미한 계산
+  if (elapsedMin < 0.5 || consumed < 0.1) {
+    return {
+      drainRatePerMin: null,
+      remainingSec: null,
+      elapsedSec,
+      level: "off",
+      startBattery: startRef.current.battery,
+    }
+  }
+
+  const drainRatePerMin = consumed / elapsedMin
+  const usableBattery = battery - RTL_RESERVE_PCT
+  const remainingSec =
+    usableBattery > 0 ? Math.floor((usableBattery / drainRatePerMin) * 60) : 0
+
+  const level: RtlPrediction["level"] =
+    remainingSec <= 0
+      ? "danger"
+      : remainingSec <= 180 // 3분 이하
+        ? "danger"
+        : remainingSec <= 360 // 6분 이하
+          ? "caution"
+          : "safe"
+
+  return {
+    drainRatePerMin,
+    remainingSec,
+    elapsedSec,
+    level,
+    startBattery: startRef.current.battery,
+  }
+}
+
+// RTL 예측 위젯 컴포넌트
+function RtlPredictionWidget({
+  droneActive,
+  battery,
+}: {
+  droneActive: boolean
+  battery: number | undefined | null
+}) {
+  const rtl = useRtlPrediction(droneActive, battery)
+
+  const formatTime = (sec: number) => {
+    if (sec <= 0) return "0분 0초"
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return m > 0 ? `${m}분 ${s}초` : `${s}초`
+  }
+
+  const formatElapsed = (sec: number) => {
+    const m = Math.floor(sec / 60)
+    const s = sec % 60
+    return m > 0 ? `${m}분 ${s}초` : `${s}초`
+  }
+
+  const levelStyle = {
+    safe: {
+      border: "border-emerald-200/60 dark:border-emerald-800/40",
+      bg: "bg-emerald-50/80 dark:bg-emerald-900/15",
+      iconBg: "from-emerald-500 to-teal-500",
+      text: "text-emerald-700 dark:text-emerald-300",
+      bar: "bg-emerald-500",
+    },
+    caution: {
+      border: "border-amber-200/60 dark:border-amber-800/40",
+      bg: "bg-amber-50/80 dark:bg-amber-900/15",
+      iconBg: "from-amber-500 to-yellow-400",
+      text: "text-amber-700 dark:text-amber-300",
+      bar: "bg-amber-500",
+    },
+    danger: {
+      border: "border-red-200/60 dark:border-red-800/40",
+      bg: "bg-red-50/80 dark:bg-red-900/15",
+      iconBg: "from-red-500 to-rose-500",
+      text: "text-red-700 dark:text-red-300",
+      bar: "bg-red-500",
+    },
+    off: {
+      border: "border-slate-200/60 dark:border-slate-700/60",
+      bg: "bg-slate-50/80 dark:bg-slate-800/30",
+      iconBg: "from-slate-400 to-slate-500",
+      text: "text-slate-500 dark:text-slate-400",
+      bar: "bg-slate-300",
+    },
+  }[rtl.level]
+
+  // 배터리 잔량 대비 프로그레스바 (예비 20% 표시 포함)
+  const batteryPct = battery ?? 0
+  const usablePct = Math.max(0, batteryPct - RTL_RESERVE_PCT)
+  const reservePct = Math.min(batteryPct, RTL_RESERVE_PCT)
+
+  const mainLabel = !droneActive
+    ? "기체 연결 후 예측 시작"
+    : rtl.remainingSec === null
+      ? "데이터 수집 중... (30초 후 계산)"
+      : rtl.remainingSec <= 0
+        ? "즉시 귀환 필요"
+        : `약 ${formatTime(rtl.remainingSec)} 더 비행 가능`
+
+  const sublabel = !droneActive
+    ? "드론이 활성화되면 소모율을 추적합니다"
+    : rtl.remainingSec === null
+      ? `비행 시작 후 ${formatElapsed(rtl.elapsedSec)} 경과`
+      : rtl.level === "danger"
+        ? "귀환 후 충전하세요"
+        : rtl.level === "caution"
+          ? "귀환을 준비하세요"
+          : "여유 있습니다"
+
+  return (
+    <div
+      className={`rounded-3xl border ${levelStyle.border} ${levelStyle.bg} overflow-hidden`}
+    >
+      {/* 헤더 */}
+      <div className="flex items-center gap-4 px-6 py-5">
+        <div
+          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${levelStyle.iconBg} text-white shadow-lg`}
+        >
+          <PlaneLanding className="h-7 w-7" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+              배터리 RTL 예측
+            </h3>
+          </div>
+          <p className={`mt-0.5 text-lg font-bold ${levelStyle.text}`}>
+            {mainLabel}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {sublabel}
+          </p>
+        </div>
+
+        {/* 비행 경과 시간 */}
+        {droneActive && rtl.elapsedSec > 0 && (
+          <div className="shrink-0 text-right">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              비행 경과
+            </p>
+            <p className="text-base font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+              {formatElapsed(rtl.elapsedSec)}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* 세부 지표 */}
+      <div className="space-y-4 border-t border-slate-200/50 px-6 py-4 dark:border-slate-700/40">
+        {/* 배터리 게이지 */}
+        <div>
+          <div className="mb-1.5 flex items-center justify-between text-xs">
+            <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+              <BatteryLow className="h-3.5 w-3.5" />
+              배터리 잔량
+            </span>
+            <span className={`font-semibold ${levelStyle.text}`}>
+              {battery != null ? `${battery.toFixed(0)}%` : "—"}
+            </span>
+          </div>
+          {/* 프로그레스 바 — 사용 가능(컬러) + 예비(회색) + 소모(빈칸) */}
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-200/60 dark:bg-slate-700/60">
+            {/* 사용 가능 구간 */}
+            <div
+              className={`h-full transition-all duration-500 ${levelStyle.bar}`}
+              style={{ width: `${usablePct}%` }}
+            />
+            {/* 예비 구간 (빨간/회색) */}
+            <div
+              className="h-full bg-red-300/70 transition-all duration-500 dark:bg-red-800/50"
+              style={{ width: `${reservePct}%` }}
+            />
+          </div>
+          <div className="mt-1 flex justify-between text-xs text-slate-400 dark:text-slate-500">
+            <span>예비 {RTL_RESERVE_PCT}% 제외</span>
+            <span>
+              시작 시{" "}
+              {rtl.startBattery != null
+                ? `${rtl.startBattery.toFixed(0)}%`
+                : "—"}
+            </span>
+          </div>
+        </div>
+
+        {/* 수치 3개 */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
+            <TrendingDown className="mx-auto mb-1 h-4 w-4 text-slate-400" />
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              분당 소모
+            </p>
+            <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+              {rtl.drainRatePerMin != null
+                ? `${rtl.drainRatePerMin.toFixed(2)}%`
+                : "—"}
+            </p>
+          </div>
+          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
+            <Timer className="mx-auto mb-1 h-4 w-4 text-slate-400" />
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              남은 시간
+            </p>
+            <p
+              className={`text-sm font-semibold tabular-nums ${rtl.remainingSec != null ? levelStyle.text : "text-slate-400"}`}
+            >
+              {rtl.remainingSec != null ? formatTime(rtl.remainingSec) : "—"}
+            </p>
+          </div>
+          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
+            <PlaneLanding className="mx-auto mb-1 h-4 w-4 text-slate-400" />
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              RTL 기준
+            </p>
+            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+              {RTL_RESERVE_PCT}% 예비
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -906,6 +1199,14 @@ export function UavDashboard() {
               hint="연결된 GPS 위성 수입니다. 위성이 적을수록 위치 정확도가 낮아집니다."
             />
           </div>
+        )}
+
+        {/* ==================== ★ 배터리 RTL 예측 위젯 ==================== */}
+        {droneConnected && (
+          <RtlPredictionWidget
+            droneActive={droneData !== null}
+            battery={droneData?.battery}
+          />
         )}
 
         {/* ==================== 드론 위치 지도 ==================== */}
