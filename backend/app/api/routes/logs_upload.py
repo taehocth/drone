@@ -66,53 +66,68 @@ def quat_to_euler(q):
 def calc_hovering_alt_std(
     altitudes: list[float],
     min_hover_alt_m: float = 1.5,
-    window_sec: int = 30,       # 안정 구간 판별 윈도우 (샘플 수)
-    max_window_range_m: float = 2.0  # 윈도우 내 고도 변화 허용 범위
+    window_size: int = 50,
+    max_window_range_m: float = 5.0,
 ) -> float | None:
     """
-    이륙/착륙/급기동 구간을 제외하고 실제 호버링 중 고도 안정성 계산.
+    이륙/착륙/기동 구간 제외 후 호버링 고도 안정성 계산.
 
     전략:
-    1. min_hover_alt_m 이상인 값만 후보로 선정 (지상/이착륙 바닥 제외)
-    2. 슬라이딩 윈도우로 고도 변화가 작은 안정 구간만 선택
-       (윈도우 내 max-min <= max_window_range_m)
-    3. 안정 구간이 없으면 전체 비행 구간(1.5m↑)의 IQR 방식 사용
+    1. min_hover_alt_m 이상 구간만 후보로 선정
+    2. 슬라이딩 윈도우(50샘플, 허용 범위 5m)로 안정 구간 수집
+       - 허용 범위를 5m로 넉넉히 잡아 짧은 비행/저고도도 커버
+    3. 안정 구간이 충분하면 → 각 윈도우 내 중앙값 기준 편차 사용
+       (절대 고도 차이가 아닌 "유지 능력" 측정)
+    4. 안정 구간 부족 → 전체 비행 구간 IQR fallback
     """
     if not altitudes or len(altitudes) < 10:
         return None
 
-    # Step 1: 최소 고도 이상인 인덱스만
+    # Step 1: 비행 중 구간만
     flying_alts = [a for a in altitudes if a >= min_hover_alt_m]
     if len(flying_alts) < 10:
         flying_alts = altitudes
 
     # Step 2: 슬라이딩 윈도우로 안정 구간 수집
-    stable_alts = []
-    for i in range(0, len(flying_alts) - window_sec, window_sec // 2):
-        window = flying_alts[i: i + window_sec]
+    # 각 윈도우 내에서 중앙값 기준 편차(잔차)만 모음
+    # → 고도가 50m든 100m든 "얼마나 흔들리는가"만 측정
+    residuals = []
+    stable_window_count = 0
+
+    for i in range(0, len(flying_alts) - window_size, window_size // 2):
+        window = flying_alts[i: i + window_size]
         if not window:
             continue
         w_range = max(window) - min(window)
         if w_range <= max_window_range_m:
-            stable_alts.extend(window)
+            median_alt = float(np.median(window))
+            window_residuals = [a - median_alt for a in window]
+            residuals.extend(window_residuals)
+            stable_window_count += 1
 
-    # 안정 구간이 충분하면 사용, 아니면 IQR 방식 fallback
-    if len(stable_alts) >= 30:
-        target_alts = stable_alts
-        print(f"[ALT STD] 안정 구간 {len(stable_alts)}개 샘플 사용")
-    else:
-        print(f"[ALT STD] 안정 구간 부족 ({len(stable_alts)}개) → IQR 방식 사용")
-        target_alts = flying_alts
-        if len(target_alts) > 20:
-            sorted_alts = sorted(target_alts)
-            p5 = int(len(sorted_alts) * 0.05)
-            p95 = int(len(sorted_alts) * 0.95)
-            target_alts = sorted_alts[p5:p95]
+    if len(residuals) >= 30:
+        print(f"[ALT STD] 안정 윈도우 {stable_window_count}개, "
+              f"잔차 {len(residuals)}개 → std={float(np.std(residuals)):.3f}m")
+        return float(np.std(residuals))
+
+    # Fallback: 전체 비행 구간 IQR
+    print(f"[ALT STD] 안정 구간 부족({len(residuals)}개) → IQR fallback")
+    target_alts = flying_alts
+    if len(target_alts) > 20:
+        sorted_alts = sorted(target_alts)
+        p10 = int(len(sorted_alts) * 0.10)
+        p90 = int(len(sorted_alts) * 0.90)
+        target_alts = sorted_alts[p10:p90]
 
     if len(target_alts) < 5:
         return None
 
-    return float(np.std(target_alts))
+    # fallback도 중앙값 기준 잔차로 계산
+    median_alt = float(np.median(target_alts))
+    fallback_residuals = [a - median_alt for a in target_alts]
+    result = float(np.std(fallback_residuals))
+    print(f"[ALT STD] IQR fallback std={result:.3f}m")
+    return result
 
 
 # --------------------------------------------------------
@@ -416,19 +431,35 @@ async def upload_log(file: UploadFile = File(...)):
                 print(f"⚠️ [경고] 전압 리플 {ripple_v:.2f}V (정상 범위: 0.5~1.5V)")
 
         # -------------------------------------------------------
-        # 배터리 전류 요약 [FIX 3]
-        # 기존: 셀 수에 따라 임의 배율(×15, ×2.5 등) 적용
-        # 수정: ULog 실측값 그대로 사용
+        # 배터리 전류 요약
+        # 6S2P + 센서 2개(병렬 양쪽 측정) 구성:
+        #   PX4는 battery_status 인스턴스 0번(한 쪽 병렬)만 주로 로깅
+        #   → 실제 전류 = 측정값 × 2 (양쪽 합산)
         # -------------------------------------------------------
         if currents:
-            avg_current = float(statistics.mean(currents))
-            peak_current = float(max(currents))
+            raw_avg = float(statistics.mean(currents))
+            raw_peak = float(max(currents))
+
+            # 6S2P 병렬 2세트 → 센서가 한쪽만 잡으므로 ×2
+            # 단, battery_status 인스턴스가 2개 모두 기록된 경우 중복 방지
+            battery_instance_count = len(battery_list)
+            if battery_instance_count >= 2:
+                # 두 인스턴스가 모두 로깅된 경우 → 이미 합산됨, 보정 불필요
+                current_multiplier = 1.0
+                print(f"[배터리 전류] 인스턴스 {battery_instance_count}개 감지 → 배율 1.0 (이미 합산)")
+            else:
+                # 인스턴스 1개만 로깅 → 한쪽 병렬만 측정된 것 → ×2
+                current_multiplier = 2.0
+                print(f"[배터리 전류] 인스턴스 1개 감지 (6S2P 한쪽만 측정) → 배율 2.0 적용")
+
+            avg_current = raw_avg * current_multiplier
+            peak_current = raw_peak * current_multiplier
 
             summary["battery_avg_current"] = avg_current
             summary["battery_peak_current"] = peak_current
 
-            print(f"[배터리 전류] 평균: {avg_current:.2f}A, 최대: {peak_current:.2f}A")
-            print(f"[배터리 전류] 셀 수: {battery_cell_count} (배율 적용 없음 — ULog 실측값 사용)")
+            print(f"[배터리 전류] 원시 평균: {raw_avg:.2f}A → 보정 후: {avg_current:.2f}A")
+            print(f"[배터리 전류] 원시 최대: {raw_peak:.2f}A → 보정 후: {peak_current:.2f}A")
 
         # Temperature
         if battery and "temperature" in battery.data:
@@ -469,8 +500,8 @@ async def upload_log(file: UploadFile = File(...)):
             hover_std = calc_hovering_alt_std(
                 rel_altitudes,
                 min_hover_alt_m=1.5,
-                window_sec=30,
-                max_window_range_m=2.0
+                window_size=50,
+                max_window_range_m=5.0,
             )
             if hover_std is not None:
                 summary["gnss_alt_std"] = hover_std
@@ -486,8 +517,8 @@ async def upload_log(file: UploadFile = File(...)):
                 hover_std = calc_hovering_alt_std(
                     rel_alts_from_msl,
                     min_hover_alt_m=1.5,
-                    window_sec=30,
-                    max_window_range_m=2.0
+                    window_size=50,
+                    max_window_range_m=5.0,
                 )
                 if hover_std is not None:
                     summary["gnss_alt_std"] = hover_std
