@@ -3,9 +3,10 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import {
   AlertTriangle,
   CheckCircle,
-  Thermometer,
   Battery,
   Satellite,
+  Zap,
+  Cpu,
 } from "lucide-react"
 
 interface CbmSystem {
@@ -68,10 +69,22 @@ export function RealtimeCBMStatusCard({
       const battery = droneData.battery
       systems.push(
         battery > 80
-          ? { system: "Battery", level: "safe", msg: `정상 (${battery.toFixed(1)}%)` }
+          ? {
+              system: "Battery",
+              level: "safe",
+              msg: `정상 (${battery.toFixed(1)}%)`,
+            }
           : battery > 50
-          ? { system: "Battery", level: "warning", msg: `주의 (${battery.toFixed(1)}%)` }
-          : { system: "Battery", level: "danger", msg: `위험 (${battery.toFixed(1)}%)` },
+            ? {
+                system: "Battery",
+                level: "warning",
+                msg: `주의 (${battery.toFixed(1)}%)`,
+              }
+            : {
+                system: "Battery",
+                level: "danger",
+                msg: `위험 (${battery.toFixed(1)}%)`,
+              },
       )
     } else {
       systems.push({
@@ -86,10 +99,22 @@ export function RealtimeCBMStatusCard({
       const speed = droneData.speed
       systems.push(
         speed <= 20
-          ? { system: "ESC", level: "safe", msg: `정상 (${speed.toFixed(1)} m/s)` }
+          ? {
+              system: "ESC",
+              level: "safe",
+              msg: `정상 (${speed.toFixed(1)} m/s)`,
+            }
           : speed <= 30
-          ? { system: "ESC", level: "warning", msg: `주의 (${speed.toFixed(1)} m/s)` }
-          : { system: "ESC", level: "danger", msg: `위험 (${speed.toFixed(1)} m/s)` },
+            ? {
+                system: "ESC",
+                level: "warning",
+                msg: `주의 (${speed.toFixed(1)} m/s)`,
+              }
+            : {
+                system: "ESC",
+                level: "danger",
+                msg: `위험 (${speed.toFixed(1)} m/s)`,
+              },
       )
     } else {
       systems.push({
@@ -104,10 +129,22 @@ export function RealtimeCBMStatusCard({
       const altitude = droneData.altitude
       systems.push(
         altitude <= 120
-          ? { system: "FCC", level: "safe", msg: `정상 (${altitude.toFixed(1)} m)` }
+          ? {
+              system: "FCC",
+              level: "safe",
+              msg: `정상 (${altitude.toFixed(1)} m)`,
+            }
           : altitude <= 150
-          ? { system: "FCC", level: "warning", msg: `주의 (${altitude.toFixed(1)} m)` }
-          : { system: "FCC", level: "danger", msg: `위험 (${altitude.toFixed(1)} m)` },
+            ? {
+                system: "FCC",
+                level: "warning",
+                msg: `주의 (${altitude.toFixed(1)} m)`,
+              }
+            : {
+                system: "FCC",
+                level: "danger",
+                msg: `위험 (${altitude.toFixed(1)} m)`,
+              },
       )
     } else {
       systems.push({
@@ -165,8 +202,8 @@ export function RealtimeCBMStatusCard({
 
   const iconMap: Record<string, JSX.Element> = {
     Battery: <Battery className="h-5 w-5 text-amber-500" />,
-    ESC: <Thermometer className="h-5 w-5 text-rose-500" />,
-    FCC: <AlertTriangle className="h-5 w-5 text-orange-500" />,
+    ESC: <Zap className="h-5 w-5 text-rose-500" />,
+    FCC: <Cpu className="h-5 w-5 text-orange-500" />,
     GNSS: <Satellite className="h-5 w-5 text-sky-500" />,
   }
 
@@ -178,12 +215,14 @@ export function RealtimeCBMStatusCard({
 
   const rowTone: Record<"safe" | "warning" | "danger", string> = {
     safe: "bg-emerald-50/60 border-emerald-200/70 dark:bg-emerald-900/20 dark:border-emerald-900/40",
-    warning: "bg-amber-50/60 border-amber-200/70 dark:bg-amber-900/20 dark:border-amber-900/40",
-    danger: "bg-rose-50/60 border-rose-200/70 dark:bg-rose-900/20 dark:border-rose-900/40",
+    warning:
+      "bg-amber-50/60 border-amber-200/70 dark:bg-amber-900/20 dark:border-amber-900/40",
+    danger:
+      "bg-rose-50/60 border-rose-200/70 dark:bg-rose-900/20 dark:border-rose-900/40",
   }
 
   return (
-    <Card className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.35)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+    <Card className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.35)] ring-1 ring-white/70 backdrop-blur-xl transition-all duration-300 hover:shadow-lg motion-safe:hover:-translate-y-0.5 dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
       <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60">
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-600" />
