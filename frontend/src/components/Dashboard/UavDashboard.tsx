@@ -540,25 +540,12 @@ export function UavDashboard() {
                 <div className="absolute right-4 top-4">
                   <HelpHint text="배터리, 고도, 속도, GPS 품질을 기반으로 상태 기반 정비 지표를 확인합니다." />
                 </div>
-                <RealtimeCBMStatusCard
-                  connected={droneConnected}
-                  droneData={
-                    droneData
-                      ? {
-                          battery: droneData.battery,
-                          altitude: droneData.altitude,
-                          speed: droneData.speed,
-                          gpsFixType: droneData.gpsFixType,
-                          gpsSatellites: droneData.gpsSatellites,
-                        }
-                      : undefined
-                  }
-                />
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
+            {/* 기상 정보 */}
             <div className="flex items-center gap-3">
               <div className="rounded-2xl bg-gradient-to-br from-cyan-500 to-sky-500 p-2 shadow-sm">
                 <Cloud className="h-5 w-5 text-white" />
@@ -577,6 +564,42 @@ export function UavDashboard() {
                 <HelpHint text="지도에서 클릭한 좌표의 기상 정보를 조회해 비행 안전성을 확인합니다." />
               </div>
               <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
+            </div>
+
+            {/* CBM 상태 기반 정비 — 기상 정보 아래로 이동 */}
+            <div className="w-full space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
+                  <AlertTriangle className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                    상태 기반 정비 (CBM)
+                  </h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    드론 연결 상태에 따라 실시간으로 시스템 상태를 평가합니다.
+                  </p>
+                </div>
+              </div>
+              <div className="relative rounded-[26px] border border-transparent bg-transparent p-4 shadow-none ring-0 transition-all duration-300">
+                <div className="absolute right-4 top-4">
+                  <HelpHint text="배터리, 고도, 속도, GPS 품질을 기반으로 상태 기반 정비 지표를 확인합니다." />
+                </div>
+                <RealtimeCBMStatusCard
+                  connected={droneConnected}
+                  droneData={
+                    droneData
+                      ? {
+                          battery: droneData.battery,
+                          altitude: droneData.altitude,
+                          speed: droneData.speed,
+                          gpsFixType: droneData.gpsFixType,
+                          gpsSatellites: droneData.gpsSatellites,
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
           </div>
         </div>
