@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import { NaverMap } from "@/components/Map/NaverMap"
 import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
-import DroneSimulation, { DroneData } from "./DroneSimulation"
+import DroneSimulation, {
+  DroneData,
+  DroneWsState,
+  FlightStatusBadge,
+  getFlightStatus,
+} from "./DroneSimulation"
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 import {
@@ -27,6 +32,9 @@ import {
   Gauge,
   Navigation,
   Wrench,
+  CheckCircle2,
+  XCircle,
+  Wind,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -279,6 +287,263 @@ const StatusBadge = ({
 }
 
 // ==========================
+// ★ 비행 가능 여부 종합 위젯
+// ==========================
+
+interface FlightFeasibilityWidgetProps {
+  droneConnected: boolean
+  droneData: DroneData | null
+  alertLevel: "safe" | "caution" | "danger"
+  alerts: Array<{
+    id: string
+    level: "safe" | "caution" | "danger"
+    label: string
+  }>
+  allDroneStates: DroneWsState[]
+}
+
+type FeasibilityResult = "go" | "caution" | "no-go" | "unknown"
+
+interface CheckItem {
+  id: string
+  label: string
+  result: "pass" | "warn" | "fail" | "unknown"
+  detail: string
+}
+
+function FlightFeasibilityWidget({
+  droneConnected,
+  droneData,
+  alertLevel,
+  alerts,
+  allDroneStates,
+}: FlightFeasibilityWidgetProps) {
+  const checks: CheckItem[] = []
+
+  // 1. 드론 연결 확인
+  checks.push({
+    id: "connection",
+    label: "드론 연결",
+    result: droneConnected ? "pass" : "fail",
+    detail: droneConnected ? "연결됨" : "연결 안 됨 — 기체를 선택하세요",
+  })
+
+  // 2. 배터리
+  const battery = droneData?.battery
+  checks.push({
+    id: "battery",
+    label: "배터리",
+    result:
+      battery == null
+        ? "unknown"
+        : battery > 50
+          ? "pass"
+          : battery > 30
+            ? "warn"
+            : "fail",
+    detail:
+      battery == null
+        ? "데이터 없음"
+        : battery > 50
+          ? `${battery.toFixed(0)}% — 충분`
+          : battery > 30
+            ? `${battery.toFixed(0)}% — 짧은 비행만 가능`
+            : `${battery.toFixed(0)}% — 충전 필요`,
+  })
+
+  // 3. GPS
+  const hasgps =
+    typeof droneData?.latitude === "number" &&
+    typeof droneData?.longitude === "number"
+  const satellites = droneData?.gpsSatellites
+  checks.push({
+    id: "gps",
+    label: "GPS",
+    result: !droneConnected
+      ? "unknown"
+      : hasgps && (satellites == null || satellites > 6)
+        ? "pass"
+        : hasgps
+          ? "warn"
+          : "fail",
+    detail: !droneConnected
+      ? "데이터 없음"
+      : hasgps
+        ? `위성 ${satellites ?? "?"}개 — 위치 확인됨`
+        : "GPS 신호 없음 — 비행 불가",
+  })
+
+  // 4. 통신 지연
+  const timestampAge = droneData?.timestamp
+    ? Date.now() - new Date(droneData.timestamp).getTime()
+    : null
+  checks.push({
+    id: "latency",
+    label: "통신 지연",
+    result:
+      timestampAge == null
+        ? "unknown"
+        : timestampAge < 5000
+          ? "pass"
+          : timestampAge < 10000
+            ? "warn"
+            : "fail",
+    detail:
+      timestampAge == null
+        ? "데이터 없음"
+        : timestampAge < 5000
+          ? "정상 (<5초)"
+          : timestampAge < 10000
+            ? `${(timestampAge / 1000).toFixed(0)}초 지연 — 주의`
+            : `${(timestampAge / 1000).toFixed(0)}초 지연 — 통신 점검 필요`,
+  })
+
+  // 5. 알림 없음
+  const dangerAlerts = alerts.filter((a) => a.level === "danger")
+  const cautionAlerts = alerts.filter((a) => a.level === "caution")
+  checks.push({
+    id: "alerts",
+    label: "위험 알림",
+    result: !droneConnected
+      ? "unknown"
+      : dangerAlerts.length > 0
+        ? "fail"
+        : cautionAlerts.length > 0
+          ? "warn"
+          : "pass",
+    detail: !droneConnected
+      ? "연결 후 확인"
+      : dangerAlerts.length > 0
+        ? `위험 ${dangerAlerts.length}건 발생`
+        : cautionAlerts.length > 0
+          ? `주의 ${cautionAlerts.length}건`
+          : "이상 없음",
+  })
+
+  // 종합 판단
+  const feasibility: FeasibilityResult = !droneConnected
+    ? "unknown"
+    : checks.some((c) => c.result === "fail")
+      ? "no-go"
+      : checks.some((c) => c.result === "warn")
+        ? "caution"
+        : "go"
+
+  const feasibilityConfig = {
+    go: {
+      label: "비행 가능",
+      sublabel: "모든 항목이 정상입니다",
+      icon: <CheckCircle2 className="h-8 w-8" />,
+      bg: "from-emerald-500 to-teal-500",
+      border: "border-emerald-200/60 dark:border-emerald-800/40",
+      bg2: "bg-emerald-50/80 dark:bg-emerald-900/15",
+      text: "text-emerald-700 dark:text-emerald-300",
+    },
+    caution: {
+      label: "주의 필요",
+      sublabel: "일부 항목을 확인하세요",
+      icon: <AlertTriangle className="h-8 w-8" />,
+      bg: "from-amber-500 to-yellow-400",
+      border: "border-amber-200/60 dark:border-amber-800/40",
+      bg2: "bg-amber-50/80 dark:bg-amber-900/15",
+      text: "text-amber-700 dark:text-amber-300",
+    },
+    "no-go": {
+      label: "비행 불가",
+      sublabel: "위험 항목을 해결하세요",
+      icon: <XCircle className="h-8 w-8 animate-pulse" />,
+      bg: "from-red-500 to-rose-500",
+      border: "border-red-200/60 dark:border-red-800/40",
+      bg2: "bg-red-50/80 dark:bg-red-900/15",
+      text: "text-red-700 dark:text-red-300",
+    },
+    unknown: {
+      label: "판단 불가",
+      sublabel: "드론을 연결하세요",
+      icon: <Wind className="h-8 w-8" />,
+      bg: "from-slate-400 to-slate-500",
+      border: "border-slate-200/60 dark:border-slate-700/60",
+      bg2: "bg-slate-50/80 dark:bg-slate-800/30",
+      text: "text-slate-500 dark:text-slate-400",
+    },
+  }[feasibility]
+
+  const resultIcon = {
+    pass: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+    warn: <AlertTriangle className="h-4 w-4 text-amber-500" />,
+    fail: <XCircle className="h-4 w-4 text-red-500" />,
+    unknown: (
+      <span className="inline-block h-4 w-4 rounded-full border-2 border-slate-300 dark:border-slate-600" />
+    ),
+  }
+
+  return (
+    <div
+      className={`rounded-3xl border ${feasibilityConfig.border} ${feasibilityConfig.bg2} overflow-hidden`}
+    >
+      {/* 헤더 - 종합 결과 */}
+      <div className="flex items-center gap-5 px-6 py-5">
+        {/* 아이콘 그라데이션 원 */}
+        <div
+          className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${feasibilityConfig.bg} text-white shadow-lg`}
+        >
+          {feasibilityConfig.icon}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className={`text-xl font-bold ${feasibilityConfig.text}`}>
+              {feasibilityConfig.label}
+            </h3>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {feasibilityConfig.sublabel}
+          </p>
+        </div>
+
+        {/* 3개 기체 비행 상태 요약 */}
+        <div className="hidden shrink-0 flex-col gap-1.5 sm:flex">
+          {allDroneStates.map((state, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <span className="w-20 truncate text-xs text-slate-500 dark:text-slate-400">
+                {["DM4_1", "DM4_2", "DM3"][idx]}
+              </span>
+              <FlightStatusBadge
+                status={state.connected ? state.flightStatus : "unknown"}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 체크 항목 */}
+      <div className="border-t border-slate-200/50 px-6 py-4 dark:border-slate-700/40">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {checks.map((check) => (
+            <div
+              key={check.id}
+              className="flex items-start gap-2.5 rounded-xl bg-white/70 px-3 py-2.5 dark:bg-slate-900/50"
+            >
+              <span className="mt-0.5 shrink-0">
+                {resultIcon[check.result]}
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {check.label}
+                </p>
+                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {check.detail}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ==========================
 // 유틸리티
 // ==========================
 
@@ -334,6 +599,13 @@ export function UavDashboard() {
   const [droneData, setDroneData] = useState<DroneData | null>(null)
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+
+  // ★ 3개 기체 전체 상태
+  const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
+    { connected: false, data: null, flightStatus: "unknown" },
+    { connected: false, data: null, flightStatus: "unknown" },
+    { connected: false, data: null, flightStatus: "unknown" },
+  ])
 
   // 섹션 접기/펼치기 상태
   const [collapseMonitor, setCollapseMonitor] = useState(false)
@@ -513,6 +785,15 @@ export function UavDashboard() {
           droneData={droneData}
         />
 
+        {/* ==================== ★ 비행 가능 여부 종합 위젯 ==================== */}
+        <FlightFeasibilityWidget
+          droneConnected={droneConnected}
+          droneData={droneData}
+          alertLevel={alertLevel}
+          alerts={alerts}
+          allDroneStates={allDroneStates}
+        />
+
         {/* ==================== Sticky 관제 상태바 ==================== */}
         <div className="sticky top-2 z-20 rounded-2xl border border-slate-200/60 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/40 ring-1 ring-white/70 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/85 dark:shadow-none dark:ring-slate-800/70">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -682,6 +963,7 @@ export function UavDashboard() {
                   <DroneSimulation
                     onConnectionChange={setDroneConnected}
                     onData={setDroneData}
+                    onAllDroneStates={setAllDroneStates}
                   />
                 </div>
               )}
@@ -844,15 +1126,8 @@ export function UavDashboard() {
       </div>
 
       {/* ==================== 우하단 고정 버튼 그룹 ==================== */}
-      {/*
-        fixed + bottom-6 + right-6 으로 스크롤과 무관하게
-        항상 화면 오른쪽 아래에 고정됩니다.
-        flex-col items-end 로 버튼을 세로로 쌓고,
-        채팅 패널은 버튼들 위에 자연스럽게 열립니다.
-      */}
       {createPortal(
         <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3">
-          {/* AI 채팅 패널 — 버튼 위로 열림 */}
           {chatOpen && (
             <div className="w-[min(420px,calc(100vw-3rem))] rounded-3xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800/60">
@@ -876,7 +1151,6 @@ export function UavDashboard() {
             </div>
           )}
 
-          {/* AI 상담 버튼 */}
           <button
             type="button"
             onClick={() => setChatOpen((v) => !v)}
@@ -887,7 +1161,6 @@ export function UavDashboard() {
             AI 상담
           </button>
 
-          {/* 맨 위로 버튼 — 항상 표시 */}
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
