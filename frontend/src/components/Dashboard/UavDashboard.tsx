@@ -63,28 +63,25 @@ function useWebNotification() {
       : "denied",
   )
 
-  // 마운트 시 권한 상태 동기화
   useEffect(() => {
     if (!("Notification" in window)) return
     setPermission(Notification.permission)
   }, [])
 
-  // 권한 요청
   const requestPermission = async () => {
     if (!("Notification" in window)) return
     const result = await Notification.requestPermission()
     setPermission(result)
   }
 
-  // 알림 전송
   const sendNotification = (title: string, body: string, tag?: string) => {
     if (!("Notification" in window)) return
     if (Notification.permission !== "granted") return
     new Notification(title, {
       body,
       icon: "/favicon.ico",
-      tag: tag ?? "drone-alert", // 같은 tag면 중복 쌓이지 않음
-      requireInteraction: true, // 사용자가 직접 닫기 전까지 유지
+      tag: tag ?? "drone-alert",
+      requireInteraction: true,
     })
   }
 
@@ -935,7 +932,11 @@ export function UavDashboard() {
   // ★ Web Notification
   const { permission, requestPermission, sendNotification } =
     useWebNotification()
-  // danger로 전환되는 순간에만 알림 1회 발송하기 위한 이전 레벨 추적
+
+  // ★ 소프트 토글 — OS 권한과 별개로 앱 내에서 알림 on/off
+  const [notifyEnabled, setNotifyEnabled] = useState(true)
+
+  // danger로 전환되는 순간에만 알림 1회 발송
   const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
 
   // ==========================
@@ -1040,9 +1041,14 @@ export function UavDashboard() {
       ? "caution"
       : "safe"
 
-  // ★ danger로 바뀌는 순간 OS 알림 발송
+  // ★ danger 전환 시 OS 알림 발송 (notifyEnabled + permission 둘 다 확인)
   useEffect(() => {
-    if (alertLevel === "danger" && prevAlertLevelRef.current !== "danger") {
+    if (
+      alertLevel === "danger" &&
+      prevAlertLevelRef.current !== "danger" &&
+      notifyEnabled &&
+      permission === "granted"
+    ) {
       const dangerBody = alerts
         .filter((a) => a.level === "danger")
         .map((a) => a.label)
@@ -1077,6 +1083,64 @@ export function UavDashboard() {
       ? `${droneData.gpsSatellites ?? "?"} 위성`
       : null
 
+  // ★ 알림 버튼 렌더링 헬퍼
+  const renderNotificationButton = () => {
+    // 브라우저가 알림을 아예 지원 안 함
+    if (typeof window === "undefined" || !("Notification" in window))
+      return null
+
+    // 브라우저에서 차단된 경우 — 코드로 해제 불가, 안내만
+    if (permission === "denied") {
+      return (
+        <span
+          className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 dark:bg-slate-800 dark:text-slate-500"
+          title="브라우저 설정 > 사이트 설정에서 알림을 허용해주세요"
+        >
+          <BellOff className="h-3.5 w-3.5" />
+          알림 차단됨
+        </span>
+      )
+    }
+
+    // 아직 권한 요청 안 한 경우
+    if (permission === "default") {
+      return (
+        <button
+          type="button"
+          onClick={requestPermission}
+          className="flex items-center gap-1.5 rounded-full border border-indigo-200/60 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300"
+          title="클릭하면 위험 경고 시 OS 알림을 받을 수 있습니다"
+        >
+          <Bell className="h-3.5 w-3.5" />
+          알림 허용
+        </button>
+      )
+    }
+
+    // 권한 granted — 소프트 토글 버튼
+    return (
+      <button
+        type="button"
+        onClick={() => setNotifyEnabled((v) => !v)}
+        title={
+          notifyEnabled ? "클릭하면 알림을 끕니다" : "클릭하면 알림을 켭니다"
+        }
+        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition hover:opacity-80 ${
+          notifyEnabled
+            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+        }`}
+      >
+        {notifyEnabled ? (
+          <Bell className="h-3.5 w-3.5" />
+        ) : (
+          <BellOff className="h-3.5 w-3.5" />
+        )}
+        {notifyEnabled ? "알림 켜짐" : "알림 꺼짐"}
+      </button>
+    )
+  }
+
   return (
     <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900 dark:text-slate-100">
       <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
@@ -1096,36 +1160,8 @@ export function UavDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* ★ 알림 권한 버튼 */}
-            {permission === "default" && (
-              <button
-                type="button"
-                onClick={requestPermission}
-                className="flex items-center gap-1.5 rounded-full border border-indigo-200/60 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300"
-                title="위험 경고 발생 시 OS 알림을 받습니다"
-              >
-                <Bell className="h-3.5 w-3.5" />
-                알림 허용
-              </button>
-            )}
-            {permission === "granted" && (
-              <span
-                className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                title="위험 경고 시 OS 알림이 전송됩니다"
-              >
-                <Bell className="h-3.5 w-3.5" />
-                알림 켜짐
-              </span>
-            )}
-            {permission === "denied" && (
-              <span
-                className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-                title="브라우저 설정에서 알림을 허용해주세요"
-              >
-                <BellOff className="h-3.5 w-3.5" />
-                알림 차단됨
-              </span>
-            )}
+            {/* ★ 알림 버튼 (상태에 따라 자동 전환) */}
+            {renderNotificationButton()}
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
             >
