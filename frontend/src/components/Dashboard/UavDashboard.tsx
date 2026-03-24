@@ -39,6 +39,8 @@ import {
   BatteryLow,
   TrendingDown,
   PlaneLanding,
+  Bell,
+  BellOff,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -48,6 +50,45 @@ import { createPortal } from "react-dom"
 const DEFAULT_MAP_OPTIONS = {
   zoom: 11,
   center: { lat: 36.7881, lng: 126.4664 },
+}
+
+// ==========================
+// ★ Web Notification 훅
+// ==========================
+
+function useWebNotification() {
+  const [permission, setPermission] = useState<NotificationPermission>(
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : "denied",
+  )
+
+  // 마운트 시 권한 상태 동기화
+  useEffect(() => {
+    if (!("Notification" in window)) return
+    setPermission(Notification.permission)
+  }, [])
+
+  // 권한 요청
+  const requestPermission = async () => {
+    if (!("Notification" in window)) return
+    const result = await Notification.requestPermission()
+    setPermission(result)
+  }
+
+  // 알림 전송
+  const sendNotification = (title: string, body: string, tag?: string) => {
+    if (!("Notification" in window)) return
+    if (Notification.permission !== "granted") return
+    new Notification(title, {
+      body,
+      icon: "/favicon.ico",
+      tag: tag ?? "drone-alert", // 같은 tag면 중복 쌓이지 않음
+      requireInteraction: true, // 사용자가 직접 닫기 전까지 유지
+    })
+  }
+
+  return { permission, requestPermission, sendNotification }
 }
 
 // ==========================
@@ -885,11 +926,17 @@ export function UavDashboard() {
     },
   ])
 
-  // 아코디언 상태 — collapseMap 추가
-  const [collapseMap, setCollapseMap] = useState(false) // ★ 지도 아코디언
+  // 콜랩서블 상태
+  const [collapseMap, setCollapseMap] = useState(false)
   const [collapseMonitor, setCollapseMonitor] = useState(false)
   const [collapseWeather, setCollapseWeather] = useState(false)
   const [collapseCBM, setCollapseCBM] = useState(false)
+
+  // ★ Web Notification
+  const { permission, requestPermission, sendNotification } =
+    useWebNotification()
+  // danger로 전환되는 순간에만 알림 1회 발송하기 위한 이전 레벨 추적
+  const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
 
   // ==========================
   // 알림 계산
@@ -993,6 +1040,18 @@ export function UavDashboard() {
       ? "caution"
       : "safe"
 
+  // ★ danger로 바뀌는 순간 OS 알림 발송
+  useEffect(() => {
+    if (alertLevel === "danger" && prevAlertLevelRef.current !== "danger") {
+      const dangerBody = alerts
+        .filter((a) => a.level === "danger")
+        .map((a) => a.label)
+        .join("\n")
+      sendNotification("🚨 드론 위험 경고", dangerBody, "drone-danger")
+    }
+    prevAlertLevelRef.current = alertLevel
+  }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const alertTone =
     alertLevel === "danger"
       ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
@@ -1037,6 +1096,36 @@ export function UavDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* ★ 알림 권한 버튼 */}
+            {permission === "default" && (
+              <button
+                type="button"
+                onClick={requestPermission}
+                className="flex items-center gap-1.5 rounded-full border border-indigo-200/60 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300"
+                title="위험 경고 발생 시 OS 알림을 받습니다"
+              >
+                <Bell className="h-3.5 w-3.5" />
+                알림 허용
+              </button>
+            )}
+            {permission === "granted" && (
+              <span
+                className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                title="위험 경고 시 OS 알림이 전송됩니다"
+              >
+                <Bell className="h-3.5 w-3.5" />
+                알림 켜짐
+              </span>
+            )}
+            {permission === "denied" && (
+              <span
+                className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                title="브라우저 설정에서 알림을 허용해주세요"
+              >
+                <BellOff className="h-3.5 w-3.5" />
+                알림 차단됨
+              </span>
+            )}
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
             >
@@ -1173,9 +1262,8 @@ export function UavDashboard() {
           />
         )}
 
-        {/* ==================== 드론 위치 지도 (아코디언 적용) ==================== */}
+        {/* ==================== 드론 위치 지도 (콜랩서블) ==================== */}
         <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-          {/* 헤더 — 전체 클릭 시 토글 */}
           <div
             className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60 dark:border-slate-800/60 dark:bg-slate-800/30 dark:hover:bg-slate-800/50"
             onClick={() => setCollapseMap((v) => !v)}
@@ -1193,7 +1281,6 @@ export function UavDashboard() {
                 </p>
               </div>
             </div>
-            {/* HelpHint 클릭이 토글로 전파되지 않도록 stopPropagation */}
             <div className="flex items-center gap-2">
               <div onClick={(e) => e.stopPropagation()}>
                 <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다. 지도를 클릭하면 오른쪽 기상 패널에 해당 좌표의 날씨가 표시됩니다." />
@@ -1208,7 +1295,6 @@ export function UavDashboard() {
             </div>
           </div>
 
-          {/* 지도 본문 */}
           {!collapseMap && (
             <div className="aspect-video overflow-hidden">
               <NaverMap
