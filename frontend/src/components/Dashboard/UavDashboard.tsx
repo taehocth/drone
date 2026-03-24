@@ -295,30 +295,22 @@ const StatusBadge = ({
 // ==========================
 
 interface RtlPrediction {
-  /** 분당 배터리 소모율 (%) */
   drainRatePerMin: number | null
-  /** 남은 비행 가능 시간 (초) — 안전 예비 20% 제외 */
   remainingSec: number | null
-  /** 비행 경과 시간 (초) */
   elapsedSec: number
-  /** RTL 권고 레벨 */
   level: "safe" | "caution" | "danger" | "off"
-  /** 비행 시작 배터리 % */
   startBattery: number | null
 }
 
-/** RTL 안전 예비 배터리 % — 이 아래로는 비행 불가로 판단 */
 const RTL_RESERVE_PCT = 20
 
 function useRtlPrediction(
   droneActive: boolean,
   battery: number | undefined | null,
 ): RtlPrediction {
-  // 비행 시작 시점 스냅샷
   const startRef = useRef<{ battery: number; time: number } | null>(null)
   const [elapsedSec, setElapsedSec] = useState(0)
 
-  // droneActive가 켜질 때 스냅샷 기록, 꺼질 때 초기화
   useEffect(() => {
     if (droneActive && battery != null) {
       if (!startRef.current) {
@@ -328,9 +320,8 @@ function useRtlPrediction(
       startRef.current = null
       setElapsedSec(0)
     }
-  }, [droneActive]) // battery 의도적으로 제외 — 시작 시점만 캡처
+  }, [droneActive])
 
-  // 1초마다 경과 시간 갱신
   useEffect(() => {
     if (!droneActive) return
     const id = setInterval(() => {
@@ -354,7 +345,6 @@ function useRtlPrediction(
   const elapsedMin = elapsedSec / 60
   const consumed = startRef.current.battery - battery
 
-  // 최소 30초 이상 경과 + 0.1% 이상 소모돼야 유의미한 계산
   if (elapsedMin < 0.5 || consumed < 0.1) {
     return {
       drainRatePerMin: null,
@@ -373,9 +363,9 @@ function useRtlPrediction(
   const level: RtlPrediction["level"] =
     remainingSec <= 0
       ? "danger"
-      : remainingSec <= 180 // 3분 이하
+      : remainingSec <= 180
         ? "danger"
-        : remainingSec <= 360 // 6분 이하
+        : remainingSec <= 360
           ? "caution"
           : "safe"
 
@@ -442,7 +432,6 @@ function RtlPredictionWidget({
     },
   }[rtl.level]
 
-  // 배터리 잔량 대비 프로그레스바 (예비 20% 표시 포함)
   const batteryPct = battery ?? 0
   const usablePct = Math.max(0, batteryPct - RTL_RESERVE_PCT)
   const reservePct = Math.min(batteryPct, RTL_RESERVE_PCT)
@@ -469,7 +458,6 @@ function RtlPredictionWidget({
     <div
       className={`rounded-3xl border ${levelStyle.border} ${levelStyle.bg} overflow-hidden`}
     >
-      {/* 헤더 */}
       <div className="flex items-center gap-4 px-6 py-5">
         <div
           className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${levelStyle.iconBg} text-white shadow-lg`}
@@ -489,8 +477,6 @@ function RtlPredictionWidget({
             {sublabel}
           </p>
         </div>
-
-        {/* 비행 경과 시간 */}
         {droneActive && rtl.elapsedSec > 0 && (
           <div className="shrink-0 text-right">
             <p className="text-xs text-slate-400 dark:text-slate-500">
@@ -503,9 +489,7 @@ function RtlPredictionWidget({
         )}
       </div>
 
-      {/* 세부 지표 */}
       <div className="space-y-4 border-t border-slate-200/50 px-6 py-4 dark:border-slate-700/40">
-        {/* 배터리 게이지 */}
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
@@ -516,14 +500,11 @@ function RtlPredictionWidget({
               {battery != null ? `${battery.toFixed(0)}%` : "—"}
             </span>
           </div>
-          {/* 프로그레스 바 — 사용 가능(컬러) + 예비(회색) + 소모(빈칸) */}
           <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-200/60 dark:bg-slate-700/60">
-            {/* 사용 가능 구간 */}
             <div
               className={`h-full transition-all duration-500 ${levelStyle.bar}`}
               style={{ width: `${usablePct}%` }}
             />
-            {/* 예비 구간 (빨간/회색) */}
             <div
               className="h-full bg-red-300/70 transition-all duration-500 dark:bg-red-800/50"
               style={{ width: `${reservePct}%` }}
@@ -540,7 +521,6 @@ function RtlPredictionWidget({
           </div>
         </div>
 
-        {/* 수치 3개 */}
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
             <TrendingDown className="mx-auto mb-1 h-4 w-4 text-slate-400" />
@@ -613,7 +593,6 @@ function FlightFeasibilityWidget({
 }: FlightFeasibilityWidgetProps) {
   const checks: CheckItem[] = []
 
-  // 1. 드론 연결 확인
   checks.push({
     id: "connection",
     label: "드론 연결",
@@ -621,7 +600,6 @@ function FlightFeasibilityWidget({
     detail: droneConnected ? "연결됨" : "연결 안 됨 — 기체를 선택하세요",
   })
 
-  // 2. 배터리
   const battery = droneData?.battery
   checks.push({
     id: "battery",
@@ -644,7 +622,6 @@ function FlightFeasibilityWidget({
             : `${battery.toFixed(0)}% — 충전 필요`,
   })
 
-  // 3. GPS
   const hasgps =
     typeof droneData?.latitude === "number" &&
     typeof droneData?.longitude === "number"
@@ -666,7 +643,6 @@ function FlightFeasibilityWidget({
         : "GPS 신호 없음 — 비행 불가",
   })
 
-  // 4. 통신 지연
   const timestampAge = droneData?.timestamp
     ? Date.now() - new Date(droneData.timestamp).getTime()
     : null
@@ -691,7 +667,6 @@ function FlightFeasibilityWidget({
             : `${(timestampAge / 1000).toFixed(0)}초 지연 — 통신 점검 필요`,
   })
 
-  // 5. 알림 없음
   const dangerAlerts = alerts.filter((a) => a.level === "danger")
   const cautionAlerts = alerts.filter((a) => a.level === "caution")
   checks.push({
@@ -713,7 +688,6 @@ function FlightFeasibilityWidget({
           : "이상 없음",
   })
 
-  // 종합 판단
   const feasibility: FeasibilityResult = !droneConnected
     ? "unknown"
     : checks.some((c) => c.result === "fail")
@@ -774,15 +748,12 @@ function FlightFeasibilityWidget({
     <div
       className={`rounded-3xl border ${feasibilityConfig.border} ${feasibilityConfig.bg2} overflow-hidden`}
     >
-      {/* 헤더 - 종합 결과 */}
       <div className="flex items-center gap-5 px-6 py-5">
-        {/* 아이콘 그라데이션 원 */}
         <div
           className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${feasibilityConfig.bg} text-white shadow-lg`}
         >
           {feasibilityConfig.icon}
         </div>
-
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className={`text-xl font-bold ${feasibilityConfig.text}`}>
@@ -793,8 +764,6 @@ function FlightFeasibilityWidget({
             {feasibilityConfig.sublabel}
           </p>
         </div>
-
-        {/* 3개 기체 비행 상태 요약 */}
         <div className="hidden shrink-0 flex-col gap-1.5 sm:flex">
           {allDroneStates.map((state, idx) => (
             <div key={idx} className="flex items-center gap-2">
@@ -809,7 +778,6 @@ function FlightFeasibilityWidget({
         </div>
       </div>
 
-      {/* 체크 항목 */}
       <div className="border-t border-slate-200/50 px-6 py-4 dark:border-slate-700/40">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {checks.map((check) => (
@@ -893,7 +861,6 @@ export function UavDashboard() {
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
 
-  // ★ 3개 기체 전체 상태
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     {
       wsConnected: false,
@@ -918,7 +885,8 @@ export function UavDashboard() {
     },
   ])
 
-  // 섹션 접기/펼치기 상태
+  // 아코디언 상태 — collapseMap 추가
+  const [collapseMap, setCollapseMap] = useState(false) // ★ 지도 아코디언
   const [collapseMonitor, setCollapseMonitor] = useState(false)
   const [collapseWeather, setCollapseWeather] = useState(false)
   const [collapseCBM, setCollapseCBM] = useState(false)
@@ -1039,9 +1007,6 @@ export function UavDashboard() {
 
   const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
 
-  // ==========================
-  // 핵심 수치 (상단 요약 카드용)
-  // ==========================
   const batteryVal =
     droneData?.battery != null ? `${droneData.battery.toFixed(0)}` : null
   const altitudeVal =
@@ -1089,14 +1054,14 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ==================== 상황 안내 배너 (초보자용) ==================== */}
+        {/* ==================== 상황 안내 배너 ==================== */}
         <GuideBanner
           droneConnected={droneConnected}
           alertLevel={alertLevel}
           droneData={droneData}
         />
 
-        {/* ==================== ★ 비행 가능 여부 종합 위젯 ==================== */}
+        {/* ==================== 비행 가능 여부 종합 위젯 ==================== */}
         <FlightFeasibilityWidget
           droneConnected={droneConnected}
           droneData={droneData}
@@ -1142,7 +1107,6 @@ export function UavDashboard() {
             <HelpHint text="관제 핵심 상태를 한 줄로 요약합니다. 알림 건수를 클릭하면 상세 내용을 볼 수 있습니다." />
           </div>
 
-          {/* 알림 상세 인라인 드롭다운 */}
           {showAlertDetails && alerts.length > 0 && (
             <div className="mt-3 space-y-1.5 border-t border-slate-200/60 pt-3 dark:border-slate-700/60">
               {alerts.map((alert) => (
@@ -1164,7 +1128,7 @@ export function UavDashboard() {
           )}
         </div>
 
-        {/* ==================== 핵심 수치 요약 (초보자용 카드 4개) ==================== */}
+        {/* ==================== 핵심 수치 요약 카드 4개 ==================== */}
         {droneConnected && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
@@ -1201,7 +1165,7 @@ export function UavDashboard() {
           </div>
         )}
 
-        {/* ==================== ★ 배터리 RTL 예측 위젯 ==================== */}
+        {/* ==================== 배터리 RTL 예측 위젯 ==================== */}
         {droneConnected && (
           <RtlPredictionWidget
             droneActive={droneData !== null}
@@ -1209,25 +1173,43 @@ export function UavDashboard() {
           />
         )}
 
-        {/* ==================== 드론 위치 지도 ==================== */}
-        <Card className="overflow-hidden rounded-3xl border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-          <CardHeader className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 dark:border-slate-800/60 dark:bg-slate-800/30">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
-                  <MapPin className="h-4 w-4 text-white" />
-                </div>
-                <div>
-                  <CardTitle className="text-base">드론 위치</CardTitle>
-                  <CardDescription className="text-xs">
-                    지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
-                  </CardDescription>
-                </div>
+        {/* ==================== 드론 위치 지도 (아코디언 적용) ==================== */}
+        <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
+          {/* 헤더 — 전체 클릭 시 토글 */}
+          <div
+            className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60 dark:border-slate-800/60 dark:bg-slate-800/30 dark:hover:bg-slate-800/50"
+            onClick={() => setCollapseMap((v) => !v)}
+          >
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
+                <MapPin className="h-4 w-4 text-white" />
               </div>
-              <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다. 지도를 클릭하면 오른쪽 기상 패널에 해당 좌표의 날씨가 표시됩니다." />
+              <div>
+                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  드론 위치
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
+                </p>
+              </div>
             </div>
-          </CardHeader>
-          <CardContent className="p-0">
+            {/* HelpHint 클릭이 토글로 전파되지 않도록 stopPropagation */}
+            <div className="flex items-center gap-2">
+              <div onClick={(e) => e.stopPropagation()}>
+                <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다. 지도를 클릭하면 오른쪽 기상 패널에 해당 좌표의 날씨가 표시됩니다." />
+              </div>
+              <span className="text-slate-400">
+                {collapseMap ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronUp className="h-4 w-4" />
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* 지도 본문 */}
+          {!collapseMap && (
             <div className="aspect-video overflow-hidden">
               <NaverMap
                 lat={DEFAULT_MAP_OPTIONS.center.lat}
@@ -1252,14 +1234,13 @@ export function UavDashboard() {
                 }}
               />
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
 
-        {/* ==================== 2단 그리드: 실시간 정보 + 기상/CBM ==================== */}
+        {/* ==================== 2단 그리드 ==================== */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          {/* 왼쪽: 기체 실시간 정보 + 임계값 알림 */}
+          {/* ────── 왼쪽: 기체 실시간 정보 ────── */}
           <div className="space-y-5">
-            {/* 기체 실시간 정보 */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
               <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
                 <SectionHeader
@@ -1283,6 +1264,72 @@ export function UavDashboard() {
                     onConnectionChange={setDroneConnected}
                     onData={setDroneData}
                     onAllDroneStates={setAllDroneStates}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ────── 오른쪽: 기상 정보 + CBM + 연결 안내 + 임계값 알림 ────── */}
+          <div className="space-y-5">
+            {/* 기상 정보 */}
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
+              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
+                <SectionHeader
+                  icon={<Cloud />}
+                  title="기상 정보"
+                  desc="지도 클릭 위치의 실시간 기상 및 비행 안전성"
+                  collapsible
+                  collapsed={collapseWeather}
+                  onToggle={() => setCollapseWeather((v) => !v)}
+                />
+              </div>
+              {!collapseWeather && (
+                <div className="p-4">
+                  <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
+                </div>
+              )}
+            </div>
+
+            {/* 상태 기반 정비 (CBM) */}
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
+              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
+                <SectionHeader
+                  icon={<Wrench />}
+                  title="상태 기반 정비 (CBM)"
+                  desc="배터리·고도·속도·GPS 기반 정비 지표"
+                  collapsible
+                  collapsed={collapseCBM}
+                  onToggle={() => setCollapseCBM((v) => !v)}
+                  badge={
+                    <StatusBadge
+                      level={droneConnected ? alertLevel : "off"}
+                      label={
+                        droneConnected
+                          ? alertLevel === "safe"
+                            ? "정상"
+                            : "점검 필요"
+                          : "미연결"
+                      }
+                    />
+                  }
+                />
+              </div>
+              {!collapseCBM && (
+                <div className="p-4">
+                  <RealtimeCBMStatusCard
+                    connected={droneConnected}
+                    droneData={
+                      droneData
+                        ? {
+                            battery: droneData.battery,
+                            altitude: droneData.altitude,
+                            speed: droneData.speed,
+                            gpsFixType: droneData.gpsFixType,
+                            gpsSatellites: droneData.gpsSatellites,
+                          }
+                        : undefined
+                    }
                   />
                 </div>
               )}
@@ -1373,72 +1420,6 @@ export function UavDashboard() {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-
-          {/* 오른쪽: 기상 정보 + CBM */}
-          <div className="space-y-5">
-            {/* 기상 정보 */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
-                <SectionHeader
-                  icon={<Cloud />}
-                  title="기상 정보"
-                  desc="지도 클릭 위치의 실시간 기상 및 비행 안전성"
-                  collapsible
-                  collapsed={collapseWeather}
-                  onToggle={() => setCollapseWeather((v) => !v)}
-                />
-              </div>
-              {!collapseWeather && (
-                <div className="p-4">
-                  <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
-                </div>
-              )}
-            </div>
-
-            {/* CBM 상태 기반 정비 */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
-                <SectionHeader
-                  icon={<Wrench />}
-                  title="상태 기반 정비 (CBM)"
-                  desc="배터리·고도·속도·GPS 기반 정비 지표"
-                  collapsible
-                  collapsed={collapseCBM}
-                  onToggle={() => setCollapseCBM((v) => !v)}
-                  badge={
-                    <StatusBadge
-                      level={droneConnected ? alertLevel : "off"}
-                      label={
-                        droneConnected
-                          ? alertLevel === "safe"
-                            ? "정상"
-                            : "점검 필요"
-                          : "미연결"
-                      }
-                    />
-                  }
-                />
-              </div>
-              {!collapseCBM && (
-                <div className="p-4">
-                  <RealtimeCBMStatusCard
-                    connected={droneConnected}
-                    droneData={
-                      droneData
-                        ? {
-                            battery: droneData.battery,
-                            altitude: droneData.altitude,
-                            speed: droneData.speed,
-                            gpsFixType: droneData.gpsFixType,
-                            gpsSatellites: droneData.gpsSatellites,
-                          }
-                        : undefined
-                    }
-                  />
-                </div>
-              )}
             </div>
           </div>
         </div>
