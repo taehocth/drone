@@ -5,17 +5,9 @@ import DroneSimulation, {
   DroneData,
   DroneWsState,
   FlightStatusBadge,
-  getFlightStatus,
 } from "./DroneSimulation"
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   MapPin,
   Cloud,
@@ -41,36 +33,20 @@ import {
   PlaneLanding,
   Bell,
   BellOff,
-  ClipboardList,
   Lightbulb,
   Clock,
-  Circle,
-  CheckSquare,
-  Square,
-  RotateCcw,
-  BookOpen,
-  ChevronRight,
-  Zap,
   Target,
   Radio,
-  TriangleAlert,
-  Info,
-  PlayCircle,
-  StopCircle,
-  SkipForward,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
-// ==========================
-// 기본 지도 설정
-// ==========================
 const DEFAULT_MAP_OPTIONS = {
   zoom: 11,
   center: { lat: 36.7881, lng: 126.4664 },
 }
 
 // ==========================
-// ★ Web Notification 훅
+// Web Notification 훅
 // ==========================
 function useWebNotification() {
   const [permission, setPermission] = useState<NotificationPermission>(
@@ -118,7 +94,6 @@ const HelpHint = ({ text }: { text: string }) => (
   </button>
 )
 
-// 단계별 상황 안내 배너
 const GuideBanner = ({
   droneConnected,
   alertLevel,
@@ -212,7 +187,6 @@ const GuideBanner = ({
   )
 }
 
-// 핵심 수치 요약 카드
 const StatCard = ({
   icon,
   label,
@@ -234,14 +208,12 @@ const StatCard = ({
     danger: "border-red-200/60 bg-red-50/60",
     off: "border-slate-200/40 bg-slate-50/60",
   }[level ?? "off"]
-
   const valueStyle = {
     safe: "text-emerald-700",
     caution: "text-amber-700",
     danger: "text-red-600",
     off: "text-slate-400",
   }[level ?? "off"]
-
   return (
     <div
       className={`group relative rounded-2xl border p-4 transition-all ${levelStyle}`}
@@ -263,7 +235,6 @@ const StatCard = ({
   )
 }
 
-// 섹션 헤더
 const SectionHeader = ({
   icon,
   title,
@@ -309,7 +280,6 @@ const SectionHeader = ({
   </div>
 )
 
-// 상태 뱃지
 const StatusBadge = ({
   level,
   label,
@@ -333,335 +303,8 @@ const StatusBadge = ({
 }
 
 // ==========================
-// ★★★ NEW: 비행 전 체크리스트
+// 상황 판단 가이드
 // ==========================
-
-interface ChecklistItem {
-  id: string
-  label: string
-  detail: string
-  required: boolean
-}
-
-type ChecklistPhase = "pre-flight" | "pre-landing"
-
-const CHECKLIST_DATA: Record<
-  ChecklistPhase,
-  {
-    title: string
-    icon: React.ReactNode
-    color: string
-    items: ChecklistItem[]
-  }
-> = {
-  "pre-flight": {
-    title: "이륙 전 체크리스트",
-    icon: <PlayCircle className="h-4 w-4" />,
-    color: "from-blue-500 to-indigo-500",
-    items: [
-      {
-        id: "pf1",
-        label: "배터리 충전 상태 확인",
-        detail: "80% 이상 권장. 60% 미만 시 단거리 임무만 가능",
-        required: true,
-      },
-      {
-        id: "pf2",
-        label: "기체 외관 이상 없음",
-        detail: "프로펠러 파손, 모터 이물질, 착륙 장치 점검",
-        required: true,
-      },
-      {
-        id: "pf3",
-        label: "GPS 위성 6개 이상 확보",
-        detail: "위성 수 부족 시 위치 오차 및 자동 귀환 오작동 가능",
-        required: true,
-      },
-      {
-        id: "pf4",
-        label: "통신 링크 정상 확인",
-        detail: "지상국 ↔ 기체 간 데이터 링크 수신 확인",
-        required: true,
-      },
-      {
-        id: "pf5",
-        label: "비행 공역 확인",
-        detail: "비행 금지 구역, 관제권 여부 앱(Ready to Fly 등)으로 확인",
-        required: true,
-      },
-      {
-        id: "pf6",
-        label: "기상 조건 양호",
-        detail: "풍속 10m/s 이하, 가시거리 500m 이상, 강수 없음",
-        required: true,
-      },
-      {
-        id: "pf7",
-        label: "귀환 지점(Home) 설정",
-        detail: "이륙 지점이 자동으로 설정되는지 GCS에서 확인",
-        required: true,
-      },
-      {
-        id: "pf8",
-        label: "비행 계획 및 임무 확인",
-        detail: "웨이포인트, 최대 고도, 복귀 배터리 임계값 설정 확인",
-        required: false,
-      },
-      {
-        id: "pf9",
-        label: "주변 인원 및 장애물 확인",
-        detail: "반경 30m 내 사람, 차량, 구조물 제거 또는 안전 대피",
-        required: true,
-      },
-    ],
-  },
-  "pre-landing": {
-    title: "착륙 전 체크리스트",
-    icon: <StopCircle className="h-4 w-4" />,
-    color: "from-violet-500 to-purple-500",
-    items: [
-      {
-        id: "pl1",
-        label: "착륙 지점 안전 확인",
-        detail: "착륙 지점에 사람·장애물 없음, 평탄한 지면 여부",
-        required: true,
-      },
-      {
-        id: "pl2",
-        label: "배터리 잔량 확인",
-        detail: "20% 이하 시 즉시 착륙 필요. 예비 배터리 준비",
-        required: true,
-      },
-      {
-        id: "pl3",
-        label: "수동 착륙 vs 자동 착륙 결정",
-        detail: "바람 강할 때·좁은 공간은 수동 착륙 권장",
-        required: true,
-      },
-      {
-        id: "pl4",
-        label: "GCS 통신 연결 상태 확인",
-        detail: "착륙 직전 통신 두절 시 자동 착륙 또는 호버링 발생",
-        required: true,
-      },
-      {
-        id: "pl5",
-        label: "착륙 후 모터 정지 확인",
-        detail: "착륙 완료 즉시 모터 정지 여부 확인. 고속 회전 중 접근 금지",
-        required: true,
-      },
-      {
-        id: "pl6",
-        label: "비행 로그 저장 확인",
-        detail: "GCS에서 비행 데이터 자동 저장 여부 확인",
-        required: false,
-      },
-    ],
-  },
-}
-
-function PreFlightChecklist({
-  droneConnected,
-  droneData,
-}: {
-  droneConnected: boolean
-  droneData: DroneData | null
-}) {
-  const [phase, setPhase] = useState<ChecklistPhase>("pre-flight")
-  const [checked, setChecked] = useState<Record<string, boolean>>({})
-  const [collapsed, setCollapsed] = useState(false)
-
-  const currentPhase = CHECKLIST_DATA[phase]
-  const items = currentPhase.items
-  const checkedCount = items.filter((i) => checked[i.id]).length
-  const progress = Math.round((checkedCount / items.length) * 100)
-  const allRequiredDone = items
-    .filter((i) => i.required)
-    .every((i) => checked[i.id])
-
-  const reset = () => {
-    const cleared: Record<string, boolean> = {}
-    items.forEach((i) => (cleared[i.id] = false))
-    setChecked(cleared)
-  }
-
-  // 자동 체크: 배터리·GPS
-  useEffect(() => {
-    if (!droneData) return
-    setChecked((prev) => ({
-      ...prev,
-      pf1: (droneData.battery ?? 0) >= 80,
-      pf3: (droneData.gpsSatellites ?? 0) >= 6,
-      pf4: droneConnected,
-    }))
-  }, [droneData, droneConnected])
-
-  const toggle = (id: string) =>
-    setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
-
-  return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-      {/* 헤더 */}
-      <div
-        className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
-        onClick={() => setCollapsed((v) => !v)}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className={`rounded-xl bg-gradient-to-br ${currentPhase.color} p-2 shadow-sm`}
-          >
-            <ClipboardList className="h-4 w-4 text-white" />
-          </div>
-          <div>
-            <p className="text-base font-semibold text-slate-900">
-              비행 체크리스트
-            </p>
-            <p className="text-xs text-slate-500">
-              숙련 관제사의 점검 루틴을 단계별로 안내
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200">
-              <div
-                className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${currentPhase.color}`}
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <span className="text-xs font-semibold text-slate-600">
-              {checkedCount}/{items.length}
-            </span>
-          </div>
-          {collapsed ? (
-            <ChevronDown className="h-4 w-4 text-slate-400" />
-          ) : (
-            <ChevronUp className="h-4 w-4 text-slate-400" />
-          )}
-        </div>
-      </div>
-
-      {!collapsed && (
-        <div className="space-y-4 p-4">
-          {/* 탭 전환 */}
-          <div className="flex gap-2">
-            {(["pre-flight", "pre-landing"] as ChecklistPhase[]).map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => {
-                  setPhase(p)
-                  setChecked({})
-                }}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
-                  phase === p
-                    ? `bg-gradient-to-r ${CHECKLIST_DATA[p].color} text-white shadow-sm`
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
-                {CHECKLIST_DATA[p].icon}
-                {p === "pre-flight" ? "이륙 전" : "착륙 전"}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={reset}
-              className="ml-auto flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
-              title="초기화"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              초기화
-            </button>
-          </div>
-
-          {/* 완료 배너 */}
-          {allRequiredDone && checkedCount > 0 && (
-            <div className="flex items-center gap-2 rounded-xl border border-emerald-200/60 bg-emerald-50 px-4 py-2.5">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-              <span className="text-xs font-semibold text-emerald-700">
-                필수 항목 완료 —{" "}
-                {phase === "pre-flight" ? "이륙 준비 완료" : "착륙 진행 가능"}
-              </span>
-            </div>
-          )}
-
-          {/* 체크리스트 항목 */}
-          <div className="space-y-1.5">
-            {items.map((item) => {
-              const isAuto = ["pf1", "pf3", "pf4"].includes(item.id)
-              const isDone = !!checked[item.id]
-              return (
-                <label
-                  key={item.id}
-                  className={`group flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-all ${
-                    isDone
-                      ? "border-emerald-200/60 bg-emerald-50/60"
-                      : item.required
-                        ? "border-slate-200/60 bg-white hover:border-slate-300 hover:bg-slate-50"
-                        : "border-dashed border-slate-200/60 bg-slate-50/40 hover:bg-slate-50"
-                  }`}
-                >
-                  <div className="mt-0.5 shrink-0">
-                    {isAuto ? (
-                      isDone ? (
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100">
-                          <Zap className="h-3 w-3 text-blue-500" />
-                        </div>
-                      ) : (
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100">
-                          <Zap className="h-3 w-3 text-slate-400" />
-                        </div>
-                      )
-                    ) : isDone ? (
-                      <CheckSquare className="h-5 w-5 text-emerald-500" />
-                    ) : (
-                      <Square className="h-5 w-5 text-slate-300 group-hover:text-slate-400" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-sm font-medium ${isDone ? "text-slate-400 line-through" : "text-slate-800"}`}
-                      >
-                        {item.label}
-                      </span>
-                      {item.required && !isDone && (
-                        <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-500">
-                          필수
-                        </span>
-                      )}
-                      {isAuto && (
-                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-500">
-                          자동
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-0.5 text-xs text-slate-400">
-                      {item.detail}
-                    </p>
-                  </div>
-                  {!isAuto && (
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={isDone}
-                      onChange={() => toggle(item.id)}
-                    />
-                  )}
-                </label>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ==========================
-// ★★★ NEW: 상황 판단 가이드 (What to do now)
-// ==========================
-
 interface ActionGuide {
   priority: "immediate" | "soon" | "monitor" | "standby"
   title: string
@@ -698,9 +341,7 @@ function buildActionGuides(
 
   const battery = droneData?.battery ?? null
   const altitude = droneData?.altitude ?? null
-  const speed = droneData?.speed ?? null
 
-  // 위험 상황 즉각 조치
   if (battery !== null && battery <= 20) {
     guides.push({
       priority: "immediate",
@@ -742,7 +383,6 @@ function buildActionGuides(
     })
   }
 
-  // 통신 지연
   if (droneData?.timestamp) {
     const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
     if (!isNaN(ageMs) && ageMs > 15000) {
@@ -760,7 +400,6 @@ function buildActionGuides(
     }
   }
 
-  // 정상 운항 시 모니터링 가이드
   if (guides.length === 0 && droneData) {
     guides.push({
       priority: "monitor",
@@ -834,13 +473,11 @@ function ActionGuideWidget({
   const [collapsed, setCollapsed] = useState(false)
   const guides = buildActionGuides(droneConnected, droneData, alerts)
   const topGuide = guides[0]
-
   if (!topGuide) return null
   const cfg = PRIORITY_CONFIG[topGuide.priority]
 
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-      {/* 헤더 */}
       <div
         className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
         onClick={() => setCollapsed((v) => !v)}
@@ -871,7 +508,6 @@ function ActionGuideWidget({
           )}
         </div>
       </div>
-
       {!collapsed && (
         <div className="space-y-3 p-4">
           {guides.map((guide, idx) => {
@@ -881,7 +517,6 @@ function ActionGuideWidget({
                 key={idx}
                 className={`rounded-2xl border ${c.border} ${c.bg} overflow-hidden`}
               >
-                {/* 가이드 헤더 */}
                 <div className="flex items-center gap-3 px-4 py-3">
                   <div
                     className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${c.iconBg} text-white shadow-sm`}
@@ -905,8 +540,6 @@ function ActionGuideWidget({
                     <p className="mt-0.5 text-xs text-slate-500">{guide.why}</p>
                   </div>
                 </div>
-
-                {/* 단계 목록 */}
                 <div className="space-y-2 border-t border-white/60 px-4 py-3">
                   {guide.steps.map((step, si) => (
                     <div key={si} className="flex items-start gap-2.5">
@@ -931,9 +564,8 @@ function ActionGuideWidget({
 }
 
 // ==========================
-// ★★★ NEW: 비행 이벤트 로그
+// 비행 이벤트 로그
 // ==========================
-
 interface FlightLogEntry {
   id: string
   ts: Date
@@ -965,38 +597,30 @@ function useFlightLog(
           message,
           value,
         },
-        ...prev.slice(0, 49), // 최대 50개 유지
+        ...prev.slice(0, 49),
       ])
     },
     [],
   )
 
-  // 연결 상태 변화
   useEffect(() => {
-    if (droneConnected && !prevRef.current.connected) {
+    if (droneConnected && !prevRef.current.connected)
       addLog("success", "기체 연결됨")
-    } else if (!droneConnected && prevRef.current.connected) {
+    else if (!droneConnected && prevRef.current.connected)
       addLog("warn", "기체 연결 끊김")
-    }
     prevRef.current.connected = droneConnected
   }, [droneConnected, addLog])
 
-  // 알림 레벨 변화
   useEffect(() => {
-    if (alertLevel === "danger" && prevRef.current.alertLevel !== "danger") {
+    if (alertLevel === "danger" && prevRef.current.alertLevel !== "danger")
       addLog("danger", "⚠️ 위험 경고 발생")
-    } else if (
-      alertLevel === "caution" &&
-      prevRef.current.alertLevel === "safe"
-    ) {
+    else if (alertLevel === "caution" && prevRef.current.alertLevel === "safe")
       addLog("warn", "주의 항목 감지")
-    } else if (alertLevel === "safe" && prevRef.current.alertLevel !== "safe") {
+    else if (alertLevel === "safe" && prevRef.current.alertLevel !== "safe")
       addLog("success", "상태 정상 회복")
-    }
     prevRef.current.alertLevel = alertLevel
   }, [alertLevel, addLog])
 
-  // 배터리 임계값 통과 기록
   useEffect(() => {
     const b = droneData?.battery ?? null
     const prev = prevRef.current.battery
@@ -1011,7 +635,6 @@ function useFlightLog(
     prevRef.current.battery = b
   }, [droneData?.battery, addLog])
 
-  // 고도 임계값
   useEffect(() => {
     const a = droneData?.altitude ?? null
     const prev = prevRef.current.altitude
@@ -1045,7 +668,6 @@ const LOG_STYLE: Record<
 
 function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
   const [collapsed, setCollapsed] = useState(false)
-
   const fmt = (d: Date) =>
     d.toLocaleTimeString("ko-KR", {
       hour: "2-digit",
@@ -1083,7 +705,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
           )}
         </div>
       </div>
-
       {!collapsed && (
         <div className="p-4">
           {logs.length === 0 ? (
@@ -1129,9 +750,8 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
 }
 
 // ==========================
-// ★ 배터리 RTL 예측 훅 & 위젯
+// 배터리 RTL 예측
 // ==========================
-
 interface RtlPrediction {
   drainRatePerMin: number | null
   remainingSec: number | null
@@ -1151,9 +771,7 @@ function useRtlPrediction(
 
   useEffect(() => {
     if (droneActive && battery != null) {
-      if (!startRef.current) {
-        startRef.current = { battery, time: Date.now() }
-      }
+      if (!startRef.current) startRef.current = { battery, time: Date.now() }
     } else {
       startRef.current = null
       setElapsedSec(0)
@@ -1163,9 +781,8 @@ function useRtlPrediction(
   useEffect(() => {
     if (!droneActive) return
     const id = setInterval(() => {
-      if (startRef.current) {
+      if (startRef.current)
         setElapsedSec(Math.floor((Date.now() - startRef.current.time) / 1000))
-      }
     }, 1000)
     return () => clearInterval(id)
   }, [droneActive])
@@ -1197,7 +814,6 @@ function useRtlPrediction(
   const usableBattery = battery - RTL_RESERVE_PCT
   const remainingSec =
     usableBattery > 0 ? Math.floor((usableBattery / drainRatePerMin) * 60) : 0
-
   const level: RtlPrediction["level"] =
     remainingSec <= 0
       ? "danger"
@@ -1302,11 +918,9 @@ function RtlPredictionWidget({
           <PlaneLanding className="h-7 w-7" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-              배터리 RTL 예측
-            </h3>
-          </div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
+            배터리 RTL 예측
+          </h3>
           <p className={`mt-0.5 text-lg font-bold ${levelStyle.text}`}>
             {mainLabel}
           </p>
@@ -1321,7 +935,6 @@ function RtlPredictionWidget({
           </div>
         )}
       </div>
-
       <div className="space-y-4 border-t border-slate-200/50 px-6 py-4">
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
@@ -1353,7 +966,6 @@ function RtlPredictionWidget({
             </span>
           </div>
         </div>
-
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
             <TrendingDown className="mx-auto mb-1 h-4 w-4 text-slate-400" />
@@ -1387,9 +999,8 @@ function RtlPredictionWidget({
 }
 
 // ==========================
-// ★ 비행 가능 여부 종합 위젯
+// 비행 가능 여부 종합 위젯
 // ==========================
-
 interface FlightFeasibilityWidgetProps {
   droneConnected: boolean
   droneData: DroneData | null
@@ -1582,11 +1193,9 @@ function FlightFeasibilityWidget({
           {feasibilityConfig.icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className={`text-xl font-bold ${feasibilityConfig.text}`}>
-              {feasibilityConfig.label}
-            </h3>
-          </div>
+          <h3 className={`text-xl font-bold ${feasibilityConfig.text}`}>
+            {feasibilityConfig.label}
+          </h3>
           <p className="mt-0.5 text-xs text-slate-500">
             {feasibilityConfig.sublabel}
           </p>
@@ -1604,7 +1213,6 @@ function FlightFeasibilityWidget({
           ))}
         </div>
       </div>
-
       <div className="border-t border-slate-200/50 px-6 py-4">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {checks.map((check) => (
@@ -1634,7 +1242,6 @@ function FlightFeasibilityWidget({
 // ==========================
 // 유틸리티
 // ==========================
-
 const formatLastUpdate = (timestamp?: string | number | null) => {
   if (!timestamp) return "—"
   const ms =
@@ -1722,9 +1329,6 @@ export function UavDashboard() {
   const [notifyEnabled, setNotifyEnabled] = useState(true)
   const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
 
-  // ==========================
-  // 알림 계산
-  // ==========================
   const alerts = (() => {
     if (!droneConnected) return []
     if (!droneData)
@@ -1756,7 +1360,6 @@ export function UavDashboard() {
           label: `배터리 주의 (${droneData.battery.toFixed(0)}%)`,
         })
     }
-
     if (typeof droneData.altitude === "number") {
       if (droneData.altitude > 150)
         next.push({
@@ -1771,7 +1374,6 @@ export function UavDashboard() {
           label: `고도 주의 (${droneData.altitude.toFixed(0)}m)`,
         })
     }
-
     if (typeof droneData.speed === "number") {
       if (droneData.speed > 35)
         next.push({
@@ -1814,7 +1416,6 @@ export function UavDashboard() {
           })
       }
     }
-
     return next
   })()
 
@@ -1840,7 +1441,6 @@ export function UavDashboard() {
     prevAlertLevelRef.current = alertLevel
   }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ★ 비행 로그
   const { logs } = useFlightLog(droneConnected, droneData, alertLevel)
 
   const alertTone =
@@ -1854,7 +1454,6 @@ export function UavDashboard() {
   const connectionTone = droneConnected
     ? "bg-emerald-100 text-emerald-700"
     : "bg-amber-100 text-amber-700"
-
   const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
   const batteryVal =
     droneData?.battery != null ? `${droneData.battery.toFixed(0)}` : null
@@ -1897,14 +1496,7 @@ export function UavDashboard() {
       <button
         type="button"
         onClick={() => setNotifyEnabled((v) => !v)}
-        title={
-          notifyEnabled ? "클릭하면 알림을 끕니다" : "클릭하면 알림을 켭니다"
-        }
-        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition hover:opacity-80 ${
-          notifyEnabled
-            ? "bg-emerald-100 text-emerald-700"
-            : "bg-slate-100 text-slate-500"
-        }`}
+        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition hover:opacity-80 ${notifyEnabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}
       >
         {notifyEnabled ? (
           <Bell className="h-3.5 w-3.5" />
@@ -1919,7 +1511,7 @@ export function UavDashboard() {
   return (
     <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900">
       <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
-        {/* ==================== 헤더 ==================== */}
+        {/* 헤더 */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-sm">
@@ -1953,14 +1545,14 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ==================== 상황 안내 배너 ==================== */}
+        {/* 상황 안내 배너 */}
         <GuideBanner
           droneConnected={droneConnected}
           alertLevel={alertLevel}
           droneData={droneData}
         />
 
-        {/* ==================== 비행 가능 여부 종합 위젯 ==================== */}
+        {/* 비행 가능 여부 종합 위젯 */}
         <FlightFeasibilityWidget
           droneConnected={droneConnected}
           droneData={droneData}
@@ -1969,14 +1561,14 @@ export function UavDashboard() {
           allDroneStates={allDroneStates}
         />
 
-        {/* ==================== ★ 지금 뭘 해야 하나요? (행동 가이드) ==================== */}
+        {/* 지금 뭘 해야 하나요? */}
         <ActionGuideWidget
           droneConnected={droneConnected}
           droneData={droneData}
           alerts={alerts}
         />
 
-        {/* ==================== Sticky 관제 상태바 ==================== */}
+        {/* Sticky 관제 상태바 */}
         <div className="sticky top-2 z-20 rounded-2xl border border-slate-200/60 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/40 ring-1 ring-white/70 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex flex-wrap items-center gap-4">
@@ -2003,7 +1595,6 @@ export function UavDashboard() {
                   setShowAlertDetails((prev) => (alerts.length ? !prev : prev))
                 }
                 className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
-                aria-expanded={showAlertDetails}
                 disabled={!alerts.length}
               >
                 <AlertTriangle className="h-3.5 w-3.5" />
@@ -2012,17 +1603,12 @@ export function UavDashboard() {
             </div>
             <HelpHint text="관제 핵심 상태를 한 줄로 요약합니다." />
           </div>
-
           {showAlertDetails && alerts.length > 0 && (
             <div className="mt-3 space-y-1.5 border-t border-slate-200/60 pt-3">
               {alerts.map((alert) => (
                 <div
                   key={alert.id}
-                  className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${
-                    alert.level === "danger"
-                      ? "bg-red-50 text-red-700"
-                      : "bg-amber-50 text-amber-700"
-                  }`}
+                  className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${alert.level === "danger" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}
                 >
                   <span
                     className={`h-2 w-2 rounded-full ${alert.level === "danger" ? "bg-red-500" : "bg-amber-500"}`}
@@ -2034,7 +1620,7 @@ export function UavDashboard() {
           )}
         </div>
 
-        {/* ==================== 핵심 수치 요약 카드 ==================== */}
+        {/* 핵심 수치 요약 카드 */}
         {droneConnected && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
@@ -2071,15 +1657,7 @@ export function UavDashboard() {
           </div>
         )}
 
-        {/* ==================== 배터리 RTL 예측 위젯 ==================== */}
-        {droneConnected && (
-          <RtlPredictionWidget
-            droneActive={droneData !== null}
-            battery={droneData?.battery}
-          />
-        )}
-
-        {/* ==================== 드론 위치 지도 ==================== */}
+        {/* 드론 위치 지도 */}
         <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
           <div
             className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
@@ -2111,7 +1689,6 @@ export function UavDashboard() {
               </span>
             </div>
           </div>
-
           {!collapseMap && (
             <div className="aspect-video overflow-hidden">
               <NaverMap
@@ -2142,7 +1719,7 @@ export function UavDashboard() {
 
         {/* ==================== 2단 그리드 ==================== */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          {/* ────── 왼쪽 ────── */}
+          {/* 왼쪽: 기체 실시간 정보 + 이벤트 로그 + 임계값 알림 */}
           <div className="space-y-5">
             {/* 기체 실시간 정보 */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
@@ -2173,17 +1750,62 @@ export function UavDashboard() {
               )}
             </div>
 
-            {/* ★ 비행 이벤트 로그 */}
+            {/* 비행 이벤트 로그 */}
             <FlightLogWidget logs={logs} />
 
-            {/* ★ 비행 전 체크리스트 */}
-            <PreFlightChecklist
-              droneConnected={droneConnected}
-              droneData={droneData}
-            />
+            {/* 임계값 알림 — 왼쪽 하단 (기존 체크리스트 자리) */}
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <SectionHeader
+                  icon={<AlertTriangle />}
+                  title="임계값 알림"
+                  desc="배터리·고도·속도·GPS·통신 지연 감지"
+                  badge={
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowAlertDetails((prev) =>
+                          alerts.length ? !prev : prev,
+                        )
+                      }}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
+                    >
+                      {droneConnected
+                        ? alerts.length
+                          ? `${alerts.length}건 주의`
+                          : "정상"
+                        : "미연결"}
+                    </button>
+                  }
+                />
+              </div>
+              <div className="p-4">
+                {!droneConnected ? (
+                  <p className="py-6 text-center text-sm text-slate-400">
+                    기체 연결 후 임계값 알림을 확인할 수 있습니다.
+                  </p>
+                ) : alerts.length === 0 ? (
+                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-700">
+                    모든 항목이 정상 범위입니다.
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {alerts.map((alert) => (
+                      <div
+                        key={alert.id}
+                        className={`rounded-2xl border px-4 py-3 text-xs font-medium ${alert.level === "danger" ? "border-red-200/60 bg-red-50 text-red-700" : "border-amber-200/60 bg-amber-50 text-amber-700"}`}
+                      >
+                        {alert.label}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* ────── 오른쪽 ────── */}
+          {/* 오른쪽: 기상 정보 + CBM + 연결 안내 */}
           <div className="space-y-5">
             {/* 기상 정보 */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
@@ -2279,66 +1901,19 @@ export function UavDashboard() {
                 </div>
               </div>
             )}
-
-            {/* 임계값 알림 */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <SectionHeader
-                  icon={<AlertTriangle />}
-                  title="임계값 알림"
-                  desc="배터리·고도·속도·GPS·통신 지연 감지"
-                  badge={
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setShowAlertDetails((prev) =>
-                          alerts.length ? !prev : prev,
-                        )
-                      }}
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
-                    >
-                      {droneConnected
-                        ? alerts.length
-                          ? `${alerts.length}건 주의`
-                          : "정상"
-                        : "미연결"}
-                    </button>
-                  }
-                />
-              </div>
-              <div className="p-4">
-                {!droneConnected ? (
-                  <p className="py-6 text-center text-sm text-slate-400">
-                    기체 연결 후 임계값 알림을 확인할 수 있습니다.
-                  </p>
-                ) : alerts.length === 0 ? (
-                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-700">
-                    모든 항목이 정상 범위입니다.
-                  </div>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {alerts.map((alert) => (
-                      <div
-                        key={alert.id}
-                        className={`rounded-2xl border px-4 py-3 text-xs font-medium ${
-                          alert.level === "danger"
-                            ? "border-red-200/60 bg-red-50 text-red-700"
-                            : "border-amber-200/60 bg-amber-50 text-amber-700"
-                        }`}
-                      >
-                        {alert.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
         </div>
+
+        {/* ==================== 배터리 RTL 예측 — 맨 아래 full-width ==================== */}
+        {droneConnected && (
+          <RtlPredictionWidget
+            droneActive={droneData !== null}
+            battery={droneData?.battery}
+          />
+        )}
       </div>
 
-      {/* ==================== 우하단 고정 버튼 그룹 ==================== */}
+      {/* 우하단 고정 버튼 */}
       {createPortal(
         <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3">
           {chatOpen && (
@@ -2363,22 +1938,18 @@ export function UavDashboard() {
               </div>
             </div>
           )}
-
           <button
             type="button"
             onClick={() => setChatOpen((v) => !v)}
             className="flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-200/40 transition-all hover:-translate-y-0.5 hover:shadow-xl"
-            aria-label="AI 채팅 열기"
           >
             <MessageCircle className="h-4 w-4" />
             AI 상담
           </button>
-
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             className="rounded-full border border-slate-200/70 bg-white/90 p-3 text-slate-600 shadow-lg backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl"
-            aria-label="맨 위로 이동"
           >
             <ArrowUp className="h-4 w-4" />
           </button>
