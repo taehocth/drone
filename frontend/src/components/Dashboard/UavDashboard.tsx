@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { NaverMap } from "@/components/Map/NaverMap"
 import { WeatherInfoCard } from "@/components/Dashboard/WeatherInfoCard"
 import DroneSimulation, {
@@ -41,6 +41,23 @@ import {
   PlaneLanding,
   Bell,
   BellOff,
+  ClipboardList,
+  Lightbulb,
+  Clock,
+  Circle,
+  CheckSquare,
+  Square,
+  RotateCcw,
+  BookOpen,
+  ChevronRight,
+  Zap,
+  Target,
+  Radio,
+  TriangleAlert,
+  Info,
+  PlayCircle,
+  StopCircle,
+  SkipForward,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -55,7 +72,6 @@ const DEFAULT_MAP_OPTIONS = {
 // ==========================
 // ★ Web Notification 훅
 // ==========================
-
 function useWebNotification() {
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof window !== "undefined" && "Notification" in window
@@ -91,13 +107,12 @@ function useWebNotification() {
 // ==========================
 // 헬퍼 컴포넌트
 // ==========================
-
 const HelpHint = ({ text }: { text: string }) => (
   <button
     type="button"
     title={text}
     aria-label={text}
-    className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200/70 bg-white/80 text-xs font-semibold text-slate-500 shadow-sm transition hover:bg-white hover:text-slate-800 dark:border-slate-700/70 dark:bg-slate-900/70 dark:text-slate-300"
+    className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200/70 bg-white/80 text-xs font-semibold text-slate-500 shadow-sm transition hover:bg-white hover:text-slate-800"
   >
     ?
   </button>
@@ -115,15 +130,15 @@ const GuideBanner = ({
 }) => {
   if (!droneConnected) {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4 dark:border-amber-800/40 dark:bg-amber-900/15">
-        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
           <WifiOff className="h-4 w-4" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+          <p className="text-sm font-semibold text-amber-900">
             1단계: 드론 연결이 필요합니다
           </p>
-          <p className="mt-0.5 text-xs text-amber-700/80 dark:text-amber-300/80">
+          <p className="mt-0.5 text-xs text-amber-700/80">
             아래 "기체 실시간 정보" 패널에서 드론을 연결하면 관제를 시작할 수
             있습니다.
           </p>
@@ -133,15 +148,15 @@ const GuideBanner = ({
   }
   if (!droneData) {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-sky-200/60 bg-sky-50/80 px-5 py-4 dark:border-sky-800/40 dark:bg-sky-900/15">
-        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600 dark:bg-sky-900/40 dark:text-sky-300">
+      <div className="flex items-start gap-3 rounded-2xl border border-sky-200/60 bg-sky-50/80 px-5 py-4">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600">
           <Wifi className="h-4 w-4" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-sky-900 dark:text-sky-200">
+          <p className="text-sm font-semibold text-sky-900">
             연결됨 — 데이터 수신 중...
           </p>
-          <p className="mt-0.5 text-xs text-sky-700/80 dark:text-sky-300/80">
+          <p className="mt-0.5 text-xs text-sky-700/80">
             잠시 후 드론 위치와 상태 정보가 표시됩니다.
           </p>
         </div>
@@ -150,15 +165,15 @@ const GuideBanner = ({
   }
   if (alertLevel === "danger") {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-red-200/60 bg-red-50/80 px-5 py-4 dark:border-red-800/40 dark:bg-red-900/15">
-        <span className="mt-0.5 flex h-7 w-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300">
+      <div className="flex items-start gap-3 rounded-2xl border border-red-200/60 bg-red-50/80 px-5 py-4">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-100 text-red-600">
           <AlertTriangle className="h-4 w-4" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-red-900 dark:text-red-200">
+          <p className="text-sm font-semibold text-red-900">
             위험 경고 발생 — 즉시 확인하세요
           </p>
-          <p className="mt-0.5 text-xs text-red-700/80 dark:text-red-300/80">
+          <p className="mt-0.5 text-xs text-red-700/80">
             아래 "임계값 알림" 카드에서 원인을 확인하고 조치하세요.
           </p>
         </div>
@@ -167,15 +182,15 @@ const GuideBanner = ({
   }
   if (alertLevel === "caution") {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4 dark:border-amber-800/40 dark:bg-amber-900/15">
-        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-300">
+      <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
           <AlertTriangle className="h-4 w-4" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+          <p className="text-sm font-semibold text-amber-900">
             주의 항목 있음 — 알림 카드를 확인하세요
           </p>
-          <p className="mt-0.5 text-xs text-amber-700/80 dark:text-amber-300/80">
+          <p className="mt-0.5 text-xs text-amber-700/80">
             즉각 위험은 아니지만 빠른 점검이 필요한 항목이 있습니다.
           </p>
         </div>
@@ -183,15 +198,13 @@ const GuideBanner = ({
     )
   }
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/80 px-5 py-4 dark:border-emerald-800/40 dark:bg-emerald-900/15">
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300">
+    <div className="flex items-start gap-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/80 px-5 py-4">
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
         <Activity className="h-4 w-4" />
       </span>
       <div>
-        <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
-          정상 운항 중
-        </p>
-        <p className="mt-0.5 text-xs text-emerald-700/80 dark:text-emerald-300/80">
+        <p className="text-sm font-semibold text-emerald-900">정상 운항 중</p>
+        <p className="mt-0.5 text-xs text-emerald-700/80">
           모든 지표가 안전 범위입니다. 지도에서 드론 위치를 확인하세요.
         </p>
       </div>
@@ -199,7 +212,7 @@ const GuideBanner = ({
   )
 }
 
-// 핵심 수치 요약 카드 (초보자용)
+// 핵심 수치 요약 카드
 const StatCard = ({
   icon,
   label,
@@ -216,19 +229,17 @@ const StatCard = ({
   hint: string
 }) => {
   const levelStyle = {
-    safe: "border-emerald-200/60 bg-emerald-50/60 dark:border-emerald-800/40 dark:bg-emerald-900/10",
-    caution:
-      "border-amber-200/60 bg-amber-50/60 dark:border-amber-800/40 dark:bg-amber-900/10",
-    danger:
-      "border-red-200/60 bg-red-50/60 dark:border-red-800/40 dark:bg-red-900/10",
-    off: "border-slate-200/40 bg-slate-50/60 dark:border-slate-700/40 dark:bg-slate-800/20",
+    safe: "border-emerald-200/60 bg-emerald-50/60",
+    caution: "border-amber-200/60 bg-amber-50/60",
+    danger: "border-red-200/60 bg-red-50/60",
+    off: "border-slate-200/40 bg-slate-50/60",
   }[level ?? "off"]
 
   const valueStyle = {
-    safe: "text-emerald-700 dark:text-emerald-300",
-    caution: "text-amber-700 dark:text-amber-300",
-    danger: "text-red-600 dark:text-red-400",
-    off: "text-slate-400 dark:text-slate-500",
+    safe: "text-emerald-700",
+    caution: "text-amber-700",
+    danger: "text-red-600",
+    off: "text-slate-400",
   }[level ?? "off"]
 
   return (
@@ -239,10 +250,8 @@ const StatCard = ({
         <HelpHint text={hint} />
       </div>
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-slate-400 dark:text-slate-500">{icon}</span>
-        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          {label}
-        </span>
+        <span className="text-slate-400">{icon}</span>
+        <span className="text-xs font-medium text-slate-500">{label}</span>
       </div>
       <div className={`text-2xl font-semibold tracking-tight ${valueStyle}`}>
         {value ?? "—"}
@@ -254,7 +263,7 @@ const StatCard = ({
   )
 }
 
-// 섹션 헤더 (접기/펼치기 지원)
+// 섹션 헤더
 const SectionHeader = ({
   icon,
   title,
@@ -281,12 +290,8 @@ const SectionHeader = ({
         {icon}
       </div>
       <div>
-        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-          {title}
-        </h2>
-        {desc && (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{desc}</p>
-        )}
+        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+        {desc && <p className="text-xs text-slate-500">{desc}</p>}
       </div>
     </div>
     <div className="flex items-center gap-2">
@@ -313,11 +318,10 @@ const StatusBadge = ({
   label: string
 }) => {
   const style = {
-    safe: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-    caution:
-      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
-    danger: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
-    off: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+    safe: "bg-emerald-100 text-emerald-700",
+    caution: "bg-amber-100 text-amber-700",
+    danger: "bg-red-100 text-red-700",
+    off: "bg-slate-100 text-slate-500",
   }[level]
   return (
     <span
@@ -329,7 +333,803 @@ const StatusBadge = ({
 }
 
 // ==========================
-// ★ 배터리 RTL 예측 훅
+// ★★★ NEW: 비행 전 체크리스트
+// ==========================
+
+interface ChecklistItem {
+  id: string
+  label: string
+  detail: string
+  required: boolean
+}
+
+type ChecklistPhase = "pre-flight" | "pre-landing"
+
+const CHECKLIST_DATA: Record<
+  ChecklistPhase,
+  {
+    title: string
+    icon: React.ReactNode
+    color: string
+    items: ChecklistItem[]
+  }
+> = {
+  "pre-flight": {
+    title: "이륙 전 체크리스트",
+    icon: <PlayCircle className="h-4 w-4" />,
+    color: "from-blue-500 to-indigo-500",
+    items: [
+      {
+        id: "pf1",
+        label: "배터리 충전 상태 확인",
+        detail: "80% 이상 권장. 60% 미만 시 단거리 임무만 가능",
+        required: true,
+      },
+      {
+        id: "pf2",
+        label: "기체 외관 이상 없음",
+        detail: "프로펠러 파손, 모터 이물질, 착륙 장치 점검",
+        required: true,
+      },
+      {
+        id: "pf3",
+        label: "GPS 위성 6개 이상 확보",
+        detail: "위성 수 부족 시 위치 오차 및 자동 귀환 오작동 가능",
+        required: true,
+      },
+      {
+        id: "pf4",
+        label: "통신 링크 정상 확인",
+        detail: "지상국 ↔ 기체 간 데이터 링크 수신 확인",
+        required: true,
+      },
+      {
+        id: "pf5",
+        label: "비행 공역 확인",
+        detail: "비행 금지 구역, 관제권 여부 앱(Ready to Fly 등)으로 확인",
+        required: true,
+      },
+      {
+        id: "pf6",
+        label: "기상 조건 양호",
+        detail: "풍속 10m/s 이하, 가시거리 500m 이상, 강수 없음",
+        required: true,
+      },
+      {
+        id: "pf7",
+        label: "귀환 지점(Home) 설정",
+        detail: "이륙 지점이 자동으로 설정되는지 GCS에서 확인",
+        required: true,
+      },
+      {
+        id: "pf8",
+        label: "비행 계획 및 임무 확인",
+        detail: "웨이포인트, 최대 고도, 복귀 배터리 임계값 설정 확인",
+        required: false,
+      },
+      {
+        id: "pf9",
+        label: "주변 인원 및 장애물 확인",
+        detail: "반경 30m 내 사람, 차량, 구조물 제거 또는 안전 대피",
+        required: true,
+      },
+    ],
+  },
+  "pre-landing": {
+    title: "착륙 전 체크리스트",
+    icon: <StopCircle className="h-4 w-4" />,
+    color: "from-violet-500 to-purple-500",
+    items: [
+      {
+        id: "pl1",
+        label: "착륙 지점 안전 확인",
+        detail: "착륙 지점에 사람·장애물 없음, 평탄한 지면 여부",
+        required: true,
+      },
+      {
+        id: "pl2",
+        label: "배터리 잔량 확인",
+        detail: "20% 이하 시 즉시 착륙 필요. 예비 배터리 준비",
+        required: true,
+      },
+      {
+        id: "pl3",
+        label: "수동 착륙 vs 자동 착륙 결정",
+        detail: "바람 강할 때·좁은 공간은 수동 착륙 권장",
+        required: true,
+      },
+      {
+        id: "pl4",
+        label: "GCS 통신 연결 상태 확인",
+        detail: "착륙 직전 통신 두절 시 자동 착륙 또는 호버링 발생",
+        required: true,
+      },
+      {
+        id: "pl5",
+        label: "착륙 후 모터 정지 확인",
+        detail: "착륙 완료 즉시 모터 정지 여부 확인. 고속 회전 중 접근 금지",
+        required: true,
+      },
+      {
+        id: "pl6",
+        label: "비행 로그 저장 확인",
+        detail: "GCS에서 비행 데이터 자동 저장 여부 확인",
+        required: false,
+      },
+    ],
+  },
+}
+
+function PreFlightChecklist({
+  droneConnected,
+  droneData,
+}: {
+  droneConnected: boolean
+  droneData: DroneData | null
+}) {
+  const [phase, setPhase] = useState<ChecklistPhase>("pre-flight")
+  const [checked, setChecked] = useState<Record<string, boolean>>({})
+  const [collapsed, setCollapsed] = useState(false)
+
+  const currentPhase = CHECKLIST_DATA[phase]
+  const items = currentPhase.items
+  const checkedCount = items.filter((i) => checked[i.id]).length
+  const progress = Math.round((checkedCount / items.length) * 100)
+  const allRequiredDone = items
+    .filter((i) => i.required)
+    .every((i) => checked[i.id])
+
+  const reset = () => {
+    const cleared: Record<string, boolean> = {}
+    items.forEach((i) => (cleared[i.id] = false))
+    setChecked(cleared)
+  }
+
+  // 자동 체크: 배터리·GPS
+  useEffect(() => {
+    if (!droneData) return
+    setChecked((prev) => ({
+      ...prev,
+      pf1: (droneData.battery ?? 0) >= 80,
+      pf3: (droneData.gpsSatellites ?? 0) >= 6,
+      pf4: droneConnected,
+    }))
+  }, [droneData, droneConnected])
+
+  const toggle = (id: string) =>
+    setChecked((prev) => ({ ...prev, [id]: !prev[id] }))
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+      {/* 헤더 */}
+      <div
+        className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
+        onClick={() => setCollapsed((v) => !v)}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={`rounded-xl bg-gradient-to-br ${currentPhase.color} p-2 shadow-sm`}
+          >
+            <ClipboardList className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-slate-900">
+              비행 체크리스트
+            </p>
+            <p className="text-xs text-slate-500">
+              숙련 관제사의 점검 루틴을 단계별로 안내
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ${currentPhase.color}`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-slate-600">
+              {checkedCount}/{items.length}
+            </span>
+          </div>
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-slate-400" />
+          )}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="space-y-4 p-4">
+          {/* 탭 전환 */}
+          <div className="flex gap-2">
+            {(["pre-flight", "pre-landing"] as ChecklistPhase[]).map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  setPhase(p)
+                  setChecked({})
+                }}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-all ${
+                  phase === p
+                    ? `bg-gradient-to-r ${CHECKLIST_DATA[p].color} text-white shadow-sm`
+                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                }`}
+              >
+                {CHECKLIST_DATA[p].icon}
+                {p === "pre-flight" ? "이륙 전" : "착륙 전"}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={reset}
+              className="ml-auto flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100"
+              title="초기화"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              초기화
+            </button>
+          </div>
+
+          {/* 완료 배너 */}
+          {allRequiredDone && checkedCount > 0 && (
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-200/60 bg-emerald-50 px-4 py-2.5">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+              <span className="text-xs font-semibold text-emerald-700">
+                필수 항목 완료 —{" "}
+                {phase === "pre-flight" ? "이륙 준비 완료" : "착륙 진행 가능"}
+              </span>
+            </div>
+          )}
+
+          {/* 체크리스트 항목 */}
+          <div className="space-y-1.5">
+            {items.map((item) => {
+              const isAuto = ["pf1", "pf3", "pf4"].includes(item.id)
+              const isDone = !!checked[item.id]
+              return (
+                <label
+                  key={item.id}
+                  className={`group flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition-all ${
+                    isDone
+                      ? "border-emerald-200/60 bg-emerald-50/60"
+                      : item.required
+                        ? "border-slate-200/60 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        : "border-dashed border-slate-200/60 bg-slate-50/40 hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="mt-0.5 shrink-0">
+                    {isAuto ? (
+                      isDone ? (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-100">
+                          <Zap className="h-3 w-3 text-blue-500" />
+                        </div>
+                      ) : (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100">
+                          <Zap className="h-3 w-3 text-slate-400" />
+                        </div>
+                      )
+                    ) : isDone ? (
+                      <CheckSquare className="h-5 w-5 text-emerald-500" />
+                    ) : (
+                      <Square className="h-5 w-5 text-slate-300 group-hover:text-slate-400" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-sm font-medium ${isDone ? "text-slate-400 line-through" : "text-slate-800"}`}
+                      >
+                        {item.label}
+                      </span>
+                      {item.required && !isDone && (
+                        <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-500">
+                          필수
+                        </span>
+                      )}
+                      {isAuto && (
+                        <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-500">
+                          자동
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      {item.detail}
+                    </p>
+                  </div>
+                  {!isAuto && (
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={isDone}
+                      onChange={() => toggle(item.id)}
+                    />
+                  )}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==========================
+// ★★★ NEW: 상황 판단 가이드 (What to do now)
+// ==========================
+
+interface ActionGuide {
+  priority: "immediate" | "soon" | "monitor" | "standby"
+  title: string
+  steps: string[]
+  why: string
+  icon: React.ReactNode
+}
+
+function buildActionGuides(
+  droneConnected: boolean,
+  droneData: DroneData | null,
+  alerts: Array<{
+    id: string
+    level: "safe" | "caution" | "danger"
+    label: string
+  }>,
+): ActionGuide[] {
+  const guides: ActionGuide[] = []
+
+  if (!droneConnected) {
+    guides.push({
+      priority: "standby",
+      title: "연결 대기 중",
+      steps: [
+        "기체 전원이 켜져 있는지 확인하세요",
+        "GCS와 기체가 동일 네트워크에 있는지 확인하세요",
+        "'기체 실시간 정보' 패널에서 연결을 시도하세요",
+      ],
+      why: "기체가 연결되지 않으면 관제를 시작할 수 없습니다.",
+      icon: <WifiOff className="h-5 w-5" />,
+    })
+    return guides
+  }
+
+  const battery = droneData?.battery ?? null
+  const altitude = droneData?.altitude ?? null
+  const speed = droneData?.speed ?? null
+
+  // 위험 상황 즉각 조치
+  if (battery !== null && battery <= 20) {
+    guides.push({
+      priority: "immediate",
+      title: "즉시 귀환 (RTL) 실행",
+      steps: [
+        "현재 임무를 즉시 중단하세요",
+        "비행 모드를 'RTL(Return to Launch)'로 전환하세요",
+        "착륙 지점 주변 인원을 대피시키세요",
+        "착륙 완료 후 즉시 배터리를 분리하세요",
+      ],
+      why: `배터리가 ${battery.toFixed(0)}%로 위험 수준입니다. RTL 비행 중 방전 시 추락합니다.`,
+      icon: <BatteryLow className="h-5 w-5" />,
+    })
+  } else if (battery !== null && battery <= 35) {
+    guides.push({
+      priority: "soon",
+      title: "귀환 준비 시작",
+      steps: [
+        "현재 임무 단계를 마무리하세요",
+        "5분 내 귀환 비행을 시작할 준비를 하세요",
+        "자동 귀환 배터리 임계값(통상 25%)에 도달하기 전에 수동 복귀하세요",
+      ],
+      why: `배터리 ${battery.toFixed(0)}% — 귀환까지 여유가 줄어들고 있습니다.`,
+      icon: <Battery className="h-5 w-5" />,
+    })
+  }
+
+  if (altitude !== null && altitude > 150) {
+    guides.push({
+      priority: "immediate",
+      title: "즉시 고도 낮추기",
+      steps: [
+        "수동 모드로 전환하고 하강 명령을 내리세요",
+        "목표 고도 120m 이하로 안전하게 하강시키세요",
+        "항공법 위반 상황 — 인근 관제탑에 보고가 필요할 수 있습니다",
+      ],
+      why: `현재 고도 ${altitude.toFixed(0)}m는 항공법상 허용 한도(150m)를 초과합니다.`,
+      icon: <Navigation className="h-5 w-5" />,
+    })
+  }
+
+  // 통신 지연
+  if (droneData?.timestamp) {
+    const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
+    if (!isNaN(ageMs) && ageMs > 15000) {
+      guides.push({
+        priority: "immediate",
+        title: "통신 이상 — 즉각 대응",
+        steps: [
+          "GCS 화면에서 수동 개입이 가능한지 확인하세요",
+          "기체가 페일세이프 동작(자동 호버링/귀환)을 수행하는지 목시 확인하세요",
+          "통신 복구를 기다리되 복구 안 되면 수동 RTL 명령을 시도하세요",
+        ],
+        why: "15초 이상 데이터가 끊겼습니다. 기체가 페일세이프 모드로 진입했을 수 있습니다.",
+        icon: <Radio className="h-5 w-5" />,
+      })
+    }
+  }
+
+  // 정상 운항 시 모니터링 가이드
+  if (guides.length === 0 && droneData) {
+    guides.push({
+      priority: "monitor",
+      title: "정상 운항 — 지속 모니터링",
+      steps: [
+        `배터리: ${battery?.toFixed(0) ?? "—"}% — ${(battery ?? 100) > 50 ? "충분. 계속 모니터링하세요" : "절반 이하. 귀환 계획 수립하세요"}`,
+        `고도: ${altitude?.toFixed(0) ?? "—"}m — ${(altitude ?? 0) <= 120 ? "안전 범위" : "주의 고도"}`,
+        "GPS 신호 및 통신 상태를 30초마다 확인하세요",
+        "비행 중 주변 공역 변화(다른 항공기 등)를 주시하세요",
+      ],
+      why: "현재 모든 지표가 정상 범위입니다. 예방적 모니터링을 유지하세요.",
+      icon: <Target className="h-5 w-5" />,
+    })
+  }
+
+  return guides
+}
+
+const PRIORITY_CONFIG = {
+  immediate: {
+    label: "즉시 조치",
+    border: "border-red-200/60",
+    bg: "bg-red-50/80",
+    iconBg: "from-red-500 to-rose-500",
+    text: "text-red-700",
+    badge: "bg-red-100 text-red-700",
+    dot: "bg-red-500 animate-ping",
+  },
+  soon: {
+    label: "곧 조치",
+    border: "border-amber-200/60",
+    bg: "bg-amber-50/80",
+    iconBg: "from-amber-500 to-yellow-400",
+    text: "text-amber-700",
+    badge: "bg-amber-100 text-amber-700",
+    dot: "bg-amber-500",
+  },
+  monitor: {
+    label: "모니터링",
+    border: "border-emerald-200/60",
+    bg: "bg-emerald-50/80",
+    iconBg: "from-emerald-500 to-teal-500",
+    text: "text-emerald-700",
+    badge: "bg-emerald-100 text-emerald-700",
+    dot: "bg-emerald-500",
+  },
+  standby: {
+    label: "대기 중",
+    border: "border-slate-200/60",
+    bg: "bg-slate-50/80",
+    iconBg: "from-slate-400 to-slate-500",
+    text: "text-slate-600",
+    badge: "bg-slate-100 text-slate-500",
+    dot: "bg-slate-400",
+  },
+}
+
+function ActionGuideWidget({
+  droneConnected,
+  droneData,
+  alerts,
+}: {
+  droneConnected: boolean
+  droneData: DroneData | null
+  alerts: Array<{
+    id: string
+    level: "safe" | "caution" | "danger"
+    label: string
+  }>
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  const guides = buildActionGuides(droneConnected, droneData, alerts)
+  const topGuide = guides[0]
+
+  if (!topGuide) return null
+  const cfg = PRIORITY_CONFIG[topGuide.priority]
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+      {/* 헤더 */}
+      <div
+        className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
+        onClick={() => setCollapsed((v) => !v)}
+      >
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-2 shadow-sm">
+            <Lightbulb className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-slate-900">
+              지금 뭘 해야 하나요?
+            </p>
+            <p className="text-xs text-slate-500">
+              현재 상태에 따른 단계별 행동 가이드
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cfg.badge}`}
+          >
+            {cfg.label}
+          </span>
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-slate-400" />
+          )}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="space-y-3 p-4">
+          {guides.map((guide, idx) => {
+            const c = PRIORITY_CONFIG[guide.priority]
+            return (
+              <div
+                key={idx}
+                className={`rounded-2xl border ${c.border} ${c.bg} overflow-hidden`}
+              >
+                {/* 가이드 헤더 */}
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <div
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${c.iconBg} text-white shadow-sm`}
+                  >
+                    {guide.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2 w-2 shrink-0">
+                        <span
+                          className={`absolute inline-flex h-full w-full rounded-full opacity-50 ${c.dot}`}
+                        />
+                        <span
+                          className={`relative inline-flex h-2 w-2 rounded-full ${c.dot.replace("animate-ping", "")}`}
+                        />
+                      </span>
+                      <p className={`text-sm font-bold ${c.text}`}>
+                        {guide.title}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-500">{guide.why}</p>
+                  </div>
+                </div>
+
+                {/* 단계 목록 */}
+                <div className="space-y-2 border-t border-white/60 px-4 py-3">
+                  {guide.steps.map((step, si) => (
+                    <div key={si} className="flex items-start gap-2.5">
+                      <span
+                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-xs font-bold ${c.text}`}
+                      >
+                        {si + 1}
+                      </span>
+                      <p className="text-xs leading-relaxed text-slate-700">
+                        {step}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==========================
+// ★★★ NEW: 비행 이벤트 로그
+// ==========================
+
+interface FlightLogEntry {
+  id: string
+  ts: Date
+  level: "info" | "warn" | "danger" | "success"
+  message: string
+  value?: string
+}
+
+function useFlightLog(
+  droneConnected: boolean,
+  droneData: DroneData | null,
+  alertLevel: "safe" | "caution" | "danger",
+) {
+  const [logs, setLogs] = useState<FlightLogEntry[]>([])
+  const prevRef = useRef({
+    connected: false,
+    alertLevel: "safe" as "safe" | "caution" | "danger",
+    battery: null as number | null,
+    altitude: null as number | null,
+  })
+
+  const addLog = useCallback(
+    (level: FlightLogEntry["level"], message: string, value?: string) => {
+      setLogs((prev) => [
+        {
+          id: `${Date.now()}-${Math.random()}`,
+          ts: new Date(),
+          level,
+          message,
+          value,
+        },
+        ...prev.slice(0, 49), // 최대 50개 유지
+      ])
+    },
+    [],
+  )
+
+  // 연결 상태 변화
+  useEffect(() => {
+    if (droneConnected && !prevRef.current.connected) {
+      addLog("success", "기체 연결됨")
+    } else if (!droneConnected && prevRef.current.connected) {
+      addLog("warn", "기체 연결 끊김")
+    }
+    prevRef.current.connected = droneConnected
+  }, [droneConnected, addLog])
+
+  // 알림 레벨 변화
+  useEffect(() => {
+    if (alertLevel === "danger" && prevRef.current.alertLevel !== "danger") {
+      addLog("danger", "⚠️ 위험 경고 발생")
+    } else if (
+      alertLevel === "caution" &&
+      prevRef.current.alertLevel === "safe"
+    ) {
+      addLog("warn", "주의 항목 감지")
+    } else if (alertLevel === "safe" && prevRef.current.alertLevel !== "safe") {
+      addLog("success", "상태 정상 회복")
+    }
+    prevRef.current.alertLevel = alertLevel
+  }, [alertLevel, addLog])
+
+  // 배터리 임계값 통과 기록
+  useEffect(() => {
+    const b = droneData?.battery ?? null
+    const prev = prevRef.current.battery
+    if (b !== null && prev !== null) {
+      if (b <= 20 && prev > 20)
+        addLog("danger", "배터리 위험 임계값 도달", `${b.toFixed(0)}%`)
+      else if (b <= 35 && prev > 35)
+        addLog("warn", "배터리 주의 임계값 도달", `${b.toFixed(0)}%`)
+      else if (b <= 50 && prev > 50)
+        addLog("info", "배터리 50% 이하", `${b.toFixed(0)}%`)
+    }
+    prevRef.current.battery = b
+  }, [droneData?.battery, addLog])
+
+  // 고도 임계값
+  useEffect(() => {
+    const a = droneData?.altitude ?? null
+    const prev = prevRef.current.altitude
+    if (a !== null && prev !== null) {
+      if (a > 150 && prev <= 150)
+        addLog("danger", "고도 법정 한계 초과", `${a.toFixed(0)}m`)
+      else if (a > 120 && prev <= 120)
+        addLog("warn", "고도 주의 구간 진입", `${a.toFixed(0)}m`)
+      else if (a <= 120 && prev > 120)
+        addLog("info", "고도 안전 구간 복귀", `${a.toFixed(0)}m`)
+    }
+    prevRef.current.altitude = a
+  }, [droneData?.altitude, addLog])
+
+  return { logs, addLog }
+}
+
+const LOG_STYLE: Record<
+  FlightLogEntry["level"],
+  { dot: string; text: string; bg: string }
+> = {
+  danger: { dot: "bg-red-500", text: "text-red-700", bg: "bg-red-50" },
+  warn: { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" },
+  info: { dot: "bg-sky-400", text: "text-slate-700", bg: "bg-slate-50" },
+  success: {
+    dot: "bg-emerald-500",
+    text: "text-emerald-700",
+    bg: "bg-emerald-50",
+  },
+}
+
+function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
+  const [collapsed, setCollapsed] = useState(false)
+
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+      <div
+        className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
+        onClick={() => setCollapsed((v) => !v)}
+      >
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 p-2 shadow-sm">
+            <Clock className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-slate-900">
+              비행 이벤트 로그
+            </p>
+            <p className="text-xs text-slate-500">
+              상태 변화, 경고, 연결 이벤트를 시간순 기록
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
+            {logs.length}건
+          </span>
+          {collapsed ? (
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-slate-400" />
+          )}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="p-4">
+          {logs.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <Clock className="h-8 w-8 text-slate-200" />
+              <p className="text-sm text-slate-400">이벤트가 없습니다</p>
+              <p className="text-xs text-slate-300">
+                드론 연결 시 이벤트가 자동 기록됩니다
+              </p>
+            </div>
+          ) : (
+            <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+              {logs.map((log) => {
+                const s = LOG_STYLE[log.level]
+                return (
+                  <div
+                    key={log.id}
+                    className={`flex items-center gap-3 rounded-xl ${s.bg} px-3 py-2.5`}
+                  >
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`}
+                    />
+                    <span className="w-20 shrink-0 text-xs tabular-nums text-slate-400">
+                      {fmt(log.ts)}
+                    </span>
+                    <span className={`flex-1 text-xs font-medium ${s.text}`}>
+                      {log.message}
+                    </span>
+                    {log.value && (
+                      <span className="shrink-0 rounded-lg bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                        {log.value}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==========================
+// ★ 배터리 RTL 예측 훅 & 위젯
 // ==========================
 
 interface RtlPrediction {
@@ -416,7 +1216,6 @@ function useRtlPrediction(
   }
 }
 
-// RTL 예측 위젯 컴포넌트
 function RtlPredictionWidget({
   droneActive,
   battery,
@@ -441,31 +1240,31 @@ function RtlPredictionWidget({
 
   const levelStyle = {
     safe: {
-      border: "border-emerald-200/60 dark:border-emerald-800/40",
-      bg: "bg-emerald-50/80 dark:bg-emerald-900/15",
+      border: "border-emerald-200/60",
+      bg: "bg-emerald-50/80",
       iconBg: "from-emerald-500 to-teal-500",
-      text: "text-emerald-700 dark:text-emerald-300",
+      text: "text-emerald-700",
       bar: "bg-emerald-500",
     },
     caution: {
-      border: "border-amber-200/60 dark:border-amber-800/40",
-      bg: "bg-amber-50/80 dark:bg-amber-900/15",
+      border: "border-amber-200/60",
+      bg: "bg-amber-50/80",
       iconBg: "from-amber-500 to-yellow-400",
-      text: "text-amber-700 dark:text-amber-300",
+      text: "text-amber-700",
       bar: "bg-amber-500",
     },
     danger: {
-      border: "border-red-200/60 dark:border-red-800/40",
-      bg: "bg-red-50/80 dark:bg-red-900/15",
+      border: "border-red-200/60",
+      bg: "bg-red-50/80",
       iconBg: "from-red-500 to-rose-500",
-      text: "text-red-700 dark:text-red-300",
+      text: "text-red-700",
       bar: "bg-red-500",
     },
     off: {
-      border: "border-slate-200/60 dark:border-slate-700/60",
-      bg: "bg-slate-50/80 dark:bg-slate-800/30",
+      border: "border-slate-200/60",
+      bg: "bg-slate-50/80",
       iconBg: "from-slate-400 to-slate-500",
-      text: "text-slate-500 dark:text-slate-400",
+      text: "text-slate-500",
       bar: "bg-slate-300",
     },
   }[rtl.level]
@@ -504,33 +1303,29 @@ function RtlPredictionWidget({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
               배터리 RTL 예측
             </h3>
           </div>
           <p className={`mt-0.5 text-lg font-bold ${levelStyle.text}`}>
             {mainLabel}
           </p>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            {sublabel}
-          </p>
+          <p className="mt-0.5 text-xs text-slate-500">{sublabel}</p>
         </div>
         {droneActive && rtl.elapsedSec > 0 && (
           <div className="shrink-0 text-right">
-            <p className="text-xs text-slate-400 dark:text-slate-500">
-              비행 경과
-            </p>
-            <p className="text-base font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+            <p className="text-xs text-slate-400">비행 경과</p>
+            <p className="text-base font-semibold tabular-nums text-slate-700">
               {formatElapsed(rtl.elapsedSec)}
             </p>
           </div>
         )}
       </div>
 
-      <div className="space-y-4 border-t border-slate-200/50 px-6 py-4 dark:border-slate-700/40">
+      <div className="space-y-4 border-t border-slate-200/50 px-6 py-4">
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1 text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1 text-slate-500">
               <BatteryLow className="h-3.5 w-3.5" />
               배터리 잔량
             </span>
@@ -538,17 +1333,17 @@ function RtlPredictionWidget({
               {battery != null ? `${battery.toFixed(0)}%` : "—"}
             </span>
           </div>
-          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-200/60 dark:bg-slate-700/60">
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-200/60">
             <div
               className={`h-full transition-all duration-500 ${levelStyle.bar}`}
               style={{ width: `${usablePct}%` }}
             />
             <div
-              className="h-full bg-red-300/70 transition-all duration-500 dark:bg-red-800/50"
+              className="h-full bg-red-300/70 transition-all duration-500"
               style={{ width: `${reservePct}%` }}
             />
           </div>
-          <div className="mt-1 flex justify-between text-xs text-slate-400 dark:text-slate-500">
+          <div className="mt-1 flex justify-between text-xs text-slate-400">
             <span>예비 {RTL_RESERVE_PCT}% 제외</span>
             <span>
               시작 시{" "}
@@ -560,34 +1355,28 @@ function RtlPredictionWidget({
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
+          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
             <TrendingDown className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              분당 소모
-            </p>
-            <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-300">
+            <p className="text-xs text-slate-500">분당 소모</p>
+            <p className="text-sm font-semibold tabular-nums text-slate-700">
               {rtl.drainRatePerMin != null
                 ? `${rtl.drainRatePerMin.toFixed(2)}%`
                 : "—"}
             </p>
           </div>
-          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
+          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
             <Timer className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              남은 시간
-            </p>
+            <p className="text-xs text-slate-500">남은 시간</p>
             <p
               className={`text-sm font-semibold tabular-nums ${rtl.remainingSec != null ? levelStyle.text : "text-slate-400"}`}
             >
               {rtl.remainingSec != null ? formatTime(rtl.remainingSec) : "—"}
             </p>
           </div>
-          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center dark:bg-slate-900/50">
+          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
             <PlaneLanding className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              RTL 기준
-            </p>
-            <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+            <p className="text-xs text-slate-500">RTL 기준</p>
+            <p className="text-sm font-semibold text-slate-700">
               {RTL_RESERVE_PCT}% 예비
             </p>
           </div>
@@ -740,36 +1529,36 @@ function FlightFeasibilityWidget({
       sublabel: "모든 항목이 정상입니다",
       icon: <CheckCircle2 className="h-8 w-8" />,
       bg: "from-emerald-500 to-teal-500",
-      border: "border-emerald-200/60 dark:border-emerald-800/40",
-      bg2: "bg-emerald-50/80 dark:bg-emerald-900/15",
-      text: "text-emerald-700 dark:text-emerald-300",
+      border: "border-emerald-200/60",
+      bg2: "bg-emerald-50/80",
+      text: "text-emerald-700",
     },
     caution: {
       label: "주의 필요",
       sublabel: "일부 항목을 확인하세요",
       icon: <AlertTriangle className="h-8 w-8" />,
       bg: "from-amber-500 to-yellow-400",
-      border: "border-amber-200/60 dark:border-amber-800/40",
-      bg2: "bg-amber-50/80 dark:bg-amber-900/15",
-      text: "text-amber-700 dark:text-amber-300",
+      border: "border-amber-200/60",
+      bg2: "bg-amber-50/80",
+      text: "text-amber-700",
     },
     "no-go": {
       label: "비행 불가",
       sublabel: "위험 항목을 해결하세요",
       icon: <XCircle className="h-8 w-8 animate-pulse" />,
       bg: "from-red-500 to-rose-500",
-      border: "border-red-200/60 dark:border-red-800/40",
-      bg2: "bg-red-50/80 dark:bg-red-900/15",
-      text: "text-red-700 dark:text-red-300",
+      border: "border-red-200/60",
+      bg2: "bg-red-50/80",
+      text: "text-red-700",
     },
     unknown: {
       label: "판단 불가",
       sublabel: "드론을 연결하세요",
       icon: <Wind className="h-8 w-8" />,
       bg: "from-slate-400 to-slate-500",
-      border: "border-slate-200/60 dark:border-slate-700/60",
-      bg2: "bg-slate-50/80 dark:bg-slate-800/30",
-      text: "text-slate-500 dark:text-slate-400",
+      border: "border-slate-200/60",
+      bg2: "bg-slate-50/80",
+      text: "text-slate-500",
     },
   }[feasibility]
 
@@ -778,7 +1567,7 @@ function FlightFeasibilityWidget({
     warn: <AlertTriangle className="h-4 w-4 text-amber-500" />,
     fail: <XCircle className="h-4 w-4 text-red-500" />,
     unknown: (
-      <span className="inline-block h-4 w-4 rounded-full border-2 border-slate-300 dark:border-slate-600" />
+      <span className="inline-block h-4 w-4 rounded-full border-2 border-slate-300" />
     ),
   }
 
@@ -798,14 +1587,14 @@ function FlightFeasibilityWidget({
               {feasibilityConfig.label}
             </h3>
           </div>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-0.5 text-xs text-slate-500">
             {feasibilityConfig.sublabel}
           </p>
         </div>
         <div className="hidden shrink-0 flex-col gap-1.5 sm:flex">
           {allDroneStates.map((state, idx) => (
             <div key={idx} className="flex items-center gap-2">
-              <span className="w-20 truncate text-xs text-slate-500 dark:text-slate-400">
+              <span className="w-20 truncate text-xs text-slate-500">
                 {["DM4_1", "DM4_2", "DM3"][idx]}
               </span>
               <FlightStatusBadge
@@ -816,21 +1605,21 @@ function FlightFeasibilityWidget({
         </div>
       </div>
 
-      <div className="border-t border-slate-200/50 px-6 py-4 dark:border-slate-700/40">
+      <div className="border-t border-slate-200/50 px-6 py-4">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {checks.map((check) => (
             <div
               key={check.id}
-              className="flex items-start gap-2.5 rounded-xl bg-white/70 px-3 py-2.5 dark:bg-slate-900/50"
+              className="flex items-start gap-2.5 rounded-xl bg-white/70 px-3 py-2.5"
             >
               <span className="mt-0.5 shrink-0">
                 {resultIcon[check.result]}
               </span>
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                <p className="text-xs font-semibold text-slate-700">
                   {check.label}
                 </p>
-                <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                <p className="truncate text-xs text-slate-500">
                   {check.detail}
                 </p>
               </div>
@@ -923,20 +1712,14 @@ export function UavDashboard() {
     },
   ])
 
-  // 콜랩서블 상태
   const [collapseMap, setCollapseMap] = useState(false)
   const [collapseMonitor, setCollapseMonitor] = useState(false)
   const [collapseWeather, setCollapseWeather] = useState(false)
   const [collapseCBM, setCollapseCBM] = useState(false)
 
-  // ★ Web Notification
   const { permission, requestPermission, sendNotification } =
     useWebNotification()
-
-  // ★ 소프트 토글 — OS 권한과 별개로 앱 내에서 알림 on/off
   const [notifyEnabled, setNotifyEnabled] = useState(true)
-
-  // danger로 전환되는 순간에만 알림 1회 발송
   const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
 
   // ==========================
@@ -1041,7 +1824,6 @@ export function UavDashboard() {
       ? "caution"
       : "safe"
 
-  // ★ danger 전환 시 OS 알림 발송 (notifyEnabled + permission 둘 다 확인)
   useEffect(() => {
     if (
       alertLevel === "danger" &&
@@ -1058,20 +1840,22 @@ export function UavDashboard() {
     prevAlertLevelRef.current = alertLevel
   }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ★ 비행 로그
+  const { logs } = useFlightLog(droneConnected, droneData, alertLevel)
+
   const alertTone =
     alertLevel === "danger"
-      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+      ? "bg-red-100 text-red-700"
       : alertLevel === "caution"
-        ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+        ? "bg-amber-100 text-amber-700"
+        : "bg-emerald-100 text-emerald-700"
 
   const connectionLabel = droneConnected ? "연결됨" : "연결 대기"
   const connectionTone = droneConnected
-    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-    : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+    ? "bg-emerald-100 text-emerald-700"
+    : "bg-amber-100 text-amber-700"
 
   const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
-
   const batteryVal =
     droneData?.battery != null ? `${droneData.battery.toFixed(0)}` : null
   const altitudeVal =
@@ -1083,41 +1867,32 @@ export function UavDashboard() {
       ? `${droneData.gpsSatellites ?? "?"} 위성`
       : null
 
-  // ★ 알림 버튼 렌더링 헬퍼
   const renderNotificationButton = () => {
-    // 브라우저가 알림을 아예 지원 안 함
     if (typeof window === "undefined" || !("Notification" in window))
       return null
-
-    // 브라우저에서 차단된 경우 — 코드로 해제 불가, 안내만
     if (permission === "denied") {
       return (
         <span
-          className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 dark:bg-slate-800 dark:text-slate-500"
-          title="브라우저 설정 > 사이트 설정에서 알림을 허용해주세요"
+          className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400"
+          title="브라우저 설정에서 알림을 허용해주세요"
         >
           <BellOff className="h-3.5 w-3.5" />
           알림 차단됨
         </span>
       )
     }
-
-    // 아직 권한 요청 안 한 경우
     if (permission === "default") {
       return (
         <button
           type="button"
           onClick={requestPermission}
-          className="flex items-center gap-1.5 rounded-full border border-indigo-200/60 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300"
-          title="클릭하면 위험 경고 시 OS 알림을 받을 수 있습니다"
+          className="flex items-center gap-1.5 rounded-full border border-indigo-200/60 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50"
         >
           <Bell className="h-3.5 w-3.5" />
           알림 허용
         </button>
       )
     }
-
-    // 권한 granted — 소프트 토글 버튼
     return (
       <button
         type="button"
@@ -1127,8 +1902,8 @@ export function UavDashboard() {
         }
         className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition hover:opacity-80 ${
           notifyEnabled
-            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            ? "bg-emerald-100 text-emerald-700"
+            : "bg-slate-100 text-slate-500"
         }`}
       >
         {notifyEnabled ? (
@@ -1142,7 +1917,7 @@ export function UavDashboard() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900 dark:text-slate-100">
+    <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900">
       <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
         {/* ==================== 헤더 ==================== */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1151,7 +1926,7 @@ export function UavDashboard() {
               <Activity className="h-5 w-5 text-white" />
             </span>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
                 드론 관제 센터
               </h1>
               <p className="text-xs uppercase tracking-widest text-slate-400">
@@ -1160,7 +1935,6 @@ export function UavDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* ★ 알림 버튼 (상태에 따라 자동 전환) */}
             {renderNotificationButton()}
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
@@ -1173,7 +1947,7 @@ export function UavDashboard() {
               </span>
               {connectionLabel}
             </span>
-            <span className="text-xs text-slate-400 dark:text-slate-500">
+            <span className="text-xs text-slate-400">
               업데이트 {lastUpdateLabel}
             </span>
           </div>
@@ -1195,14 +1969,21 @@ export function UavDashboard() {
           allDroneStates={allDroneStates}
         />
 
+        {/* ==================== ★ 지금 뭘 해야 하나요? (행동 가이드) ==================== */}
+        <ActionGuideWidget
+          droneConnected={droneConnected}
+          droneData={droneData}
+          alerts={alerts}
+        />
+
         {/* ==================== Sticky 관제 상태바 ==================== */}
-        <div className="sticky top-2 z-20 rounded-2xl border border-slate-200/60 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/40 ring-1 ring-white/70 backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-900/85 dark:shadow-none dark:ring-slate-800/70">
+        <div className="sticky top-2 z-20 rounded-2xl border border-slate-200/60 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/40 ring-1 ring-white/70 backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex flex-wrap items-center gap-4">
               <span className="font-semibold uppercase tracking-widest text-slate-400">
                 운영 상태
               </span>
-              <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+              <span className="flex items-center gap-1.5 text-slate-600">
                 <Wifi className="h-3.5 w-3.5" />
                 <span
                   className={`rounded-full px-2 py-0.5 font-semibold ${connectionTone}`}
@@ -1210,9 +1991,9 @@ export function UavDashboard() {
                   {connectionLabel}
                 </span>
               </span>
-              <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+              <span className="flex items-center gap-1.5 text-slate-600">
                 <span className="text-slate-400">마지막 갱신</span>
-                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                <span className="font-semibold text-slate-800">
                   {lastUpdateLabel}
                 </span>
               </span>
@@ -1229,18 +2010,18 @@ export function UavDashboard() {
                 알림 {alerts.length ? `${alerts.length}건` : "없음"}
               </button>
             </div>
-            <HelpHint text="관제 핵심 상태를 한 줄로 요약합니다. 알림 건수를 클릭하면 상세 내용을 볼 수 있습니다." />
+            <HelpHint text="관제 핵심 상태를 한 줄로 요약합니다." />
           </div>
 
           {showAlertDetails && alerts.length > 0 && (
-            <div className="mt-3 space-y-1.5 border-t border-slate-200/60 pt-3 dark:border-slate-700/60">
+            <div className="mt-3 space-y-1.5 border-t border-slate-200/60 pt-3">
               {alerts.map((alert) => (
                 <div
                   key={alert.id}
                   className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${
                     alert.level === "danger"
-                      ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300"
-                      : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                      ? "bg-red-50 text-red-700"
+                      : "bg-amber-50 text-amber-700"
                   }`}
                 >
                   <span
@@ -1253,7 +2034,7 @@ export function UavDashboard() {
           )}
         </div>
 
-        {/* ==================== 핵심 수치 요약 카드 4개 ==================== */}
+        {/* ==================== 핵심 수치 요약 카드 ==================== */}
         {droneConnected && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
@@ -1285,7 +2066,7 @@ export function UavDashboard() {
               label="GPS"
               value={gpsVal}
               level={gpsVal ? "safe" : droneConnected ? "caution" : "off"}
-              hint="연결된 GPS 위성 수입니다. 위성이 적을수록 위치 정확도가 낮아집니다."
+              hint="연결된 GPS 위성 수입니다."
             />
           </div>
         )}
@@ -1298,10 +2079,10 @@ export function UavDashboard() {
           />
         )}
 
-        {/* ==================== 드론 위치 지도 (콜랩서블) ==================== */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
+        {/* ==================== 드론 위치 지도 ==================== */}
+        <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
           <div
-            className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60 dark:border-slate-800/60 dark:bg-slate-800/30 dark:hover:bg-slate-800/50"
+            className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
             onClick={() => setCollapseMap((v) => !v)}
           >
             <div className="flex items-center gap-3">
@@ -1309,17 +2090,17 @@ export function UavDashboard() {
                 <MapPin className="h-4 w-4 text-white" />
               </div>
               <div>
-                <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                <p className="text-base font-semibold text-slate-900">
                   드론 위치
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-slate-500">
                   지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
               <div onClick={(e) => e.stopPropagation()}>
-                <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다. 지도를 클릭하면 오른쪽 기상 패널에 해당 좌표의 날씨가 표시됩니다." />
+                <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다." />
               </div>
               <span className="text-slate-400">
                 {collapseMap ? (
@@ -1361,10 +2142,11 @@ export function UavDashboard() {
 
         {/* ==================== 2단 그리드 ==================== */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          {/* ────── 왼쪽: 기체 실시간 정보 ────── */}
+          {/* ────── 왼쪽 ────── */}
           <div className="space-y-5">
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
+            {/* 기체 실시간 정보 */}
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
                   icon={<Activity />}
                   title="기체 실시간 정보"
@@ -1390,13 +2172,22 @@ export function UavDashboard() {
                 </div>
               )}
             </div>
+
+            {/* ★ 비행 이벤트 로그 */}
+            <FlightLogWidget logs={logs} />
+
+            {/* ★ 비행 전 체크리스트 */}
+            <PreFlightChecklist
+              droneConnected={droneConnected}
+              droneData={droneData}
+            />
           </div>
 
-          {/* ────── 오른쪽: 기상 정보 + CBM + 연결 안내 + 임계값 알림 ────── */}
+          {/* ────── 오른쪽 ────── */}
           <div className="space-y-5">
             {/* 기상 정보 */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
                   icon={<Cloud />}
                   title="기상 정보"
@@ -1414,8 +2205,8 @@ export function UavDashboard() {
             </div>
 
             {/* 상태 기반 정비 (CBM) */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
                   icon={<Wrench />}
                   title="상태 기반 정비 (CBM)"
@@ -1459,16 +2250,16 @@ export function UavDashboard() {
 
             {/* 연결 안내 (미연결 시) */}
             {!droneConnected && (
-              <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5 dark:border-amber-800/40 dark:bg-amber-900/10">
+              <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
                     <AlertTriangle className="h-4 w-4 text-white" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    <p className="text-sm font-semibold text-amber-900">
                       연결이 안 될 때 확인하세요
                     </p>
-                    <ul className="mt-2 space-y-1.5 text-xs text-amber-800/80 dark:text-amber-300/80">
+                    <ul className="mt-2 space-y-1.5 text-xs text-amber-800/80">
                       <li className="flex items-start gap-1.5">
                         <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                         드론 전원 및 통신 모듈(LTE/RFD) 상태를 확인합니다.
@@ -1490,8 +2281,8 @@ export function UavDashboard() {
             )}
 
             {/* 임계값 알림 */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800/60">
+            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
                   icon={<AlertTriangle />}
                   title="임계값 알림"
@@ -1518,11 +2309,11 @@ export function UavDashboard() {
               </div>
               <div className="p-4">
                 {!droneConnected ? (
-                  <p className="py-6 text-center text-sm text-slate-400 dark:text-slate-500">
+                  <p className="py-6 text-center text-sm text-slate-400">
                     기체 연결 후 임계값 알림을 확인할 수 있습니다.
                   </p>
                 ) : alerts.length === 0 ? (
-                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-800/40 dark:bg-emerald-900/10 dark:text-emerald-300">
+                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-700">
                     모든 항목이 정상 범위입니다.
                   </div>
                 ) : (
@@ -1532,8 +2323,8 @@ export function UavDashboard() {
                         key={alert.id}
                         className={`rounded-2xl border px-4 py-3 text-xs font-medium ${
                           alert.level === "danger"
-                            ? "border-red-200/60 bg-red-50 text-red-700 dark:border-red-800/40 dark:bg-red-900/15 dark:text-red-300"
-                            : "border-amber-200/60 bg-amber-50 text-amber-700 dark:border-amber-800/40 dark:bg-amber-900/15 dark:text-amber-300"
+                            ? "border-red-200/60 bg-red-50 text-red-700"
+                            : "border-amber-200/60 bg-amber-50 text-amber-700"
                         }`}
                       >
                         {alert.label}
@@ -1551,18 +2342,18 @@ export function UavDashboard() {
       {createPortal(
         <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3">
           {chatOpen && (
-            <div className="w-[min(420px,calc(100vw-3rem))] rounded-3xl border border-slate-200/60 bg-white shadow-2xl dark:border-slate-800/60 dark:bg-slate-900">
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-slate-800/60">
+            <div className="w-[min(420px,calc(100vw-3rem))] rounded-3xl border border-slate-200/60 bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
                 <div className="flex items-center gap-2">
                   <MessageCircle className="h-4 w-4 text-indigo-500" />
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  <span className="text-sm font-semibold text-slate-800">
                     AI 운영 상담
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setChatOpen(false)}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1576,7 +2367,7 @@ export function UavDashboard() {
           <button
             type="button"
             onClick={() => setChatOpen((v) => !v)}
-            className="flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-200/40 transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-indigo-800/40 dark:bg-slate-900 dark:text-indigo-300 dark:shadow-none"
+            className="flex items-center gap-2 rounded-full border border-indigo-200/60 bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-lg shadow-indigo-200/40 transition-all hover:-translate-y-0.5 hover:shadow-xl"
             aria-label="AI 채팅 열기"
           >
             <MessageCircle className="h-4 w-4" />
@@ -1586,7 +2377,7 @@ export function UavDashboard() {
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            className="rounded-full border border-slate-200/70 bg-white/90 p-3 text-slate-600 shadow-lg backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-700/70 dark:bg-slate-900/80 dark:text-slate-300"
+            className="rounded-full border border-slate-200/70 bg-white/90 p-3 text-slate-600 shadow-lg backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl"
             aria-label="맨 위로 이동"
           >
             <ArrowUp className="h-4 w-4" />
