@@ -32,7 +32,6 @@ export interface DroneData {
 
 /* =========================
  * 비행 상태 판단
- * speed > 1 m/s 이면 "비행중"
  * ========================= */
 export type FlightStatus = "flying" | "grounded" | "unknown"
 
@@ -47,7 +46,6 @@ export function getFlightStatus(data: DroneData | null): FlightStatus {
 /* =========================
  * Drone 목록 정의
  * ========================= */
-
 interface DroneTarget {
   label: string
   port: number
@@ -61,17 +59,12 @@ const DRONE_TARGETS: DroneTarget[] = [
 ]
 
 /* =========================
- * 개별 드론 WS 상태 (3개 동시)
- *
- * wsConnected  : WebSocket 서버 소켓 연결 여부 (onopen 기준)
- * droneActive  : 기체 텔레메트리 데이터가 실제로 수신되고 있는지
- *                (sysid가 있는 메시지가 한 번이라도 왔을 때 true,
- *                 no_data 응답 또는 소켓 닫힘 시 false)
+ * 개별 드론 WS 상태
  * ========================= */
-interface DroneWsState {
-  wsConnected: boolean // 서버 소켓 연결됨
-  droneActive: boolean // 기체 데이터 수신 중
-  connected: boolean // 하위 호환용 (droneActive와 동일)
+export interface DroneWsState {
+  wsConnected: boolean
+  droneActive: boolean
+  connected: boolean
   data: DroneData | null
   flightStatus: FlightStatus
 }
@@ -79,7 +72,6 @@ interface DroneWsState {
 /* =========================
  * Utils
  * ========================= */
-
 const radToDeg = (v?: number) =>
   typeof v === "number" ? (v * 180) / Math.PI : undefined
 
@@ -102,7 +94,6 @@ function smoothYaw(
 /* =========================
  * WS URL Builder
  * ========================= */
-
 function buildTelemetryWsUrl(rawBase: string) {
   const WS_PATH = "/api/v1/qgc/ws/qgc"
   const base = rawBase.trim()
@@ -144,7 +135,7 @@ function getTelemetryEnvBase(): string | null {
 export function FlightStatusBadge({ status }: { status: FlightStatus }) {
   if (status === "flying") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
@@ -155,15 +146,14 @@ export function FlightStatusBadge({ status }: { status: FlightStatus }) {
   }
   if (status === "grounded") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
         <span className="h-2 w-2 rounded-full bg-slate-400" />
         비행 아님
       </span>
     )
   }
-  // unknown
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-400">
       <span className="h-2 w-2 rounded-full bg-slate-300" />—
     </span>
   )
@@ -173,16 +163,26 @@ export function FlightStatusBadge({ status }: { status: FlightStatus }) {
  * 단일 드론 WS 훅
  * ========================= */
 function useDroneWs(drone: DroneTarget): DroneWsState {
-  const [wsConnected, setWsConnected] = useState(false) // 서버 소켓 연결됨
-  const [droneActive, setDroneActive] = useState(false) // 기체 데이터 실제 수신 중
+  const [wsConnected, setWsConnected] = useState(false)
+  const [droneActive, setDroneActive] = useState(false)
   const [data, setData] = useState<DroneData | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const targetRef = useRef<DroneData | null>(null)
-  const smoothRef = useRef<DroneData>({})
+  const smoothRef = useRef<DroneData | null>(null) // ★ null로 초기화 (빈 객체 아님)
   const lastTsRef = useRef<number>(performance.now())
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
+  // ★ droneActive를 ref로도 관리 — RAF 루프에서 최신값 참조용
+  const droneActiveRef = useRef(false)
+
+  const clearDroneData = useCallback(() => {
+    targetRef.current = null
+    smoothRef.current = null // ★ null로 명확히 초기화
+    droneActiveRef.current = false
+    setDroneActive(false)
+    setData(null) // ★ data도 null로 즉시 초기화
+  }, [])
 
   const connect = useCallback(() => {
     if (wsRef.current) return
@@ -205,7 +205,9 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     ws.onopen = () => {
       if (!mountedRef.current) return
       setWsConnected(true)
-      // 소켓이 열려도 기체 데이터가 올 때까지 droneActive는 false 유지
+      // ★ 소켓이 열려도 기체 데이터가 올 때까지 droneActive는 false 유지
+      // 이전 연결에서 남은 데이터가 있을 수 있으므로 명시적으로 초기화
+      clearDroneData()
     }
 
     ws.onmessage = (event) => {
@@ -219,11 +221,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 
       if (msg?.ok === false) {
         if (msg?.error === "no_data") {
-          // 서버는 연결됐지만 해당 기체 데이터 없음
-          targetRef.current = null
-          smoothRef.current = {}
-          setDroneActive(false)
-          setData(null)
+          // 서버는 연결됐지만 해당 기체 데이터 없음 → 데이터 초기화
+          clearDroneData()
         }
         return
       }
@@ -231,7 +230,12 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       // sysid가 없는 메시지는 기체 데이터로 보지 않음
       if (typeof msg.sysid !== "number") return
 
+      // ★ 이 드론의 lte_ip와 메시지의 lte_ip가 일치하는지 검증
+      // 서버가 잘못된 기체 데이터를 보내는 경우 방어
+      if (msg.lte_ip && msg.lte_ip !== drone.lteIp) return
+
       // 여기까지 왔으면 진짜 기체 데이터 수신 중
+      droneActiveRef.current = true
       setDroneActive(true)
 
       const vx = msg.velocity?.vx
@@ -272,49 +276,54 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       wsRef.current = null
       if (!mountedRef.current) return
       setWsConnected(false)
-      setDroneActive(false)
-      setData(null)
-      targetRef.current = null
-      smoothRef.current = {}
+      // ★ 연결이 끊기면 해당 드론의 모든 데이터를 null로 초기화
+      clearDroneData()
       // 5초 후 자동 재연결
       reconnectTimerRef.current = setTimeout(() => {
         if (mountedRef.current) connect()
       }, 5000)
     }
-  }, [drone.lteIp])
+  }, [drone.lteIp, clearDroneData])
 
   // RAF 스무딩
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
       const target = targetRef.current
-      if (target) {
-        const now = performance.now()
-        const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
-        lastTsRef.current = now
-        const alpha = Math.min(dt * 20, 1)
-        const prev = smoothRef.current
-        smoothRef.current = {
-          ...target,
-          altitude:
-            prev.altitude != null && target.altitude != null
-              ? lerp(prev.altitude, target.altitude, alpha)
-              : target.altitude,
-          speed: target.speed,
-          roll:
-            prev.roll != null && target.roll != null
-              ? lerp(prev.roll, target.roll, alpha)
-              : target.roll,
-          pitch:
-            prev.pitch != null && target.pitch != null
-              ? lerp(prev.pitch, target.pitch, alpha)
-              : target.pitch,
-          yaw:
-            prev.yaw != null && target.yaw != null
-              ? smoothYaw(prev.yaw, target.yaw, dt, 120)
-              : target.yaw,
-        }
+      // ★ droneActive가 false이거나 target이 null이면 smooth도 null로 초기화
+      if (!droneActiveRef.current || !target) {
+        smoothRef.current = null
+        rafId = requestAnimationFrame(rafLoop)
+        return
       }
+
+      const now = performance.now()
+      const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
+      lastTsRef.current = now
+      const alpha = Math.min(dt * 20, 1)
+      const prev = smoothRef.current
+
+      smoothRef.current = {
+        ...target,
+        altitude:
+          prev?.altitude != null && target.altitude != null
+            ? lerp(prev.altitude, target.altitude, alpha)
+            : target.altitude,
+        speed: target.speed,
+        roll:
+          prev?.roll != null && target.roll != null
+            ? lerp(prev.roll, target.roll, alpha)
+            : target.roll,
+        pitch:
+          prev?.pitch != null && target.pitch != null
+            ? lerp(prev.pitch, target.pitch, alpha)
+            : target.pitch,
+        yaw:
+          prev?.yaw != null && target.yaw != null
+            ? smoothYaw(prev.yaw, target.yaw, dt, 120)
+            : target.yaw,
+      }
+
       rafId = requestAnimationFrame(rafLoop)
     }
     rafId = requestAnimationFrame(rafLoop)
@@ -326,7 +335,11 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     const id = window.setInterval(
       () => {
         const next = smoothRef.current
-        if (!next || Object.keys(next).length === 0) return
+        // ★ smoothRef가 null이면 data를 null로 세팅 (이전 데이터 잔류 방지)
+        if (!next) {
+          setData((prev) => (prev === null ? null : null))
+          return
+        }
         setData({
           ...next,
           rollInt: next.roll != null ? Math.round(next.roll) : undefined,
@@ -355,7 +368,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   return {
     wsConnected,
     droneActive,
-    connected: droneActive, // 하위 호환: UavDashboard의 connected 체크에 사용
+    connected: droneActive,
     data,
     flightStatus,
   }
@@ -367,7 +380,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 interface DroneSimulationProps {
   onData?: (data: DroneData | null) => void
   onConnectionChange?: (connected: boolean) => void
-  /** 3개 기체 전체 상태를 상위로 전달 (종합 위젯용) */
   onAllDroneStates?: (states: DroneWsState[]) => void
 }
 
@@ -379,19 +391,16 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   onConnectionChange,
   onAllDroneStates,
 }) => {
-  // 3개 WS 동시 연결
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
   const drone2 = useDroneWs(DRONE_TARGETS[2])
 
   const allStates = [drone0, drone1, drone2]
 
-  // 선택된 기체 (텔레메트리 카드에 표시할 기체)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
 
   const selectedState = selectedIdx !== null ? allStates[selectedIdx] : null
 
-  // 상위 콜백
   useEffect(() => {
     if (onAllDroneStates) onAllDroneStates(allStates)
   }, [drone0, drone1, drone2]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -402,40 +411,37 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   }, [selectedState?.connected, onConnectionChange])
 
   useEffect(() => {
-    if (onData) onData(selectedState?.data ?? null)
-  }, [selectedState?.data, onData])
+    // ★ selectedState가 없거나 droneActive가 false이면 반드시 null 전달
+    if (onData)
+      onData(selectedState?.droneActive ? (selectedState?.data ?? null) : null)
+  }, [selectedState?.data, selectedState?.droneActive, onData])
 
   return (
     <div className="space-y-6">
-      {/* ── 기체 선택 패널 ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+      {/* 기체 선택 패널 */}
+      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
         <div className="mb-3">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            기체 선택
-          </h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <h3 className="text-sm font-semibold text-slate-900">기체 선택</h3>
+          <p className="mt-1 text-xs text-slate-500">
             연결할 기체를 선택한 뒤 조회 시작을 누르세요. 연결 중에 다른 기체를
             선택하면 자동으로 전환됩니다.
           </p>
         </div>
 
-        {/* ── 기체 카드 3개 (모두 동시 연결, 비행중/아님 표시) ── */}
         <div className="grid grid-cols-3 gap-3">
           {DRONE_TARGETS.map((drone, idx) => {
             const state = allStates[idx]
             const isSelected = selectedIdx === idx
             const { wsConnected, droneActive, flightStatus } = state
 
-            // 카드 테두리/배경: 기체 데이터 수신 중일 때만 초록
             const cardClass = droneActive
               ? isSelected
-                ? "border-emerald-400 bg-emerald-50 dark:border-emerald-500 dark:bg-emerald-950/40"
-                : "border-emerald-300 bg-emerald-50/50 hover:border-emerald-400 dark:border-emerald-700 dark:bg-emerald-950/20"
+                ? "border-emerald-400 bg-emerald-50"
+                : "border-emerald-300 bg-emerald-50/50 hover:border-emerald-400"
               : isSelected
-                ? "border-slate-500 bg-slate-50 dark:border-slate-400 dark:bg-slate-800/60"
-                : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-500 dark:hover:bg-slate-800/40"
+                ? "border-slate-500 bg-slate-50"
+                : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
 
-            // 우상단 점: 기체 데이터 수신 중 → 초록 ping, 서버만 연결 → 회색 점, 끊김 → 없음
             const dotEl = droneActive ? (
               <span className="absolute right-3 top-3 flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -443,11 +449,11 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               </span>
             ) : wsConnected ? (
               <span className="absolute right-3 top-3 flex h-2 w-2">
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-300 dark:bg-slate-600" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-300" />
               </span>
             ) : null
 
-            // 상태 텍스트
+            // ★ 상태 텍스트를 3단계로 명확히 구분
             const statusText = droneActive
               ? "기체 수신 중"
               : wsConnected
@@ -466,30 +472,45 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               >
                 {dotEl}
 
-                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <span className="text-sm font-semibold text-slate-900">
                   {drone.label}
                 </span>
-                <span className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                <span className="mt-1 font-mono text-xs text-slate-500">
                   :{drone.port}
                 </span>
 
-                {/* 연결 상태 텍스트 */}
+                {/* ★ 기체 데이터가 없는 드론은 수치 표시 없이 상태 텍스트만 */}
                 <span
-                  className={`mt-0.5 text-xs ${droneActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 dark:text-slate-500"}`}
+                  className={`mt-0.5 text-xs ${droneActive ? "text-emerald-600" : "text-slate-400"}`}
                 >
                   {statusText}
                 </span>
 
-                {/* ★ 비행중 / 비행 아님 뱃지 — 기체 데이터 있을 때만 의미 있음 */}
+                {/* 배터리/고도 미니 수치 — droneActive인 경우에만 표시 */}
+                {droneActive && state.data && (
+                  <div className="mt-1.5 flex gap-2 text-xs text-slate-500">
+                    {state.data.battery != null && (
+                      <span className="font-mono">
+                        🔋 {state.data.battery.toFixed(0)}%
+                      </span>
+                    )}
+                    {state.data.altitude != null && (
+                      <span className="font-mono">
+                        ↑ {state.data.altitude.toFixed(0)}m
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="mt-2">
+                  {/* ★ droneActive가 false면 항상 unknown 표시 */}
                   <FlightStatusBadge
                     status={droneActive ? flightStatus : "unknown"}
                   />
                 </div>
 
-                {/* 선택 표시 */}
                 {isSelected && (
-                  <span className="absolute bottom-2 right-3 text-xs font-semibold text-indigo-500 dark:text-indigo-400">
+                  <span className="absolute bottom-2 right-3 text-xs font-semibold text-indigo-500">
                     선택됨
                   </span>
                 )}
@@ -498,15 +519,18 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           })}
         </div>
 
-        {/* ── 안내 문구 ── */}
-        <div className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+        <div className="mt-3 text-xs text-slate-400">
           {selectedIdx !== null ? (
             <span>
               선택된 기체:{" "}
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
+              <span className="font-semibold text-slate-700">
                 {DRONE_TARGETS[selectedIdx].label}
               </span>{" "}
               — 아래 텔레메트리 카드에 표시됩니다
+              {/* ★ 선택했는데 기체 데이터가 없으면 경고 문구 */}
+              {!allStates[selectedIdx].droneActive && (
+                <span className="ml-2 text-amber-500">⚠ 기체 데이터 없음</span>
+              )}
             </span>
           ) : (
             <span>
@@ -516,10 +540,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         </div>
       </div>
 
-      {/* ── 드론 상태 (선택된 기체의 텔레메트리) ── */}
+      {/* 드론 상태 카드 — ★ droneActive가 false이면 빈 데이터({})가 아닌 null 전달 */}
       <DroneSimulationCard
-        data={selectedState?.data ?? {}}
-        connected={selectedState?.connected ?? false}
+        data={selectedState?.droneActive ? (selectedState?.data ?? {}) : {}}
+        connected={selectedState?.droneActive ?? false}
         onConnect={() => {}}
         onDisconnect={() => {}}
       />
@@ -528,4 +552,3 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
 }
 
 export default DroneSimulation
-export type { DroneWsState }
