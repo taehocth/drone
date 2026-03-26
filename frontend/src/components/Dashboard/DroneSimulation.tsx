@@ -169,19 +169,27 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 
   const wsRef = useRef<WebSocket | null>(null)
   const targetRef = useRef<DroneData | null>(null)
-  const smoothRef = useRef<DroneData | null>(null) // ★ null로 초기화 (빈 객체 아님)
+  const smoothRef = useRef<DroneData | null>(null)
   const lastTsRef = useRef<number>(performance.now())
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
-  // ★ droneActive를 ref로도 관리 — RAF 루프에서 최신값 참조용
   const droneActiveRef = useRef(false)
 
+  // [FIX 2] clearDroneData 호출 직후 RAF 루프가 잔류 데이터를 한 프레임
+  // 더 처리하지 않도록 별도 플래그로 즉시 차단
+  const clearingRef = useRef(false)
+
   const clearDroneData = useCallback(() => {
+    clearingRef.current = true // RAF 루프 즉시 차단
     targetRef.current = null
-    smoothRef.current = null // ★ null로 명확히 초기화
+    smoothRef.current = null
     droneActiveRef.current = false
     setDroneActive(false)
-    setData(null) // ★ data도 null로 즉시 초기화
+    setData(null)
+    // 다음 RAF 틱에서 clearingRef를 해제 — 정상 루프 재개
+    requestAnimationFrame(() => {
+      clearingRef.current = false
+    })
   }, [])
 
   const connect = useCallback(() => {
@@ -205,8 +213,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     ws.onopen = () => {
       if (!mountedRef.current) return
       setWsConnected(true)
-      // ★ 소켓이 열려도 기체 데이터가 올 때까지 droneActive는 false 유지
-      // 이전 연결에서 남은 데이터가 있을 수 있으므로 명시적으로 초기화
       clearDroneData()
     }
 
@@ -221,7 +227,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 
       if (msg?.ok === false) {
         if (msg?.error === "no_data") {
-          // 서버는 연결됐지만 해당 기체 데이터 없음 → 데이터 초기화
           clearDroneData()
         }
         return
@@ -230,11 +235,11 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       // sysid가 없는 메시지는 기체 데이터로 보지 않음
       if (typeof msg.sysid !== "number") return
 
-      // ★ 이 드론의 lte_ip와 메시지의 lte_ip가 일치하는지 검증
-      // 서버가 잘못된 기체 데이터를 보내는 경우 방어
-      if (msg.lte_ip && msg.lte_ip !== drone.lteIp) return
+      // [FIX 1] lte_ip 검증 강화:
+      // 기존: msg.lte_ip가 없으면 검증 자체를 건너뛰어 다른 기체 데이터가 유입될 수 있었음
+      // 수정: lte_ip가 없거나 일치하지 않으면 무조건 차단
+      if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
-      // 여기까지 왔으면 진짜 기체 데이터 수신 중
       droneActiveRef.current = true
       setDroneActive(true)
 
@@ -276,9 +281,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       wsRef.current = null
       if (!mountedRef.current) return
       setWsConnected(false)
-      // ★ 연결이 끊기면 해당 드론의 모든 데이터를 null로 초기화
       clearDroneData()
-      // 5초 후 자동 재연결
       reconnectTimerRef.current = setTimeout(() => {
         if (mountedRef.current) connect()
       }, 5000)
@@ -289,14 +292,18 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
-      const target = targetRef.current
-      // ★ droneActive가 false이거나 target이 null이면 smooth도 null로 초기화
-      if (!droneActiveRef.current || !target) {
+      // [FIX 2] clearingRef가 true면 이번 프레임은 건너뜀 (잔류 데이터 방지)
+      if (
+        clearingRef.current ||
+        !droneActiveRef.current ||
+        !targetRef.current
+      ) {
         smoothRef.current = null
         rafId = requestAnimationFrame(rafLoop)
         return
       }
 
+      const target = targetRef.current
       const now = performance.now()
       const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
       lastTsRef.current = now
@@ -334,8 +341,12 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   useEffect(() => {
     const id = window.setInterval(
       () => {
+        // [FIX 2] clearingRef 중이면 스냅샷도 건너뜀
+        if (clearingRef.current) {
+          setData(null)
+          return
+        }
         const next = smoothRef.current
-        // ★ smoothRef가 null이면 data를 null로 세팅 (이전 데이터 잔류 방지)
         if (!next) {
           setData((prev) => (prev === null ? null : null))
           return
@@ -411,7 +422,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   }, [selectedState?.connected, onConnectionChange])
 
   useEffect(() => {
-    // ★ selectedState가 없거나 droneActive가 false이면 반드시 null 전달
     if (onData)
       onData(selectedState?.droneActive ? (selectedState?.data ?? null) : null)
   }, [selectedState?.data, selectedState?.droneActive, onData])
@@ -453,7 +463,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               </span>
             ) : null
 
-            // ★ 상태 텍스트를 3단계로 명확히 구분
             const statusText = droneActive
               ? "기체 수신 중"
               : wsConnected
@@ -479,14 +488,12 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                   :{drone.port}
                 </span>
 
-                {/* ★ 기체 데이터가 없는 드론은 수치 표시 없이 상태 텍스트만 */}
                 <span
                   className={`mt-0.5 text-xs ${droneActive ? "text-emerald-600" : "text-slate-400"}`}
                 >
                   {statusText}
                 </span>
 
-                {/* 배터리/고도 미니 수치 — droneActive인 경우에만 표시 */}
                 {droneActive && state.data && (
                   <div className="mt-1.5 flex gap-2 text-xs text-slate-500">
                     {state.data.battery != null && (
@@ -503,7 +510,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 )}
 
                 <div className="mt-2">
-                  {/* ★ droneActive가 false면 항상 unknown 표시 */}
                   <FlightStatusBadge
                     status={droneActive ? flightStatus : "unknown"}
                   />
@@ -527,7 +533,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 {DRONE_TARGETS[selectedIdx].label}
               </span>{" "}
               — 아래 텔레메트리 카드에 표시됩니다
-              {/* ★ 선택했는데 기체 데이터가 없으면 경고 문구 */}
               {!allStates[selectedIdx].droneActive && (
                 <span className="ml-2 text-amber-500">⚠ 기체 데이터 없음</span>
               )}
@@ -540,7 +545,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         </div>
       </div>
 
-      {/* 드론 상태 카드 — ★ droneActive가 false이면 빈 데이터({})가 아닌 null 전달 */}
+      {/* 드론 상태 카드 */}
       <DroneSimulationCard
         data={selectedState?.droneActive ? (selectedState?.data ?? {}) : {}}
         connected={selectedState?.droneActive ?? false}
