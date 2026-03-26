@@ -77,8 +77,12 @@ class VehicleRegistry:
             if not item:
                 return None
 
+            # 오프라인 기체는 None 반환 → 서버가 ok=False 전송
+            if not self._is_online(item):
+                return None
+
             out = dict(item)
-            out["online"] = self._is_online(item)
+            out["online"] = True
             return out
 
     def latest_flattened_by_lte_ip(self, lte_ip: str) -> Optional[Dict[str, Any]]:
@@ -91,8 +95,15 @@ class VehicleRegistry:
             if not item:
                 return None
 
+            # ★ 핵심 수정: 오프라인 기체는 None 반환 → 서버가 ok=False 전송
+            # 기존: 오프라인이어도 마지막 데이터를 그대로 반환
+            # → 기체 1만 연결돼도 기체 2, 3 카드에 기체 1 데이터가 표시되는 원인
+            # 수정: 5초 이상 데이터가 없으면 없는 기체로 처리
+            if not self._is_online(item):
+                return None
+
             out = dict(item)
-            out["online"] = self._is_online(item)
+            out["online"] = True
             return out
 
     def latest_flattened(self) -> Optional[Dict[str, Any]]:
