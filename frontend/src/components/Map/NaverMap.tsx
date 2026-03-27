@@ -624,7 +624,9 @@ export function NaverMap({
       )}
 
       {/* 안전 배너 */}
-      <div className="absolute left-3 right-3 top-14 z-50">
+      <div
+        className={`absolute left-3 right-3 z-50 ${isDroneConnected ? "top-3" : "top-14"}`}
+      >
         <SafetyBanner
           overall={safetyOverall}
           items={safetyItems}
