@@ -1754,15 +1754,15 @@ export function UavDashboard() {
                   }
                 />
               </div>
-              {!collapseMonitor && (
-                <div className="p-4">
+              <div className="p-4">
+                <div className={collapseMonitor ? "hidden" : ""}>
                   <DroneSimulation
                     onConnectionChange={setDroneConnected}
                     onData={setDroneData}
                     onAllDroneStates={setAllDroneStates}
                   />
                 </div>
-              )}
+              </div>
             </div>
 
             {/* 비행 이벤트 로그 */}
