@@ -5,19 +5,23 @@ from threading import Lock
 from typing import Dict, Any, Optional, List
 
 
-KST = timezone(timedelta(hours=9))
 OFFLINE_THRESHOLD_SEC = 5.0
 
 
 def _now_iso() -> str:
-    return datetime.now(KST).isoformat()
+    # UTC로 통일 — 서버 환경(클라우드 등) 시간대에 무관하게 일관성 보장
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
         return None
     try:
-        return datetime.fromisoformat(ts)
+        dt = datetime.fromisoformat(ts)
+        # timezone 정보가 없으면 UTC로 간주
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except Exception:
         return None
 
@@ -65,7 +69,7 @@ class VehicleRegistry:
         if not last_seen:
             return False
 
-        now = datetime.now(KST)
+        now = datetime.now(timezone.utc)
         age = (now - last_seen).total_seconds()
         return age <= OFFLINE_THRESHOLD_SEC
 
