@@ -7,6 +7,7 @@ import DroneSimulation, {
   FlightStatusBadge,
 } from "./DroneSimulation"
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
+import { convertGRID_GPS } from "@/utils/convertGrid"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 import {
   MapPin,
@@ -1292,6 +1293,19 @@ export function UavDashboard() {
   } | null>(null)
   const [droneConnected, setDroneConnected] = useState(false)
   const [droneData, setDroneData] = useState<DroneData | null>(null)
+
+  // ★ 기체 위치가 바뀌면 자동으로 날씨 업데이트
+  useEffect(() => {
+    if (droneData?.latitude != null && droneData?.longitude != null) {
+      const { nx, ny } = convertGRID_GPS(
+        "toXY",
+        droneData.latitude,
+        droneData.longitude,
+      )
+      setClickedCoordinates({ nx, ny })
+    }
+  }, [droneData?.latitude, droneData?.longitude])
+
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
 
