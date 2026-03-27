@@ -601,25 +601,27 @@ export function NaverMap({
 
   return (
     <div ref={mapContainerRef} className="relative flex h-full w-full flex-col">
-      {/* 검색창 */}
-      <div className="absolute left-1/2 top-3 z-50 w-[90%] max-w-md -translate-x-1/2">
-        <div className="flex items-center rounded-full border border-gray-200 bg-white/95 px-3 py-1 shadow-md backdrop-blur-sm">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="장소 검색"
-            className="flex-1 border-none bg-transparent px-2 py-1 text-sm focus:outline-none"
-          />
-          <button
-            onClick={handleSearch}
-            className="rounded-full bg-blue-600 px-4 py-1 text-sm text-white transition hover:bg-blue-700"
-          >
-            검색
-          </button>
+      {/* 검색창 — 기체 연결 시 숨김 */}
+      {!isDroneConnected && (
+        <div className="absolute left-1/2 top-3 z-50 w-[90%] max-w-md -translate-x-1/2">
+          <div className="flex items-center rounded-full border border-gray-200 bg-white/95 px-3 py-1 shadow-md backdrop-blur-sm">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="장소 검색"
+              className="flex-1 border-none bg-transparent px-2 py-1 text-sm focus:outline-none"
+            />
+            <button
+              onClick={handleSearch}
+              className="rounded-full bg-blue-600 px-4 py-1 text-sm text-white transition hover:bg-blue-700"
+            >
+              검색
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 안전 배너 */}
       <div className="absolute left-3 right-3 top-14 z-50">
