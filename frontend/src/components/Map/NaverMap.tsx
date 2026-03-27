@@ -31,7 +31,6 @@ interface NaverMapProps {
     yaw?: number
     satellites?: number
   }
-  /** 초보자용 안전 상태 배너 + HUD에 사용 */
   droneStats?: {
     battery?: number
     altitude?: number
@@ -42,7 +41,6 @@ interface NaverMapProps {
 const DEFAULT_LAT = 36.5941
 const DEFAULT_LNG = 126.2932
 
-// ─── 안전 상태 계산 ───────────────────────────────────────────
 type SafetyLevel = "safe" | "caution" | "danger"
 
 interface SafetyItem {
@@ -152,7 +150,6 @@ function calcSafety(
   return { overall, items }
 }
 
-// ─── 색상 헬퍼 ───────────────────────────────────────────────
 const levelText: Record<SafetyLevel, string> = {
   safe: "text-emerald-400",
   caution: "text-amber-400",
@@ -168,7 +165,6 @@ const getAltitudeColor = (v: number) =>
 const getSpeedColor = (v: number) =>
   v > 35 ? "text-red-400" : v > 25 ? "text-amber-400" : "text-emerald-400"
 
-// ─── 안전 배너 컴포넌트 ───────────────────────────────────────
 function SafetyBanner({
   overall,
   items,
@@ -212,7 +208,6 @@ function SafetyBanner({
     <div
       className={`rounded-xl border shadow-lg backdrop-blur-md transition-all ${bannerStyle}`}
     >
-      {/* 요약 줄 */}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -222,7 +217,6 @@ function SafetyBanner({
         <span className={`text-xs font-bold ${levelText[overall]}`}>
           비행 안전 {overallLabel}
         </span>
-        {/* 항목 요약 칩 */}
         <div className="ml-1 flex flex-wrap gap-1">
           {items.map((item) => (
             <span
@@ -244,7 +238,6 @@ function SafetyBanner({
         </span>
       </button>
 
-      {/* 상세 펼치기 */}
       {expanded && (
         <div className="border-t border-white/10 px-4 py-2">
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -270,9 +263,6 @@ function SafetyBanner({
   )
 }
 
-// ═══════════════════════════════════════════════════════════════
-// NaverMap
-// ═══════════════════════════════════════════════════════════════
 export function NaverMap({
   lat,
   lng,
@@ -286,13 +276,9 @@ export function NaverMap({
   const mapInstance = useRef<any>(null)
   const currentMarker = useRef<any>(null)
   const droneMarkerRef = useRef<any>(null)
-  const pathCoords = useRef<any[]>([])
-  const polylineRef = useRef<any>(null)
   const flightPathPolylineRef = useRef<any>(null)
   const lastWeatherUpdateRef = useRef<{ lat: number; lng: number } | null>(null)
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const planPolylineRef = useRef<any>(null)
-  const planFileInputRef = useRef<HTMLInputElement>(null)
 
   const [searchQuery, setSearchQuery] = useState("")
   const [clickedInfo, setClickedInfo] = useState<{
@@ -312,14 +298,12 @@ export function NaverMap({
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // 안전 상태 계산
   const { overall: safetyOverall, items: safetyItems } = calcSafety(
     droneStats,
     isDroneConnected ? satellites : null,
     weatherData?.windSpeed,
   )
 
-  // ── 위성 이벤트 ──────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: Event) => {
       const v = (e as CustomEvent).detail?.satellites
@@ -329,7 +313,6 @@ export function NaverMap({
     return () => window.removeEventListener("droneSatelliteUpdate", handler)
   }, [])
 
-  // ── 전체화면 감지 ─────────────────────────────────────────────
   useEffect(() => {
     const onChange = () => {
       setIsFullscreen(!!document.fullscreenElement)
@@ -361,7 +344,6 @@ export function NaverMap({
     }
   }
 
-  // ── 날씨 ─────────────────────────────────────────────────────
   const fetchWeatherData = async (nx: number, ny: number) => {
     try {
       const now = new Date()
@@ -391,7 +373,6 @@ export function NaverMap({
     }
   }
 
-  // ── 장소 검색 ─────────────────────────────────────────────────
   const handleSearch = async () => {
     if (!mapInstance.current) return
     try {
@@ -423,7 +404,6 @@ export function NaverMap({
     }
   }
 
-  // ── 마커 ─────────────────────────────────────────────────────
   const removeCurrentMarker = () => {
     if (currentMarker.current) {
       currentMarker.current.setMap(null)
@@ -445,7 +425,6 @@ export function NaverMap({
     })
   }
 
-  // ── 지도 클릭 ─────────────────────────────────────────────────
   const handleMapClick = (e: any) => {
     const la = e.coord.lat(),
       lo = e.coord.lng()
@@ -472,7 +451,6 @@ export function NaverMap({
     )
   }
 
-  // ── 지도 초기화 ───────────────────────────────────────────────
   useEffect(() => {
     const scriptId = "naver-map-script"
     if (!document.getElementById(scriptId)) {
@@ -503,7 +481,6 @@ export function NaverMap({
     return () => window.removeEventListener("resize", onResize)
   }, [lat, lng])
 
-  // ── 드론 마커 ─────────────────────────────────────────────────
   const updateDroneMarker = (la: number, lo: number, yaw?: number) => {
     if (!mapInstance.current) return
     const naver = (window as any).naver
@@ -534,7 +511,7 @@ export function NaverMap({
     }
   }
 
-  // ── 드론 이벤트 ───────────────────────────────────────────────
+  // ── 드론 이벤트 (폴리라인 제거) ───────────────────────────────
   useEffect(() => {
     const onUpdate = (e: CustomEvent) => {
       const { lat: la, lng: lo, yaw, satellites: sats } = e.detail
@@ -542,18 +519,10 @@ export function NaverMap({
       updateDroneMarker(la, lo, yaw)
       setIsDroneConnected(true)
       if (sats !== undefined) setSatellites(sats)
-      const naver = (window as any).naver
-      pathCoords.current.push(new naver.maps.LatLng(la, lo))
-      if (polylineRef.current) polylineRef.current.setMap(null)
-      polylineRef.current = new naver.maps.Polyline({
-        map: mapInstance.current,
-        path: pathCoords.current,
-        strokeColor: "#1E90FF",
-        strokeWeight: 4,
-        strokeOpacity: 0.8,
-      })
       if (isTrackingDrone)
-        mapInstance.current.setCenter(new naver.maps.LatLng(la, lo))
+        mapInstance.current.setCenter(
+          new (window as any).naver.maps.LatLng(la, lo),
+        )
       const last = lastWeatherUpdateRef.current
       if (
         !last ||
@@ -605,7 +574,7 @@ export function NaverMap({
       )
   }, [dronePosition, isTrackingDrone])
 
-  // ── 비행 로그 경로 ────────────────────────────────────────────
+  // ── 비행 로그 경로 (flightPath prop은 유지) ───────────────────
   useEffect(() => {
     if (!flightPath?.length || !mapInstance.current) {
       flightPathPolylineRef.current?.setMap(null)
@@ -630,12 +599,9 @@ export function NaverMap({
     }
   }, [flightPath])
 
-  // ═══════════════════════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════════════════════
   return (
     <div ref={mapContainerRef} className="relative flex h-full w-full flex-col">
-      {/* ── 검색창 ── */}
+      {/* 검색창 */}
       <div className="absolute left-1/2 top-3 z-50 w-[90%] max-w-md -translate-x-1/2">
         <div className="flex items-center rounded-full border border-gray-200 bg-white/95 px-3 py-1 shadow-md backdrop-blur-sm">
           <input
@@ -655,7 +621,7 @@ export function NaverMap({
         </div>
       </div>
 
-      {/* ══ 비행 안전 상태 배너 (지도 상단, 검색창 아래) ══ */}
+      {/* 안전 배너 */}
       <div className="absolute left-3 right-3 top-14 z-50">
         <SafetyBanner
           overall={safetyOverall}
@@ -664,7 +630,7 @@ export function NaverMap({
         />
       </div>
 
-      {/* ── 드론 미니 HUD (좌측, 배너 아래) ── */}
+      {/* 드론 HUD */}
       {isDroneConnected && droneStats && (
         <div className="absolute left-3 top-[7.5rem] z-50 flex flex-col gap-1.5">
           {droneStats.battery != null && (
@@ -719,7 +685,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ── GNSS HUD (우측, 배너 아래) ── */}
+      {/* GNSS HUD */}
       {satellites !== null && isDroneConnected && (
         <div
           className={`absolute right-3 top-[7.5rem] z-50 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md ${
@@ -731,13 +697,7 @@ export function NaverMap({
           }`}
         >
           <Satellite
-            className={`h-4 w-4 ${
-              satellites < 10
-                ? "text-red-400"
-                : satellites < 25
-                  ? "text-amber-400"
-                  : "text-emerald-400"
-            }`}
+            className={`h-4 w-4 ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
           />
           <div className="flex flex-col leading-tight">
             <span className="text-[10px] text-white/40">GNSS</span>
@@ -751,7 +711,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ── 드론 추적 버튼 (좌측 하단) ── */}
+      {/* 드론 추적 버튼 */}
       {isDroneConnected && (
         <button
           onClick={() => setIsTrackingDrone((v) => !v)}
@@ -770,7 +730,7 @@ export function NaverMap({
         </button>
       )}
 
-      {/* ── 전체화면 버튼 (우측 하단) ── */}
+      {/* 전체화면 버튼 */}
       <button
         onClick={toggleFullscreen}
         className="absolute bottom-4 right-3 z-[60] flex items-center justify-center rounded-full bg-blue-600 p-3 text-white shadow-lg transition-all hover:scale-110 hover:bg-blue-700"
@@ -783,11 +743,10 @@ export function NaverMap({
         )}
       </button>
 
-      {/* ══ 클릭 정보 패널 (하단) — 개선됨 ══ */}
+      {/* 클릭 정보 패널 */}
       {showInfoPanel && clickedInfo && (
         <div className="absolute bottom-0 left-0 right-0 z-40 p-3">
           <div className="rounded-2xl border border-white/10 bg-slate-900/95 shadow-2xl backdrop-blur-md">
-            {/* 헤더 */}
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
               <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-white/40">
                 <MapPin className="h-3.5 w-3.5" />
@@ -804,9 +763,7 @@ export function NaverMap({
                 <X className="h-4 w-4" />
               </button>
             </div>
-
             <div className="space-y-3 px-4 py-3">
-              {/* 좌표 */}
               <div className="flex flex-wrap gap-x-6 gap-y-1">
                 <div>
                   <span className="text-[10px] uppercase tracking-wide text-white/40">
@@ -825,8 +782,6 @@ export function NaverMap({
                   </p>
                 </div>
               </div>
-
-              {/* 주소 */}
               <div>
                 <span className="text-[10px] uppercase tracking-wide text-white/40">
                   주소
@@ -847,31 +802,21 @@ export function NaverMap({
                   )}
                 </div>
               </div>
-
-              {/* 기상 */}
               {weatherData && (
                 <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
                   <span className="text-[10px] uppercase tracking-wide text-white/40">
                     기상 정보
                   </span>
                   <div className="mt-1.5 grid grid-cols-3 gap-2">
-                    {/* 기온 */}
                     <div className="text-center">
                       <p className="text-lg font-bold text-orange-300">
                         {weatherData.temperature}°
                       </p>
                       <p className="text-[10px] text-white/40">기온</p>
                     </div>
-                    {/* 풍속 */}
                     <div className="text-center">
                       <p
-                        className={`text-lg font-bold ${
-                          weatherData.windSpeed >= 14
-                            ? "text-red-400"
-                            : weatherData.windSpeed >= 7
-                              ? "text-amber-400"
-                              : "text-emerald-400"
-                        }`}
+                        className={`text-lg font-bold ${weatherData.windSpeed >= 14 ? "text-red-400" : weatherData.windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
                       >
                         {weatherData.windSpeed}
                         <span className="text-xs font-normal">m/s</span>
@@ -889,7 +834,6 @@ export function NaverMap({
                           </span>
                         )}
                     </div>
-                    {/* 강수 */}
                     <div className="text-center">
                       <p className="text-lg font-bold text-sky-300">
                         {weatherData.precipitationAmount}
@@ -905,7 +849,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ── 지도 영역 ── */}
+      {/* 지도 영역 */}
       <div ref={mapRef} className="min-h-[400px] w-full flex-1" />
     </div>
   )

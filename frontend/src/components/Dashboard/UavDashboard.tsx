@@ -1553,20 +1553,21 @@ export function UavDashboard() {
         />
 
         {/* 비행 가능 여부 종합 위젯 */}
-        <FlightFeasibilityWidget
-          droneConnected={droneConnected}
-          droneData={droneData}
-          alertLevel={alertLevel}
-          alerts={alerts}
-          allDroneStates={allDroneStates}
-        />
-
-        {/* 지금 뭘 해야 하나요? */}
-        <ActionGuideWidget
-          droneConnected={droneConnected}
-          droneData={droneData}
-          alerts={alerts}
-        />
+        {/* 비행 가능 여부 + 지금 뭘 해야 하나요? — 2분할 */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <FlightFeasibilityWidget
+            droneConnected={droneConnected}
+            droneData={droneData}
+            alertLevel={alertLevel}
+            alerts={alerts}
+            allDroneStates={allDroneStates}
+          />
+          <ActionGuideWidget
+            droneConnected={droneConnected}
+            droneData={droneData}
+            alerts={alerts}
+          />
+        </div>
 
         {/* Sticky 관제 상태바 */}
         <div className="sticky top-2 z-20 rounded-2xl border border-slate-200/60 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/40 ring-1 ring-white/70 backdrop-blur-md">

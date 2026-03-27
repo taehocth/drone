@@ -12,7 +12,7 @@ from pymavlink import mavutil
 # CONFIG
 # =====================================================
 
-SERVER_BASE_URL = os.getenv("SERVER_BASE_URL", "https://hanuldrone.duckdns.org")
+SERVER_BASE_URL = os.getenv("SERVER_BASE_URL", "https://drone-5-2qlc.onrender.com")
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
 
 PUSH_INTERVAL_SEC = 0.1
