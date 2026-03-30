@@ -15,6 +15,15 @@ import {
   AlertTriangle,
   ShieldAlert,
   WifiOff,
+  PlaneLanding,
+  Wind,
+  Thermometer,
+  Signal,
+  Crosshair,
+  Clock,
+  TrendingDown,
+  TriangleAlert,
+  Info,
 } from "lucide-react"
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
@@ -263,6 +272,589 @@ function SafetyBanner({
   )
 }
 
+// ─────────────────────────────────────────────────────────────
+// 좌하단: 배터리 + RTL 가이드 카드 (초보 관제사용)
+// ─────────────────────────────────────────────────────────────
+function BatteryGuideCard({
+  battery,
+  altitude,
+}: {
+  battery?: number
+  altitude?: number
+}) {
+  if (battery == null) return null
+
+  // 배터리 레벨별 조언
+  const guide =
+    battery <= 20
+      ? {
+          bg: "bg-red-950/90 border-red-500/50",
+          dot: "bg-red-500 animate-ping",
+          dotInner: "bg-red-500",
+          title: "즉시 귀환하세요",
+          titleColor: "text-red-300",
+          desc: "배터리가 위험 수준입니다. 지금 바로 RTL을 실행하세요.",
+          steps: [
+            "1. 현재 임무 즉시 중단",
+            "2. RTL 모드 전환",
+            "3. 착륙 지점 확인",
+          ],
+          icon: <PlaneLanding className="h-4 w-4 text-red-400" />,
+        }
+      : battery <= 35
+        ? {
+            bg: "bg-amber-950/90 border-amber-500/50",
+            dot: "bg-amber-500",
+            dotInner: "bg-amber-500",
+            title: "귀환 준비 시작",
+            titleColor: "text-amber-300",
+            desc: "배터리가 절반 이하입니다. 귀환 경로를 확인하세요.",
+            steps: [
+              "1. 임무 단계 마무리",
+              "2. 귀환 루트 확인",
+              "3. 5분 내 복귀 준비",
+            ],
+            icon: <Battery className="h-4 w-4 text-amber-400" />,
+          }
+        : battery <= 60
+          ? {
+              bg: "bg-slate-900/90 border-slate-500/40",
+              dot: "bg-sky-400",
+              dotInner: "bg-sky-400",
+              title: "배터리 양호",
+              titleColor: "text-sky-300",
+              desc: "현재 상태 양호. 귀환 여유를 계획하세요.",
+              steps: ["• 지속 모니터링", "• 35% 도달 전 귀환 계획 수립"],
+              icon: <Battery className="h-4 w-4 text-sky-400" />,
+            }
+          : {
+              bg: "bg-slate-900/90 border-emerald-500/30",
+              dot: "bg-emerald-500",
+              dotInner: "bg-emerald-500",
+              title: "충분한 배터리",
+              titleColor: "text-emerald-300",
+              desc: "배터리 여유 충분. 정상 비행 가능합니다.",
+              steps: ["• 정상 임무 수행 가능", "• 주기적 잔량 확인 권장"],
+              icon: <Battery className="h-4 w-4 text-emerald-400" />,
+            }
+
+  // 배터리 바 색상
+  const barColor =
+    battery <= 20
+      ? "bg-red-500"
+      : battery <= 35
+        ? "bg-amber-500"
+        : battery <= 60
+          ? "bg-sky-400"
+          : "bg-emerald-500"
+
+  return (
+    <div
+      className={`rounded-2xl border shadow-2xl backdrop-blur-md ${guide.bg} w-[220px]`}
+    >
+      {/* 헤더 */}
+      <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+        {guide.icon}
+        <span className={`text-xs font-bold ${guide.titleColor}`}>
+          {guide.title}
+        </span>
+        <span className="relative ml-auto flex h-2 w-2 shrink-0">
+          <span
+            className={`absolute inline-flex h-full w-full rounded-full opacity-60 ${guide.dot}`}
+          />
+          <span
+            className={`relative inline-flex h-2 w-2 rounded-full ${guide.dotInner}`}
+          />
+        </span>
+      </div>
+
+      {/* 배터리 바 */}
+      <div className="px-3 pt-2.5">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-[10px] text-white/40">배터리 잔량</span>
+          <span
+            className={`text-xs font-bold tabular-nums ${guide.titleColor}`}
+          >
+            {battery.toFixed(0)}%
+          </span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+            style={{ width: `${battery}%` }}
+          />
+        </div>
+        {/* 예비 마커 20% */}
+        <div className="relative mt-0.5 h-2 w-full">
+          <div
+            className="absolute top-0 h-full w-px bg-red-400/60"
+            style={{ left: "20%" }}
+            title="RTL 예비선 20%"
+          />
+          <span
+            className="absolute text-[9px] text-red-400/60"
+            style={{ left: "21%" }}
+          >
+            RTL
+          </span>
+        </div>
+      </div>
+
+      {/* 가이드 */}
+      <div className="px-3 pb-3 pt-1.5">
+        <p className="mb-1.5 text-[10px] leading-relaxed text-white/50">
+          {guide.desc}
+        </p>
+        <div className="space-y-0.5">
+          {guide.steps.map((step, i) => (
+            <p
+              key={i}
+              className={`text-[10px] font-medium ${guide.titleColor}`}
+            >
+              {step}
+            </p>
+          ))}
+        </div>
+      </div>
+
+      {/* 고도 보조 표시 */}
+      {altitude != null && (
+        <div className="border-t border-white/10 px-3 py-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-white/40">현재 고도</span>
+            <span
+              className={`text-xs font-semibold tabular-nums ${getAltitudeColor(altitude)}`}
+            >
+              {altitude.toFixed(0)}m
+              {altitude > 150 && (
+                <span className="ml-1 text-[9px]">⚠ 초과</span>
+              )}
+              {altitude > 120 && altitude <= 150 && (
+                <span className="ml-1 text-[9px]">주의</span>
+              )}
+            </span>
+          </div>
+          {/* 고도 한계선 표시 바 */}
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${getAltitudeColor(altitude).replace("text-", "bg-")}`}
+              style={{ width: `${Math.min((altitude / 150) * 100, 100)}%` }}
+            />
+          </div>
+          <div className="mt-0.5 flex justify-end">
+            <span className="text-[9px] text-white/25">법적 한계 150m</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// 우하단: 비행 체크리스트 + 기상 요약 카드
+// ─────────────────────────────────────────────────────────────
+interface ChecklistCardProps {
+  battery?: number
+  altitude?: number
+  speed?: number
+  satellites?: number | null
+  windSpeed?: number | null
+  temperature?: number | null
+  precipitation?: number | null
+  connected: boolean
+}
+
+function ChecklistCard({
+  battery,
+  altitude,
+  speed,
+  satellites,
+  windSpeed,
+  temperature,
+  precipitation,
+  connected,
+}: ChecklistCardProps) {
+  const [showWeather, setShowWeather] = useState(false)
+
+  type CheckResult = "pass" | "warn" | "fail" | "unknown"
+
+  interface CheckRow {
+    icon: React.ReactNode
+    label: string
+    value: string
+    result: CheckResult
+    tip: string
+  }
+
+  const checks: CheckRow[] = []
+
+  if (!connected) {
+    // 미연결 상태 — 연결 가이드
+    return (
+      <div className="w-[220px] rounded-2xl border border-slate-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <Info className="h-4 w-4 text-slate-400" />
+          <span className="text-xs font-bold text-slate-300">
+            관제 체크리스트
+          </span>
+        </div>
+        <div className="space-y-2 px-3 py-3">
+          {[
+            "1. 드론 전원 확인",
+            "2. GCS 네트워크 확인",
+            "3. GPS 신호 확인 (6위성+)",
+            "4. 배터리 80%+ 확인",
+            "5. 비행 허가 구역 확인",
+          ].map((item, i) => (
+            <div key={i} className="flex items-start gap-2">
+              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[9px] text-slate-500">
+                {i + 1}
+              </span>
+              <p className="text-[10px] text-slate-400">
+                {item.replace(/^\d+\.\s/, "")}
+              </p>
+            </div>
+          ))}
+          <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-slate-500">
+            기체 연결 시 실시간 체크리스트로 전환됩니다.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // 배터리
+  checks.push({
+    icon: <Battery className="h-3.5 w-3.5" />,
+    label: "배터리",
+    value: battery != null ? `${battery.toFixed(0)}%` : "—",
+    result:
+      battery == null
+        ? "unknown"
+        : battery <= 20
+          ? "fail"
+          : battery <= 35
+            ? "warn"
+            : "pass",
+    tip:
+      battery == null
+        ? "수신 대기"
+        : battery <= 20
+          ? "즉시 귀환 필요"
+          : battery <= 35
+            ? "귀환 준비"
+            : "정상",
+  })
+
+  // 고도
+  checks.push({
+    icon: <ArrowUp className="h-3.5 w-3.5" />,
+    label: "고도",
+    value: altitude != null ? `${altitude.toFixed(0)}m` : "—",
+    result:
+      altitude == null
+        ? "unknown"
+        : altitude > 150
+          ? "fail"
+          : altitude > 120
+            ? "warn"
+            : "pass",
+    tip:
+      altitude == null
+        ? "수신 대기"
+        : altitude > 150
+          ? "법적 초과 — 즉시 하강"
+          : altitude > 120
+            ? "한계 접근"
+            : "안전 고도",
+  })
+
+  // 속도
+  checks.push({
+    icon: <Gauge className="h-3.5 w-3.5" />,
+    label: "속도",
+    value: speed != null ? `${speed.toFixed(1)}m/s` : "—",
+    result:
+      speed == null
+        ? "unknown"
+        : speed > 35
+          ? "fail"
+          : speed > 25
+            ? "warn"
+            : "pass",
+    tip:
+      speed == null
+        ? "수신 대기"
+        : speed > 35
+          ? "과속"
+          : speed > 25
+            ? "속도 주의"
+            : "정상",
+  })
+
+  // GNSS
+  checks.push({
+    icon: <Satellite className="h-3.5 w-3.5" />,
+    label: "GNSS",
+    value: satellites != null ? `${satellites}위성` : "—",
+    result:
+      satellites == null
+        ? "unknown"
+        : satellites < 10
+          ? "fail"
+          : satellites < 25
+            ? "warn"
+            : "pass",
+    tip:
+      satellites == null
+        ? "수신 대기"
+        : satellites < 10
+          ? "신호 불량 — 착륙 권장"
+          : satellites < 25
+            ? "신호 보통"
+            : "신호 양호",
+  })
+
+  // 풍속
+  if (windSpeed != null) {
+    checks.push({
+      icon: <Wind className="h-3.5 w-3.5" />,
+      label: "풍속",
+      value: `${windSpeed}m/s`,
+      result: windSpeed >= 14 ? "fail" : windSpeed >= 7 ? "warn" : "pass",
+      tip:
+        windSpeed >= 14
+          ? "비행 위험"
+          : windSpeed >= 7
+            ? "비행 주의"
+            : "비행 가능",
+    })
+  }
+
+  const passCount = checks.filter((c) => c.result === "pass").length
+  const failCount = checks.filter((c) => c.result === "fail").length
+  const warnCount = checks.filter((c) => c.result === "warn").length
+
+  const overallResult: CheckResult =
+    failCount > 0 ? "fail" : warnCount > 0 ? "warn" : "pass"
+
+  const resultStyle: Record<
+    CheckResult,
+    { icon: React.ReactNode; color: string; bg: string }
+  > = {
+    pass: {
+      icon: <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />,
+      color: "text-emerald-300",
+      bg: "bg-emerald-500/15",
+    },
+    warn: {
+      icon: <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />,
+      color: "text-amber-300",
+      bg: "bg-amber-500/15",
+    },
+    fail: {
+      icon: <ShieldAlert className="h-3.5 w-3.5 text-red-400" />,
+      color: "text-red-300",
+      bg: "bg-red-500/15",
+    },
+    unknown: {
+      icon: (
+        <span className="inline-block h-3.5 w-3.5 rounded-full border border-slate-500" />
+      ),
+      color: "text-slate-400",
+      bg: "bg-slate-500/10",
+    },
+  }
+
+  return (
+    <div className="w-[220px] overflow-hidden rounded-2xl border border-slate-600/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
+      {/* 헤더 — 종합 결과 */}
+      <div
+        className={`flex items-center gap-2 border-b border-white/10 px-3 py-2 ${
+          overallResult === "fail"
+            ? "bg-red-950/60"
+            : overallResult === "warn"
+              ? "bg-amber-950/60"
+              : "bg-emerald-950/40"
+        }`}
+      >
+        {resultStyle[overallResult].icon}
+        <span
+          className={`text-xs font-bold ${resultStyle[overallResult].color}`}
+        >
+          {overallResult === "fail"
+            ? "위험 항목 발생"
+            : overallResult === "warn"
+              ? "주의 항목 있음"
+              : "모든 항목 정상"}
+        </span>
+        <span className="ml-auto text-[10px] text-white/30">
+          {passCount}/{checks.length}
+        </span>
+      </div>
+
+      {/* 체크 항목 목록 */}
+      <div className="divide-y divide-white/5">
+        {checks.map((check) => {
+          const rs = resultStyle[check.result]
+          return (
+            <div
+              key={check.label}
+              className={`flex items-center gap-2 px-3 py-2 ${rs.bg}`}
+            >
+              <span className={rs.color}>{check.icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-semibold text-white/70">
+                    {check.label}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold tabular-nums ${rs.color}`}
+                  >
+                    {check.value}
+                  </span>
+                </div>
+                <p className={`text-[9px] ${rs.color} opacity-80`}>
+                  {check.tip}
+                </p>
+              </div>
+              <span className="shrink-0">{rs.icon}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 기상 토글 */}
+      {(temperature != null || windSpeed != null || precipitation != null) && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowWeather((v) => !v)}
+            className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2 text-left transition hover:bg-white/5"
+          >
+            <Thermometer className="h-3.5 w-3.5 text-orange-400" />
+            <span className="text-[10px] font-semibold text-white/50">
+              기상 정보
+            </span>
+            <span className="ml-auto text-[9px] text-white/25">
+              {showWeather ? "▲" : "▼"}
+            </span>
+          </button>
+          {showWeather && (
+            <div className="grid grid-cols-3 gap-2 border-t border-white/5 px-3 py-2.5 text-center">
+              {temperature != null && (
+                <div>
+                  <p className="text-sm font-bold text-orange-300">
+                    {temperature}°
+                  </p>
+                  <p className="text-[9px] text-white/30">기온</p>
+                </div>
+              )}
+              {windSpeed != null && (
+                <div>
+                  <p
+                    className={`text-sm font-bold ${windSpeed >= 14 ? "text-red-400" : windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
+                  >
+                    {windSpeed}
+                    <span className="text-[9px] font-normal">m/s</span>
+                  </p>
+                  <p className="text-[9px] text-white/30">풍속</p>
+                </div>
+              )}
+              {precipitation != null && (
+                <div>
+                  <p className="text-sm font-bold text-sky-300">
+                    {precipitation}
+                    <span className="text-[9px] font-normal">mm</span>
+                  </p>
+                  <p className="text-[9px] text-white/30">강수</p>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// 우하단 상단: 비행 시간 + 속도 미니 카드
+// ─────────────────────────────────────────────────────────────
+function FlightStatusMiniCard({
+  speed,
+  altitude,
+}: {
+  speed?: number
+  altitude?: number
+}) {
+  const [flightSec, setFlightSec] = useState(0)
+  const startRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    const isFlying = (speed ?? 0) > 1
+    if (isFlying && !startRef.current) {
+      startRef.current = Date.now()
+    } else if (!isFlying) {
+      startRef.current = null
+      setFlightSec(0)
+    }
+  }, [speed])
+
+  useEffect(() => {
+    if (!startRef.current) return
+    const id = setInterval(() => {
+      if (startRef.current)
+        setFlightSec(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [speed])
+
+  const isFlying = (speed ?? 0) > 1
+  const mm = Math.floor(flightSec / 60)
+  const ss = flightSec % 60
+
+  return (
+    <div className="flex gap-2">
+      {/* 비행 시간 */}
+      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md">
+        <Clock
+          className={`h-3.5 w-3.5 ${isFlying ? "text-emerald-400" : "text-slate-500"}`}
+        />
+        <div className="flex flex-col leading-tight">
+          <span className="text-[9px] text-white/30">비행 시간</span>
+          <span
+            className={`font-mono font-bold tabular-nums ${isFlying ? "text-emerald-300" : "text-slate-500"}`}
+          >
+            {isFlying
+              ? `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
+              : "--:--"}
+          </span>
+        </div>
+      </div>
+
+      {/* 속도 */}
+      {speed != null && (
+        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md">
+          <TrendingDown className={`h-3.5 w-3.5 ${getSpeedColor(speed)}`} />
+          <div className="flex flex-col leading-tight">
+            <span className="text-[9px] text-white/30">속도</span>
+            <span
+              className={`font-mono font-bold tabular-nums ${getSpeedColor(speed)}`}
+            >
+              {speed.toFixed(1)}
+              <span className="text-[9px] font-normal"> m/s</span>
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// 메인 NaverMap 컴포넌트
+// ─────────────────────────────────────────────────────────────
 export function NaverMap({
   lat,
   lng,
@@ -511,7 +1103,6 @@ export function NaverMap({
     }
   }
 
-  // ── 드론 이벤트 (폴리라인 제거) ───────────────────────────────
   useEffect(() => {
     const onUpdate = (e: CustomEvent) => {
       const { lat: la, lng: lo, yaw, satellites: sats } = e.detail
@@ -551,7 +1142,6 @@ export function NaverMap({
     }
   }, [isTrackingDrone])
 
-  // ── dronePosition prop ────────────────────────────────────────
   useEffect(() => {
     if (!dronePosition) {
       removeDroneMarker()
@@ -574,7 +1164,6 @@ export function NaverMap({
       )
   }, [dronePosition, isTrackingDrone])
 
-  // ── 비행 로그 경로 (flightPath prop은 유지) ───────────────────
   useEffect(() => {
     if (!flightPath?.length || !mapInstance.current) {
       flightPathPolylineRef.current?.setMap(null)
@@ -623,7 +1212,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* 안전 배너 */}
+      {/* 안전 배너 — 최상단 */}
       <div
         className={`absolute left-3 right-3 z-50 ${isDroneConnected ? "top-3" : "top-14"}`}
       >
@@ -634,7 +1223,7 @@ export function NaverMap({
         />
       </div>
 
-      {/* 드론 HUD */}
+      {/* 드론 HUD — 좌측 상단 */}
       {isDroneConnected && droneStats && (
         <div className="absolute left-3 top-[7.5rem] z-50 flex flex-col gap-1.5">
           {droneStats.battery != null && (
@@ -689,7 +1278,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* GNSS HUD */}
+      {/* GNSS HUD — 우측 상단 */}
       {satellites !== null && isDroneConnected && (
         <div
           className={`absolute right-3 top-[7.5rem] z-50 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md ${
@@ -715,6 +1304,55 @@ export function NaverMap({
         </div>
       )}
 
+      {/* ─────────────────────────────────────────────
+          ★ 좌하단: 배터리 + RTL 가이드 카드
+          ───────────────────────────────────────────── */}
+      {isDroneConnected && (
+        <div className="absolute bottom-4 left-3 z-50">
+          <BatteryGuideCard
+            battery={droneStats?.battery}
+            altitude={droneStats?.altitude}
+          />
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────
+          ★ 우하단: 실시간 체크리스트 카드
+              + 위에 비행 시간/속도 미니 카드
+          ───────────────────────────────────────────── */}
+      {isDroneConnected && (
+        <div className="absolute bottom-4 right-3 z-50 flex flex-col items-end gap-2">
+          {/* 비행 시간 + 속도 미니 카드 */}
+          <FlightStatusMiniCard
+            speed={droneStats?.speed}
+            altitude={droneStats?.altitude}
+          />
+          {/* 체크리스트 */}
+          <ChecklistCard
+            battery={droneStats?.battery}
+            altitude={droneStats?.altitude}
+            speed={droneStats?.speed}
+            satellites={satellites}
+            windSpeed={weatherData?.windSpeed ?? null}
+            temperature={weatherData?.temperature ?? null}
+            precipitation={weatherData?.precipitationAmount ?? null}
+            connected={isDroneConnected}
+          />
+        </div>
+      )}
+
+      {/* 미연결 시 우하단에도 사전 체크리스트 */}
+      {!isDroneConnected && (
+        <div className="absolute bottom-16 right-3 z-50">
+          <ChecklistCard
+            connected={false}
+            windSpeed={weatherData?.windSpeed ?? null}
+            temperature={weatherData?.temperature ?? null}
+            precipitation={weatherData?.precipitationAmount ?? null}
+          />
+        </div>
+      )}
+
       {/* 드론 추적 버튼 */}
       {isDroneConnected && (
         <button
@@ -737,7 +1375,8 @@ export function NaverMap({
       {/* 전체화면 버튼 */}
       <button
         onClick={toggleFullscreen}
-        className="absolute bottom-4 right-3 z-[60] flex items-center justify-center rounded-full bg-blue-600 p-3 text-white shadow-lg transition-all hover:scale-110 hover:bg-blue-700"
+        className="absolute bottom-4 z-[60] flex items-center justify-center rounded-full bg-blue-600 p-3 text-white shadow-lg transition-all hover:scale-110 hover:bg-blue-700"
+        style={{ right: isDroneConnected ? "244px" : "12px" }}
         title={isFullscreen ? "전체화면 종료" : "전체화면"}
       >
         {isFullscreen ? (
