@@ -751,88 +751,161 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
 }
 
 // ==========================
-// 배터리 RTL 예측
+// 배터리 RTL 예측 (개선판)
+// ─ 슬라이딩 윈도우 + IQR 이상치 필터
+// ─ 연결 시점과 무관하게 현재 배터리 기준으로 계산
 // ==========================
+
+// ── 상수 ────────────────────────────────────────────────
+const RTL_RESERVE_PCT = 20 // RTL 예비 배터리 (%)
+const WINDOW_SIZE = 10 // 슬라이딩 윈도우 최대 샘플 수
+const MIN_SAMPLES = 3 // 계산 시작 최소 샘플 수
+const MIN_INTERVAL_MS = 2000 // 샘플 간 최소 간격 (ms) — 중복 방지
+
+// ── 타입 ────────────────────────────────────────────────
+interface BatterySample {
+  battery: number
+  time: number
+}
+
 interface RtlPrediction {
   drainRatePerMin: number | null
   remainingSec: number | null
   elapsedSec: number
   level: "safe" | "caution" | "danger" | "off"
-  startBattery: number | null
+  sampleCount: number
 }
 
-const RTL_RESERVE_PCT = 20
+// ── IQR 기반 이상치 필터 ─────────────────────────────────
+// 배터리 값이 순간적으로 튀는 경우(통신 오류 등)를 제거합니다
+function filterOutliers(rates: number[]): number[] {
+  if (rates.length < 4) return rates
+  const sorted = [...rates].sort((a, b) => a - b)
+  const q1 = sorted[Math.floor(sorted.length * 0.25)]
+  const q3 = sorted[Math.floor(sorted.length * 0.75)]
+  const iqr = q3 - q1
+  return rates.filter((r) => r >= q1 - 1.5 * iqr && r <= q3 + 1.5 * iqr)
+}
 
+// ── 핵심 훅 ─────────────────────────────────────────────
 function useRtlPrediction(
   droneActive: boolean,
   battery: number | undefined | null,
 ): RtlPrediction {
-  const startRef = useRef<{ battery: number; time: number } | null>(null)
-  const [elapsedSec, setElapsedSec] = useState(0)
+  // 슬라이딩 윈도우 샘플 버퍼 (ref — 리렌더 없이 유지)
+  const samplesRef = useRef<BatterySample[]>([])
+  // 샘플이 추가될 때마다 계산을 트리거하기 위한 카운터
+  const [tick, setTick] = useState(0)
 
+  // 비행 경과 시간 추적
+  const [elapsedSec, setElapsedSec] = useState(0)
+  const startTimeRef = useRef<number | null>(null)
+
+  // 드론 연결/해제 시 초기화
   useEffect(() => {
-    if (droneActive && battery != null) {
-      if (!startRef.current) startRef.current = { battery, time: Date.now() }
+    if (droneActive) {
+      if (!startTimeRef.current) startTimeRef.current = Date.now()
     } else {
-      startRef.current = null
+      samplesRef.current = []
+      startTimeRef.current = null
       setElapsedSec(0)
+      setTick(0)
     }
   }, [droneActive])
 
+  // 1초마다 경과 시간 갱신
   useEffect(() => {
     if (!droneActive) return
     const id = setInterval(() => {
-      if (startRef.current)
-        setElapsedSec(Math.floor((Date.now() - startRef.current.time) / 1000))
+      if (startTimeRef.current)
+        setElapsedSec(Math.floor((Date.now() - startTimeRef.current) / 1000))
     }, 1000)
     return () => clearInterval(id)
   }, [droneActive])
 
-  if (!droneActive || battery == null || startRef.current == null) {
-    return {
-      drainRatePerMin: null,
-      remainingSec: null,
-      elapsedSec: 0,
-      level: "off",
-      startBattery: null,
-    }
-  }
+  // 배터리 값 변화마다 샘플 추가
+  // ★ 핵심: startRef(연결 시점) 제거 — 최근 WINDOW_SIZE 샘플만 유지
+  useEffect(() => {
+    if (!droneActive || battery == null) return
 
-  const elapsedMin = elapsedSec / 60
-  const consumed = startRef.current.battery - battery
+    const now = Date.now()
+    const last = samplesRef.current.at(-1)
 
-  if (elapsedMin < 0.5 || consumed < 0.1) {
+    // 최소 간격 미만이면 건너뜀 (같은 값 연속 입력 방지)
+    if (last && now - last.time < MIN_INTERVAL_MS) return
+
+    samplesRef.current = [
+      ...samplesRef.current.slice(-(WINDOW_SIZE - 1)),
+      { battery, time: now },
+    ]
+    setTick((t) => t + 1)
+  }, [droneActive, battery])
+
+  // ── 계산 ─────────────────────────────────────────────
+  const samples = samplesRef.current
+
+  if (!droneActive || battery == null || samples.length < MIN_SAMPLES) {
     return {
       drainRatePerMin: null,
       remainingSec: null,
       elapsedSec,
       level: "off",
-      startBattery: startRef.current.battery,
+      sampleCount: samples.length,
     }
   }
 
-  const drainRatePerMin = consumed / elapsedMin
-  const usableBattery = battery - RTL_RESERVE_PCT
+  // 인접 샘플 쌍으로 구간별 소모율 계산
+  const rates: number[] = []
+  for (let i = 1; i < samples.length; i++) {
+    const dt = (samples[i].time - samples[i - 1].time) / 60000 // 분 단위
+    const dB = samples[i - 1].battery - samples[i].battery // 소모량 (양수여야 정상)
+    // 충전 중이거나 dt가 0이면 제외
+    if (dt > 0 && dB >= 0) rates.push(dB / dt)
+  }
+
+  const filtered = filterOutliers(rates)
+
+  if (filtered.length === 0) {
+    return {
+      drainRatePerMin: null,
+      remainingSec: null,
+      elapsedSec,
+      level: "off",
+      sampleCount: samples.length,
+    }
+  }
+
+  // 평균 소모율 (이상치 제거 후)
+  const drainRatePerMin =
+    filtered.reduce((sum, r) => sum + r, 0) / filtered.length
+
+  // ★ 핵심: 현재 배터리 기준으로 남은 시간 계산
+  //    연결 시점(startBattery)이 아닌 지금 이 순간의 battery 값 사용
+  const usable = Math.max(0, battery - RTL_RESERVE_PCT)
   const remainingSec =
-    usableBattery > 0 ? Math.floor((usableBattery / drainRatePerMin) * 60) : 0
+    drainRatePerMin > 0 ? Math.floor((usable / drainRatePerMin) * 60) : null
+
   const level: RtlPrediction["level"] =
-    remainingSec <= 0
-      ? "danger"
-      : remainingSec <= 180
+    remainingSec == null
+      ? "off"
+      : remainingSec <= 0
         ? "danger"
-        : remainingSec <= 360
-          ? "caution"
-          : "safe"
+        : remainingSec <= 180
+          ? "danger"
+          : remainingSec <= 360
+            ? "caution"
+            : "safe"
 
   return {
     drainRatePerMin,
     remainingSec,
     elapsedSec,
     level,
-    startBattery: startRef.current.battery,
+    sampleCount: samples.length,
   }
 }
 
+// ── 위젯 컴포넌트 ─────────────────────────────────────────
 function RtlPredictionWidget({
   droneActive,
   battery,
@@ -890,10 +963,18 @@ function RtlPredictionWidget({
   const usablePct = Math.max(0, batteryPct - RTL_RESERVE_PCT)
   const reservePct = Math.min(batteryPct, RTL_RESERVE_PCT)
 
+  // 신뢰도 라벨 — 샘플 수로 계산 품질 표시
+  const reliabilityLabel =
+    rtl.sampleCount >= WINDOW_SIZE
+      ? "높음"
+      : rtl.sampleCount >= MIN_SAMPLES
+        ? "보통"
+        : `${rtl.sampleCount}/${MIN_SAMPLES}`
+
   const mainLabel = !droneActive
     ? "기체 연결 후 예측 시작"
     : rtl.remainingSec === null
-      ? "데이터 수집 중... (30초 후 계산)"
+      ? `데이터 수집 중... (${rtl.sampleCount}/${MIN_SAMPLES}샘플)`
       : rtl.remainingSec <= 0
         ? "즉시 귀환 필요"
         : `약 ${formatTime(rtl.remainingSec)} 더 비행 가능`
@@ -903,7 +984,7 @@ function RtlPredictionWidget({
     : rtl.remainingSec === null
       ? `비행 시작 후 ${formatElapsed(rtl.elapsedSec)} 경과`
       : rtl.level === "danger"
-        ? "귀환 후 충전하세요"
+        ? "지금 바로 귀환하세요"
         : rtl.level === "caution"
           ? "귀환을 준비하세요"
           : "여유 있습니다"
@@ -936,7 +1017,9 @@ function RtlPredictionWidget({
           </div>
         )}
       </div>
+
       <div className="space-y-4 border-t border-slate-200/50 px-6 py-4">
+        {/* 배터리 바 */}
         <div>
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="flex items-center gap-1 text-slate-500">
@@ -959,14 +1042,12 @@ function RtlPredictionWidget({
           </div>
           <div className="mt-1 flex justify-between text-xs text-slate-400">
             <span>예비 {RTL_RESERVE_PCT}% 제외</span>
-            <span>
-              시작 시{" "}
-              {rtl.startBattery != null
-                ? `${rtl.startBattery.toFixed(0)}%`
-                : "—"}
-            </span>
+            {/* ★ 수정: 시작 시 % 제거 → 현재 배터리 기준 명시 */}
+            <span>현재 배터리 기준</span>
           </div>
         </div>
+
+        {/* 3분할 수치 카드 */}
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
             <TrendingDown className="mx-auto mb-1 h-4 w-4 text-slate-400" />
@@ -981,16 +1062,19 @@ function RtlPredictionWidget({
             <Timer className="mx-auto mb-1 h-4 w-4 text-slate-400" />
             <p className="text-xs text-slate-500">남은 시간</p>
             <p
-              className={`text-sm font-semibold tabular-nums ${rtl.remainingSec != null ? levelStyle.text : "text-slate-400"}`}
+              className={`text-sm font-semibold tabular-nums ${
+                rtl.remainingSec != null ? levelStyle.text : "text-slate-400"
+              }`}
             >
               {rtl.remainingSec != null ? formatTime(rtl.remainingSec) : "—"}
             </p>
           </div>
+          {/* ★ 수정: RTL 기준 → 신뢰도 표시 */}
           <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
             <PlaneLanding className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500">RTL 기준</p>
+            <p className="text-xs text-slate-500">신뢰도</p>
             <p className="text-sm font-semibold text-slate-700">
-              {RTL_RESERVE_PCT}% 예비
+              {reliabilityLabel}
             </p>
           </div>
         </div>
@@ -1566,7 +1650,6 @@ export function UavDashboard() {
           droneData={droneData}
         />
 
-        {/* 비행 가능 여부 종합 위젯 */}
         {/* 비행 가능 여부 + 지금 뭘 해야 하나요? — 2분할 */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <FlightFeasibilityWidget
@@ -1768,7 +1851,7 @@ export function UavDashboard() {
             {/* 비행 이벤트 로그 */}
             <FlightLogWidget logs={logs} />
 
-            {/* 임계값 알림 — 왼쪽 하단 (기존 체크리스트 자리) */}
+            {/* 임계값 알림 */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -1919,7 +2002,7 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ==================== 배터리 RTL 예측 — 맨 아래 full-width ==================== */}
+        {/* 배터리 RTL 예측 — 맨 아래 full-width */}
         {droneConnected && (
           <RtlPredictionWidget
             droneActive={droneData !== null}
