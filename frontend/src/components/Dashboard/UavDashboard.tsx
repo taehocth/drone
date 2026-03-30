@@ -576,6 +576,7 @@ interface FlightLogEntry {
   level: "info" | "warn" | "danger" | "success"
   message: string
   value?: string
+  tooltip?: string // 호버 시 표시할 상세 이유
   category?:
     | "battery"
     | "altitude"
@@ -613,6 +614,7 @@ function useFlightLog(
       message: string,
       value?: string,
       category?: FlightLogEntry["category"],
+      tooltip?: string,
     ) => {
       setLogs((prev) => [
         {
@@ -622,6 +624,7 @@ function useFlightLog(
           message,
           value,
           category,
+          tooltip,
         },
         ...prev.slice(0, 199),
       ])
@@ -632,9 +635,21 @@ function useFlightLog(
   // 1. 연결/해제
   useEffect(() => {
     if (droneConnected && !prevRef.current.connected) {
-      addLog("success", "기체 연결됨", undefined, "connection")
+      addLog(
+        "success",
+        "기체 연결됨",
+        undefined,
+        "connection",
+        "WebSocket 연결 성공. 텔레메트리 수신을 시작합니다.",
+      )
     } else if (!droneConnected && prevRef.current.connected) {
-      addLog("warn", "기체 연결 끊김", undefined, "connection")
+      addLog(
+        "warn",
+        "기체 연결 끊김",
+        undefined,
+        "connection",
+        "WebSocket 연결이 끊겼습니다. 네트워크 상태와 기체 전원을 확인하세요. 5초 후 재연결을 시도합니다.",
+      )
       prevRef.current.battery = null
       prevRef.current.altitude = null
       prevRef.current.speed = null
@@ -660,13 +675,24 @@ function useFlightLog(
     const s = droneData.speed
     const sat = droneData.gpsSatellites
 
-    addLog("info", "── 연결 시점 상태 스냅샷 ──", undefined, "system")
+    addLog(
+      "info",
+      "── 연결 시점 상태 스냅샷 ──",
+      undefined,
+      "system",
+      "드론 연결 직후 측정된 초기 상태값입니다. 이후 로그의 기준점으로 사용됩니다.",
+    )
     if (b != null)
       addLog(
         b <= 20 ? "danger" : b <= 35 ? "warn" : "info",
         "초기 배터리",
         `${b.toFixed(0)}%`,
         "battery",
+        b <= 20
+          ? `배터리 ${b.toFixed(0)}% — 위험 수준입니다. 연결 즉시 RTL 실행을 권장합니다.`
+          : b <= 35
+            ? `배터리 ${b.toFixed(0)}% — 주의 수준입니다. 비행 시간이 제한됩니다.`
+            : `배터리 ${b.toFixed(0)}% — 정상 수준입니다.`,
       )
     if (a != null)
       addLog(
@@ -674,6 +700,11 @@ function useFlightLog(
         "초기 고도",
         `${a.toFixed(0)}m`,
         "altitude",
+        a > 150
+          ? `고도 ${a.toFixed(0)}m — 항공법 허용 한도(150m)를 초과한 상태로 연결되었습니다. 즉시 하강하세요.`
+          : a > 120
+            ? `고도 ${a.toFixed(0)}m — 법적 한계(150m)에 근접한 주의 고도입니다.`
+            : `고도 ${a.toFixed(0)}m — 안전 고도 범위입니다.`,
       )
     if (s != null)
       addLog(
@@ -681,6 +712,13 @@ function useFlightLog(
         "초기 속도",
         `${s.toFixed(1)}m/s`,
         "speed",
+        s > 35
+          ? `속도 ${s.toFixed(1)}m/s — 과속 위험 상태로 연결되었습니다.`
+          : s > 25
+            ? `속도 ${s.toFixed(1)}m/s — 주의 속도 구간입니다.`
+            : s > 1
+              ? `속도 ${s.toFixed(1)}m/s — 비행 중 상태로 연결되었습니다.`
+              : `속도 ${s.toFixed(1)}m/s — 정지 상태입니다.`,
       )
     if (sat != null)
       addLog(
@@ -688,6 +726,11 @@ function useFlightLog(
         "초기 GPS",
         `${sat}위성`,
         "gps",
+        sat < 6
+          ? `위성 ${sat}개 — 신호 불량입니다. 위치 정확도가 크게 떨어지며 비행이 위험합니다.`
+          : sat < 10
+            ? `위성 ${sat}개 — 신호 보통입니다. 정밀 비행은 자제하세요.`
+            : `위성 ${sat}개 — GPS 신호 양호합니다.`,
       )
 
     prevRef.current.battery = b ?? null
@@ -701,11 +744,29 @@ function useFlightLog(
     if (!droneConnected) return
     const prev = prevRef.current.alertLevel
     if (alertLevel === "danger" && prev !== "danger")
-      addLog("danger", "⚠ 위험 경고 발생", undefined, "system")
+      addLog(
+        "danger",
+        "⚠ 위험 경고 발생",
+        undefined,
+        "system",
+        "배터리, 고도, 속도, GPS, 통신 지연 중 하나 이상이 위험 임계값을 넘었습니다. 즉시 원인을 파악하고 조치하세요.",
+      )
     else if (alertLevel === "caution" && prev === "safe")
-      addLog("warn", "주의 항목 감지", undefined, "system")
+      addLog(
+        "warn",
+        "주의 항목 감지",
+        undefined,
+        "system",
+        "배터리, 고도, 속도, GPS, 통신 지연 중 하나 이상이 주의 임계값에 도달했습니다. 빠른 확인이 필요합니다.",
+      )
     else if (alertLevel === "safe" && prev !== "safe")
-      addLog("success", "전체 상태 정상 회복", undefined, "system")
+      addLog(
+        "success",
+        "전체 상태 정상 회복",
+        undefined,
+        "system",
+        "모든 모니터링 항목(배터리·고도·속도·GPS·통신)이 정상 범위로 복귀했습니다.",
+      )
     prevRef.current.alertLevel = alertLevel
   }, [alertLevel, droneConnected, addLog])
 
@@ -724,29 +785,60 @@ function useFlightLog(
         value: 20,
         downLevel: "danger" as const,
         downMsg: "배터리 위험 — 즉시 귀환 (≤20%)",
+        downTip:
+          "잔량 20% 이하입니다. RTL 비행(귀환 거리·고도 포함) 중 방전 시 추락 위험이 있습니다. 즉시 RTL 모드를 실행하세요.",
+        upTip:
+          "배터리가 20% 이상으로 회복되었습니다. 충전기 또는 교체 배터리를 확인하세요.",
       },
       {
         value: 30,
         downLevel: "danger" as const,
         downMsg: "배터리 위험 임박 (≤30%)",
+        downTip:
+          "잔량 30% 이하입니다. RTL 예비 구간(약 20%)까지 여유가 10% 미만입니다. 귀환을 즉시 시작하세요.",
+        upTip: "배터리가 30% 이상으로 회복되었습니다.",
       },
       {
         value: 35,
         downLevel: "warn" as const,
         downMsg: "배터리 주의 — 귀환 준비 (≤35%)",
+        downTip:
+          "잔량 35% 이하입니다. 현재 임무를 마무리하고 5분 이내 귀환 비행을 시작하세요. 자동 RTL 임계값(보통 25%)에 주의하세요.",
+        upTip: "배터리가 35% 이상으로 회복되었습니다.",
       },
-      { value: 50, downLevel: "info" as const, downMsg: "배터리 50% 이하" },
-      { value: 70, downLevel: "info" as const, downMsg: "배터리 70% 이하" },
+      {
+        value: 50,
+        downLevel: "info" as const,
+        downMsg: "배터리 50% 이하",
+        downTip:
+          "잔량이 절반 이하로 내려갔습니다. 귀환 시간과 거리를 고려해 비행 계획을 재검토하세요.",
+        upTip: "배터리가 50% 이상으로 충전되었습니다.",
+      },
+      {
+        value: 70,
+        downLevel: "info" as const,
+        downMsg: "배터리 70% 이하",
+        downTip:
+          "잔량 70% 이하입니다. 장거리 임무 시 복귀 가능 여부를 점검하세요.",
+        upTip: "배터리가 70% 이상으로 충전되었습니다.",
+      },
     ]
     for (const band of bands) {
       if (b <= band.value && prev > band.value)
-        addLog(band.downLevel, band.downMsg, `${b.toFixed(0)}%`, "battery")
+        addLog(
+          band.downLevel,
+          band.downMsg,
+          `${b.toFixed(0)}%`,
+          "battery",
+          band.downTip,
+        )
       else if (b > band.value && prev <= band.value)
         addLog(
           "info",
           `배터리 ${band.value}% 초과 회복`,
           `${b.toFixed(0)}%`,
           "battery",
+          band.upTip,
         )
     }
     prevRef.current.battery = b
@@ -767,36 +859,62 @@ function useFlightLog(
         threshold: 150,
         upLevel: "danger" as const,
         upMsg: "고도 법정 한계 초과 (>150m)",
+        upTip:
+          "항공안전법상 비가시권 무인기 비행 허용 고도(150m)를 초과했습니다. 즉시 하강하고 필요 시 인근 관제탑에 보고하세요.",
         downLevel: "info" as const,
         downMsg: "고도 150m 이하 복귀",
+        downTip: "고도가 법적 허용 한도(150m) 이하로 복귀했습니다.",
       },
       {
         threshold: 120,
         upLevel: "warn" as const,
         upMsg: "고도 주의 구간 진입 (>120m)",
+        upTip:
+          "법적 한계(150m)까지 30m 미만 여유입니다. 상승을 멈추고 현재 고도를 유지하거나 하강하세요.",
         downLevel: "info" as const,
         downMsg: "고도 안전 구간 복귀 (≤120m)",
+        downTip: "안전 고도(120m 이하)로 복귀했습니다.",
       },
       {
         threshold: 50,
         upLevel: "info" as const,
         upMsg: "고도 50m 돌파",
+        upTip:
+          "고도 50m를 넘었습니다. 주변 장애물(전선, 나무, 건물 등)에 주의하세요.",
         downLevel: "info" as const,
         downMsg: "고도 50m 이하",
+        downTip:
+          "고도가 50m 이하로 내려왔습니다. 착륙 접근 시 저고도 장애물에 유의하세요.",
       },
       {
         threshold: 5,
         upLevel: "info" as const,
         upMsg: "이륙 감지",
+        upTip:
+          "기체가 지상을 이탈했습니다. 이륙 후 GPS 신호 안정화까지 수 초가 걸릴 수 있습니다.",
         downLevel: "success" as const,
         downMsg: "착지 감지",
+        downTip:
+          "기체가 지면에 착지했습니다. 프로펠러 완전 정지 후 접근하세요.",
       },
     ]
     for (const band of bands) {
       if (a > band.threshold && prev <= band.threshold)
-        addLog(band.upLevel, band.upMsg, `${a.toFixed(0)}m`, "altitude")
+        addLog(
+          band.upLevel,
+          band.upMsg,
+          `${a.toFixed(0)}m`,
+          "altitude",
+          band.upTip,
+        )
       else if (a <= band.threshold && prev > band.threshold)
-        addLog(band.downLevel, band.downMsg, `${a.toFixed(0)}m`, "altitude")
+        addLog(
+          band.downLevel,
+          band.downMsg,
+          `${a.toFixed(0)}m`,
+          "altitude",
+          band.downTip,
+        )
     }
     prevRef.current.altitude = a
   }, [droneData?.altitude, droneConnected, addLog])
@@ -816,37 +934,69 @@ function useFlightLog(
         threshold: 35,
         upLevel: "danger" as const,
         upMsg: "과속 위험 (>35m/s)",
+        upTip:
+          "속도 35m/s 초과는 대부분 기체의 최대 허용 속도를 넘기는 수준입니다. 즉시 스로틀을 줄이고 속도를 낮추세요.",
         downLevel: "info" as const,
         downMsg: "과속 해제 (≤35m/s)",
+        downTip: "속도가 35m/s 이하로 감속되었습니다.",
       },
       {
         threshold: 25,
         upLevel: "warn" as const,
         upMsg: "속도 주의 (>25m/s)",
+        upTip:
+          "속도 25m/s 초과입니다. 강풍·돌풍 환경에서 자세 제어가 어려워질 수 있습니다. 감속을 권장합니다.",
         downLevel: "info" as const,
         downMsg: "속도 정상 복귀 (≤25m/s)",
+        downTip: "속도가 안전 범위(25m/s 이하)로 돌아왔습니다.",
       },
       {
         threshold: 1,
         upLevel: "info" as const,
         upMsg: "기체 이동 시작",
+        upTip: "기체가 지상 또는 호버링에서 이동을 시작했습니다.",
         downLevel: "info" as const,
         downMsg: "기체 정지",
+        downTip: "기체가 이동을 멈추고 호버링 또는 착지 상태입니다.",
       },
     ]
     for (const band of bands) {
       if (s > band.threshold && prev <= band.threshold)
-        addLog(band.upLevel, band.upMsg, `${s.toFixed(1)}m/s`, "speed")
+        addLog(
+          band.upLevel,
+          band.upMsg,
+          `${s.toFixed(1)}m/s`,
+          "speed",
+          band.upTip,
+        )
       else if (s <= band.threshold && prev > band.threshold)
-        addLog(band.downLevel, band.downMsg, `${s.toFixed(1)}m/s`, "speed")
+        addLog(
+          band.downLevel,
+          band.downMsg,
+          `${s.toFixed(1)}m/s`,
+          "speed",
+          band.downTip,
+        )
     }
 
     const isFlying = s > 1
     const wasFlying = prevRef.current.isFlying
     if (isFlying && !wasFlying)
-      addLog("success", "비행 시작 감지", `${s.toFixed(1)}m/s`, "flight")
+      addLog(
+        "success",
+        "비행 시작 감지",
+        `${s.toFixed(1)}m/s`,
+        "flight",
+        "속도가 1m/s를 넘어 비행 상태로 전환됐습니다. 이륙 후 주변 공역과 장애물을 확인하세요.",
+      )
     if (!isFlying && wasFlying)
-      addLog("info", "착지/정지 감지", undefined, "flight")
+      addLog(
+        "info",
+        "착지/정지 감지",
+        undefined,
+        "flight",
+        "속도가 1m/s 이하로 내려가 정지 또는 착지 상태로 판단됩니다. 프로펠러 완전 정지 전 접근 금지.",
+      )
     prevRef.current.isFlying = isFlying
     prevRef.current.speed = s
   }, [droneData?.speed, droneConnected, addLog])
@@ -866,29 +1016,38 @@ function useFlightLog(
         threshold: 6,
         upLevel: "success" as const,
         upMsg: "GPS 신호 정상 회복 (≥6위성)",
+        upTip: "위성 6개 이상 확보로 기본적인 위치 추적이 가능합니다.",
         downLevel: "danger" as const,
         downMsg: "GPS 위성 위험 수준 (<6위성)",
+        downTip:
+          "위성이 6개 미만으로 떨어졌습니다. 위치 데이터 신뢰도가 매우 낮아 자율 비행 및 RTL이 불안정해질 수 있습니다. 수동 조종으로 전환하고 착륙을 검토하세요.",
       },
       {
         threshold: 10,
         upLevel: "info" as const,
         upMsg: "GPS 위성 증가 (≥10위성)",
+        upTip: "위성 10개 이상으로 위치 정확도가 향상되었습니다.",
         downLevel: "warn" as const,
         downMsg: "GPS 위성 감소 (<10위성)",
+        downTip:
+          "위성 수가 10개 미만으로 줄었습니다. 위치 정확도가 다소 저하됩니다. 정밀 미션 비행 시 주의하세요.",
       },
       {
         threshold: 20,
         upLevel: "info" as const,
         upMsg: "GPS 신호 양호 (≥20위성)",
+        upTip: "위성 20개 이상 — 매우 좋은 GPS 환경입니다.",
         downLevel: "info" as const,
         downMsg: "GPS 위성 20개 이하",
+        downTip:
+          "위성 수가 20개 이하로 내려갔습니다. 여전히 안정적이지만 변화를 모니터링하세요.",
       },
     ]
     for (const band of bands) {
       if (sat > band.threshold && prev <= band.threshold)
-        addLog(band.upLevel, band.upMsg, `${sat}위성`, "gps")
+        addLog(band.upLevel, band.upMsg, `${sat}위성`, "gps", band.upTip)
       else if (sat <= band.threshold && prev > band.threshold)
-        addLog(band.downLevel, band.downMsg, `${sat}위성`, "gps")
+        addLog(band.downLevel, band.downMsg, `${sat}위성`, "gps", band.downTip)
     }
     prevRef.current.satellites = sat
   }, [droneData?.gpsSatellites, droneConnected, addLog])
@@ -907,9 +1066,20 @@ function useFlightLog(
           threshold: 15000,
           level: "danger" as const,
           msg: "통신 두절 15초 — 페일세이프 위험",
+          tip: "15초 이상 데이터가 수신되지 않고 있습니다. 기체가 페일세이프 모드(자동 호버링 또는 RTL)로 진입했을 가능성이 높습니다. 즉시 육안으로 기체 상태를 확인하고 GCS에서 수동 개입을 시도하세요.",
         },
-        { threshold: 8000, level: "warn" as const, msg: "통신 지연 8초 이상" },
-        { threshold: 3000, level: "info" as const, msg: "통신 지연 3초 이상" },
+        {
+          threshold: 8000,
+          level: "warn" as const,
+          msg: "통신 지연 8초 이상",
+          tip: "8초 이상 패킷 지연이 발생하고 있습니다. 네트워크 혼잡이나 LTE 신호 약화가 원인일 수 있습니다. 15초 미응답 시 페일세이프가 작동합니다.",
+        },
+        {
+          threshold: 3000,
+          level: "info" as const,
+          msg: "통신 지연 3초 이상",
+          tip: "3초 이상 응답 지연이 감지됐습니다. 현재는 경미한 수준이지만 지연이 더 늘어나면 제어 품질이 저하될 수 있습니다.",
+        },
       ]
       for (const band of latencyBands) {
         if (ageMs >= band.threshold && (prev === null || prev < band.threshold))
@@ -918,6 +1088,7 @@ function useFlightLog(
             band.msg,
             `${(ageMs / 1000).toFixed(1)}초`,
             "signal",
+            band.tip,
           )
         if (prev !== null && prev >= band.threshold && ageMs < band.threshold)
           addLog(
@@ -925,6 +1096,7 @@ function useFlightLog(
             `통신 지연 해소 (<${band.threshold / 1000}초)`,
             `${(ageMs / 1000).toFixed(1)}초`,
             "signal",
+            `통신 지연이 ${band.threshold / 1000}초 미만으로 해소되었습니다. 정상 데이터 수신이 재개됩니다.`,
           )
       }
       prevRef.current.latencyMs = ageMs
@@ -1009,6 +1181,180 @@ const CATEGORY_COLOR: Record<
   signal: "bg-rose-100 text-rose-700",
   flight: "bg-emerald-100 text-emerald-700",
   system: "bg-slate-100 text-slate-500",
+}
+
+// ── 툴팁이 달린 로그 아이템 컴포넌트 ──────────────────────────
+function LogItem({
+  log,
+  s,
+  fmt,
+}: {
+  log: FlightLogEntry
+  s: { dot: string; text: string; bg: string; border: string }
+  fmt: (d: Date) => string
+}) {
+  const [showTip, setShowTip] = useState(false)
+  const tipRef = useRef<HTMLDivElement>(null)
+  const itemRef = useRef<HTMLDivElement>(null)
+  const [tipPos, setTipPos] = useState<"top" | "bottom">("top")
+
+  // 툴팁 위치: 아이템이 스크롤 컨테이너 상단 절반이면 아래, 아니면 위
+  const handleMouseEnter = () => {
+    if (!log.tooltip) return
+    if (itemRef.current) {
+      const rect = itemRef.current.getBoundingClientRect()
+      const container = itemRef.current.closest(".overflow-y-auto")
+      if (container) {
+        const cRect = container.getBoundingClientRect()
+        setTipPos(rect.top - cRect.top < cRect.height / 2 ? "bottom" : "top")
+      }
+    }
+    setShowTip(true)
+  }
+
+  const levelIcon = {
+    danger: "⚠",
+    warn: "!",
+    info: "i",
+    success: "✓",
+  }[log.level]
+
+  const tipBg = {
+    danger: "bg-red-950 border-red-700/50 text-red-100",
+    warn: "bg-amber-950 border-amber-700/50 text-amber-100",
+    info: "bg-slate-800 border-slate-600/50 text-slate-100",
+    success: "bg-emerald-950 border-emerald-700/50 text-emerald-100",
+  }[log.level]
+
+  const tipAccent = {
+    danger: "text-red-400",
+    warn: "text-amber-400",
+    info: "text-sky-400",
+    success: "text-emerald-400",
+  }[log.level]
+
+  return (
+    <div
+      ref={itemRef}
+      className={`group relative flex items-center gap-2.5 rounded-xl border ${s.border} ${s.bg} px-3 py-2 transition-all ${log.tooltip ? "cursor-help hover:shadow-sm hover:brightness-[0.97]" : ""}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={() => setShowTip(false)}
+    >
+      {/* 레벨 도트 */}
+      <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
+
+      {/* 시각 */}
+      <span className="w-[4.5rem] shrink-0 text-[11px] tabular-nums text-slate-400">
+        {fmt(log.ts)}
+      </span>
+
+      {/* 카테고리 뱃지 */}
+      {log.category && (
+        <span
+          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOR[log.category]}`}
+        >
+          {CATEGORY_LABEL[log.category]}
+        </span>
+      )}
+
+      {/* 메시지 */}
+      <span className={`flex-1 text-xs font-medium ${s.text}`}>
+        {log.message}
+      </span>
+
+      {/* 값 */}
+      {log.value && (
+        <span className="shrink-0 rounded-lg bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
+          {log.value}
+        </span>
+      )}
+
+      {/* 툴팁 힌트 아이콘 — tooltip이 있을 때만 */}
+      {log.tooltip && (
+        <span
+          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold opacity-40 transition-opacity group-hover:opacity-100 ${
+            log.level === "danger"
+              ? "border-red-400 text-red-500"
+              : log.level === "warn"
+                ? "border-amber-400 text-amber-500"
+                : log.level === "success"
+                  ? "border-emerald-400 text-emerald-600"
+                  : "border-slate-300 text-slate-400"
+          }`}
+        >
+          ?
+        </span>
+      )}
+
+      {/* 툴팁 팝업 */}
+      {showTip && log.tooltip && (
+        <div
+          ref={tipRef}
+          className={`pointer-events-none absolute ${tipPos === "top" ? "bottom-full mb-2" : "top-full mt-2"} left-0 z-50 w-72 rounded-2xl border shadow-2xl ${tipBg} px-4 py-3`}
+          style={{ maxWidth: "min(18rem, calc(100vw - 2rem))" }}
+        >
+          {/* 화살표 */}
+          <div
+            className={`absolute ${tipPos === "top" ? "top-full" : "bottom-full"} left-6`}
+          >
+            <div
+              className={`h-2 w-2 rotate-45 border ${
+                tipPos === "top"
+                  ? "border-l-0 border-t-0"
+                  : "border-b-0 border-r-0"
+              } ${
+                log.level === "danger"
+                  ? "border-red-700/50 bg-red-950"
+                  : log.level === "warn"
+                    ? "border-amber-700/50 bg-amber-950"
+                    : log.level === "success"
+                      ? "border-emerald-700/50 bg-emerald-950"
+                      : "border-slate-600/50 bg-slate-800"
+              }`}
+            />
+          </div>
+
+          {/* 헤더 */}
+          <div className="mb-2 flex items-center gap-2">
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
+                log.level === "danger"
+                  ? "border-red-500/60 text-red-400"
+                  : log.level === "warn"
+                    ? "border-amber-500/60 text-amber-400"
+                    : log.level === "success"
+                      ? "border-emerald-500/60 text-emerald-400"
+                      : "border-sky-500/60 text-sky-400"
+              }`}
+            >
+              {levelIcon}
+            </span>
+            <span className={`text-[11px] font-semibold ${tipAccent}`}>
+              {log.category ? CATEGORY_LABEL[log.category] : "이벤트"} 상세
+            </span>
+            {log.value && (
+              <span className="ml-auto shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold opacity-80">
+                {log.value}
+              </span>
+            )}
+          </div>
+
+          {/* 구분선 */}
+          <div className="mb-2 h-px bg-white/10" />
+
+          {/* 본문 */}
+          <p className="text-[11px] leading-relaxed opacity-90">
+            {log.tooltip}
+          </p>
+
+          {/* 시각 */}
+          <p className="mt-2 text-[10px] tabular-nums opacity-40">
+            {fmt(log.ts)}
+          </p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 type FilterLevel = "all" | FlightLogEntry["level"]
@@ -1172,34 +1518,7 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
               >
                 {filtered.map((log) => {
                   const s = LOG_STYLE[log.level]
-                  return (
-                    <div
-                      key={log.id}
-                      className={`flex items-center gap-2.5 rounded-xl border ${s.border} ${s.bg} px-3 py-2`}
-                    >
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`}
-                      />
-                      <span className="w-[4.5rem] shrink-0 text-[11px] tabular-nums text-slate-400">
-                        {fmt(log.ts)}
-                      </span>
-                      {log.category && (
-                        <span
-                          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOR[log.category]}`}
-                        >
-                          {CATEGORY_LABEL[log.category]}
-                        </span>
-                      )}
-                      <span className={`flex-1 text-xs font-medium ${s.text}`}>
-                        {log.message}
-                      </span>
-                      {log.value && (
-                        <span className="shrink-0 rounded-lg bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                          {log.value}
-                        </span>
-                      )}
-                    </div>
-                  )
+                  return <LogItem key={log.id} log={log} s={s} fmt={fmt} />
                 })}
               </div>
             )}
