@@ -2302,7 +2302,7 @@ export function UavDashboard() {
   // ==========================
   interface DangerModalItem {
     id: string
-    type: "battery" | "speed"
+    type: "battery" | "speed" | "gps"
     label: string
     detail: string
     action: string
@@ -2326,6 +2326,15 @@ export function UavDashboard() {
       label: "과속 감지",
       detail: `현재 ${droneData.speed.toFixed(1)}m/s — 권장 속도(12m/s)를 초과했습니다`,
       action: "즉시 스로틀을 줄여 속도를 낮추세요",
+    })
+
+  if (droneData?.gpsSatellites != null && droneData.gpsSatellites <= 20)
+    dangerModalItems.push({
+      id: "gps",
+      type: "gps",
+      label: "GPS 신호 불량",
+      detail: `현재 ${droneData.gpsSatellites}위성 — 안정적인 비행을 위해 25위성 이상이 필요합니다`,
+      action: "개활지로 이동하거나 비행을 중단하세요",
     })
 
   // 위험 조합 키 — 달라지면 모달 재등장
@@ -2454,6 +2463,7 @@ export function UavDashboard() {
                   const iconMap = {
                     battery: <BatteryLow className="h-5 w-5 text-red-400" />,
                     speed: <Gauge className="h-5 w-5 text-red-400" />,
+                    gps: <MapPin className="h-5 w-5 text-red-400" />,
                   }
                   return (
                     <div
