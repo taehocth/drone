@@ -2335,8 +2335,7 @@ export function UavDashboard() {
     if (modalKey) setModalDismissed(false)
   }
 
-  const showDangerModal =
-    droneConnected && dangerModalItems.length > 0 && !modalDismissed
+  const showDangerModal = dangerModalItems.length > 0 && !modalDismissed
 
   useEffect(() => {
     if (
