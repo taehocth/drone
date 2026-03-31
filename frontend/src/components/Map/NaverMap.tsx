@@ -501,10 +501,10 @@ function ChecklistCard({
         <div className="space-y-2 px-3 py-3">
           {[
             "1. 드론 전원 확인",
-            "2. GCS 네트워크 확인",
-            "3. GPS 신호 확인 (6위성+)",
-            "4. 배터리 80%+ 확인",
-            "5. 비행 허가 구역 확인",
+            "2. QGC LTE 연결/ P900 연결 확인",
+            "3. GPS 신호 확인 (25위성+)",
+            "4. 배터리 셀 체크 확인",
+            "5. 식별장치 확인",
           ].map((item, i) => (
             <div key={i} className="flex items-start gap-2">
               <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[9px] text-slate-500">

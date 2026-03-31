@@ -1184,6 +1184,10 @@ const CATEGORY_COLOR: Record<
 }
 
 // ── 툴팁이 달린 로그 아이템 컴포넌트 ──────────────────────────
+// ── 툴팁이 달린 로그 아이템 컴포넌트 ──────────────────────────
+// ★ Portal 방식: document.body에 툴팁을 렌더링해서
+//    overflow-y-auto 컨테이너에 의한 clipping 문제를 완전히 해결합니다.
+//    getBoundingClientRect()로 화면 좌표를 계산해 position:fixed로 배치합니다.
 function LogItem({
   log,
   s,
@@ -1194,30 +1198,46 @@ function LogItem({
   fmt: (d: Date) => string
 }) {
   const [showTip, setShowTip] = useState(false)
-  const tipRef = useRef<HTMLDivElement>(null)
+  const [tipStyle, setTipStyle] = useState<React.CSSProperties>({})
+  const [arrowSide, setArrowSide] = useState<"top" | "bottom">("bottom")
   const itemRef = useRef<HTMLDivElement>(null)
-  const [tipPos, setTipPos] = useState<"top" | "bottom">("top")
 
-  // 툴팁 위치: 아이템이 스크롤 컨테이너 상단 절반이면 아래, 아니면 위
   const handleMouseEnter = () => {
-    if (!log.tooltip) return
-    if (itemRef.current) {
-      const rect = itemRef.current.getBoundingClientRect()
-      const container = itemRef.current.closest(".overflow-y-auto")
-      if (container) {
-        const cRect = container.getBoundingClientRect()
-        setTipPos(rect.top - cRect.top < cRect.height / 2 ? "bottom" : "top")
-      }
+    if (!log.tooltip || !itemRef.current) return
+
+    const rect = itemRef.current.getBoundingClientRect()
+    const TIP_W = 288 // w-72 ≈ 288px
+    const TIP_H_EST = 160 // 툴팁 예상 높이
+    const GAP = 8 // 아이템-툴팁 간격
+    const MARGIN = 12 // 화면 끝 여백
+
+    // ── 가로 위치: 아이템 왼쪽 정렬, 화면 우측 초과 시 우측 정렬
+    let left = rect.left
+    if (left + TIP_W + MARGIN > window.innerWidth) {
+      left = Math.max(MARGIN, rect.right - TIP_W)
     }
+
+    // ── 세로 위치: 위 공간 충분하면 위에, 아니면 아래에
+    const spaceAbove = rect.top
+    let top: number
+    let side: "top" | "bottom"
+
+    if (spaceAbove >= TIP_H_EST + GAP) {
+      top = rect.top - GAP - TIP_H_EST // 위에 배치
+      side = "bottom" // 화살표는 툴팁 하단
+    } else {
+      top = rect.bottom + GAP // 아래에 배치
+      side = "top" // 화살표는 툴팁 상단
+    }
+
+    setTipStyle({ position: "fixed", top, left, width: TIP_W, zIndex: 9999 })
+    setArrowSide(side)
     setShowTip(true)
   }
 
-  const levelIcon = {
-    danger: "⚠",
-    warn: "!",
-    info: "i",
-    success: "✓",
-  }[log.level]
+  const levelIcon = { danger: "⚠", warn: "!", info: "i", success: "✓" }[
+    log.level
+  ]
 
   const tipBg = {
     danger: "bg-red-950 border-red-700/50 text-red-100",
@@ -1233,127 +1253,134 @@ function LogItem({
     success: "text-emerald-400",
   }[log.level]
 
-  return (
-    <div
-      ref={itemRef}
-      className={`group relative flex items-center gap-2.5 rounded-xl border ${s.border} ${s.bg} px-3 py-2 transition-all ${log.tooltip ? "cursor-help hover:shadow-sm hover:brightness-[0.97]" : ""}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={() => setShowTip(false)}
-    >
-      {/* 레벨 도트 */}
-      <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
+  const arrowColorClass = {
+    danger: "border-red-700/50 bg-red-950",
+    warn: "border-amber-700/50 bg-amber-950",
+    info: "border-slate-600/50 bg-slate-800",
+    success: "border-emerald-700/50 bg-emerald-950",
+  }[log.level]
 
-      {/* 시각 */}
-      <span className="w-[4.5rem] shrink-0 text-[11px] tabular-nums text-slate-400">
-        {fmt(log.ts)}
-      </span>
-
-      {/* 카테고리 뱃지 */}
-      {log.category && (
-        <span
-          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOR[log.category]}`}
-        >
-          {CATEGORY_LABEL[log.category]}
-        </span>
-      )}
-
-      {/* 메시지 */}
-      <span className={`flex-1 text-xs font-medium ${s.text}`}>
-        {log.message}
-      </span>
-
-      {/* 값 */}
-      {log.value && (
-        <span className="shrink-0 rounded-lg bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
-          {log.value}
-        </span>
-      )}
-
-      {/* 툴팁 힌트 아이콘 — tooltip이 있을 때만 */}
-      {log.tooltip && (
-        <span
-          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold opacity-40 transition-opacity group-hover:opacity-100 ${
-            log.level === "danger"
-              ? "border-red-400 text-red-500"
-              : log.level === "warn"
-                ? "border-amber-400 text-amber-500"
-                : log.level === "success"
-                  ? "border-emerald-400 text-emerald-600"
-                  : "border-slate-300 text-slate-400"
-          }`}
-        >
-          ?
-        </span>
-      )}
-
-      {/* 툴팁 팝업 */}
-      {showTip && log.tooltip && (
-        <div
-          ref={tipRef}
-          className={`pointer-events-none absolute ${tipPos === "top" ? "bottom-full mb-2" : "top-full mt-2"} left-0 z-50 w-72 rounded-2xl border shadow-2xl ${tipBg} px-4 py-3`}
-          style={{ maxWidth: "min(18rem, calc(100vw - 2rem))" }}
-        >
-          {/* 화살표 */}
+  // Portal로 body에 렌더링 — overflow 컨테이너 clipping 완전 우회
+  const tooltipPortal =
+    showTip && log.tooltip
+      ? createPortal(
           <div
-            className={`absolute ${tipPos === "top" ? "top-full" : "bottom-full"} left-6`}
+            className={`pointer-events-none rounded-2xl border shadow-2xl ${tipBg} px-4 py-3`}
+            style={tipStyle}
           >
+            {/* 화살표 */}
             <div
-              className={`h-2 w-2 rotate-45 border ${
-                tipPos === "top"
-                  ? "border-l-0 border-t-0"
-                  : "border-b-0 border-r-0"
-              } ${
-                log.level === "danger"
-                  ? "border-red-700/50 bg-red-950"
-                  : log.level === "warn"
-                    ? "border-amber-700/50 bg-amber-950"
-                    : log.level === "success"
-                      ? "border-emerald-700/50 bg-emerald-950"
-                      : "border-slate-600/50 bg-slate-800"
-              }`}
-            />
-          </div>
-
-          {/* 헤더 */}
-          <div className="mb-2 flex items-center gap-2">
-            <span
-              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
-                log.level === "danger"
-                  ? "border-red-500/60 text-red-400"
-                  : log.level === "warn"
-                    ? "border-amber-500/60 text-amber-400"
-                    : log.level === "success"
-                      ? "border-emerald-500/60 text-emerald-400"
-                      : "border-sky-500/60 text-sky-400"
-              }`}
+              className={`absolute left-4 ${arrowSide === "bottom" ? "top-full" : "bottom-full"}`}
             >
-              {levelIcon}
-            </span>
-            <span className={`text-[11px] font-semibold ${tipAccent}`}>
-              {log.category ? CATEGORY_LABEL[log.category] : "이벤트"} 상세
-            </span>
-            {log.value && (
-              <span className="ml-auto shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold opacity-80">
-                {log.value}
+              <div
+                className={`h-2 w-2 rotate-45 border ${
+                  arrowSide === "bottom"
+                    ? "-translate-y-1 border-l-0 border-t-0"
+                    : "translate-y-1 border-b-0 border-r-0"
+                } ${arrowColorClass}`}
+              />
+            </div>
+
+            {/* 헤더 */}
+            <div className="mb-2 flex items-center gap-2">
+              <span
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
+                  log.level === "danger"
+                    ? "border-red-500/60 text-red-400"
+                    : log.level === "warn"
+                      ? "border-amber-500/60 text-amber-400"
+                      : log.level === "success"
+                        ? "border-emerald-500/60 text-emerald-400"
+                        : "border-sky-500/60 text-sky-400"
+                }`}
+              >
+                {levelIcon}
               </span>
-            )}
-          </div>
+              <span className={`text-[11px] font-semibold ${tipAccent}`}>
+                {log.category ? CATEGORY_LABEL[log.category] : "이벤트"} 상세
+              </span>
+              {log.value && (
+                <span className="ml-auto shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold opacity-80">
+                  {log.value}
+                </span>
+              )}
+            </div>
 
-          {/* 구분선 */}
-          <div className="mb-2 h-px bg-white/10" />
+            {/* 구분선 */}
+            <div className="mb-2 h-px bg-white/10" />
 
-          {/* 본문 */}
-          <p className="text-[11px] leading-relaxed opacity-90">
-            {log.tooltip}
-          </p>
+            {/* 본문 */}
+            <p className="text-[11px] leading-relaxed opacity-90">
+              {log.tooltip}
+            </p>
 
-          {/* 시각 */}
-          <p className="mt-2 text-[10px] tabular-nums opacity-40">
-            {fmt(log.ts)}
-          </p>
-        </div>
-      )}
-    </div>
+            {/* 시각 */}
+            <p className="mt-2 text-[10px] tabular-nums opacity-40">
+              {fmt(log.ts)}
+            </p>
+          </div>,
+          document.body,
+        )
+      : null
+
+  return (
+    <>
+      <div
+        ref={itemRef}
+        className={`group relative flex items-center gap-2.5 rounded-xl border ${s.border} ${s.bg} px-3 py-2 transition-all ${log.tooltip ? "cursor-help hover:shadow-sm hover:brightness-[0.97]" : ""}`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setShowTip(false)}
+      >
+        {/* 레벨 도트 */}
+        <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
+
+        {/* 시각 */}
+        <span className="w-[4.5rem] shrink-0 text-[11px] tabular-nums text-slate-400">
+          {fmt(log.ts)}
+        </span>
+
+        {/* 카테고리 뱃지 */}
+        {log.category && (
+          <span
+            className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOR[log.category]}`}
+          >
+            {CATEGORY_LABEL[log.category]}
+          </span>
+        )}
+
+        {/* 메시지 */}
+        <span className={`flex-1 text-xs font-medium ${s.text}`}>
+          {log.message}
+        </span>
+
+        {/* 값 */}
+        {log.value && (
+          <span className="shrink-0 rounded-lg bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
+            {log.value}
+          </span>
+        )}
+
+        {/* ? 힌트 아이콘 */}
+        {log.tooltip && (
+          <span
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold opacity-40 transition-opacity group-hover:opacity-100 ${
+              log.level === "danger"
+                ? "border-red-400 text-red-500"
+                : log.level === "warn"
+                  ? "border-amber-400 text-amber-500"
+                  : log.level === "success"
+                    ? "border-emerald-400 text-emerald-600"
+                    : "border-slate-300 text-slate-400"
+            }`}
+          >
+            ?
+          </span>
+        )}
+      </div>
+
+      {/* Portal 툴팁 — overflow:hidden / overflow-y-auto 밖, body에 직접 마운트 */}
+      {tooltipPortal}
+    </>
   )
 }
 
