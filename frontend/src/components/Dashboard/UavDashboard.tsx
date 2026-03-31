@@ -38,6 +38,7 @@ import {
   Clock,
   Target,
   Radio,
+  AlertOctagon,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -2193,6 +2194,12 @@ export function UavDashboard() {
   const [notifyEnabled, setNotifyEnabled] = useState(true)
   const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
 
+  // ==========================
+  // 위험 경고 모달 상태
+  // ==========================
+  const [modalDismissed, setModalDismissed] = useState(false)
+  const prevModalKeyRef = useRef<string>("")
+
   const alerts = (() => {
     if (!droneConnected) return []
     if (!droneData)
@@ -2289,6 +2296,48 @@ export function UavDashboard() {
       ? "caution"
       : "safe"
 
+  // ==========================
+  // 위험 경고 모달 계산
+  // (배터리 ≤20% 또는 속도 >12m/s 시 팝업)
+  // ==========================
+  interface DangerModalItem {
+    id: string
+    type: "battery" | "speed"
+    label: string
+    detail: string
+    action: string
+  }
+
+  const dangerModalItems: DangerModalItem[] = []
+
+  if (droneData?.battery != null && droneData.battery <= 20)
+    dangerModalItems.push({
+      id: "battery",
+      type: "battery",
+      label: "배터리 위험",
+      detail: `현재 ${droneData.battery.toFixed(0)}% — RTL 비행 중 방전 시 추락합니다`,
+      action: "즉시 RTL 모드로 전환 후 귀환하세요",
+    })
+
+  if (droneData?.speed != null && droneData.speed > 12)
+    dangerModalItems.push({
+      id: "speed",
+      type: "speed",
+      label: "과속 감지",
+      detail: `현재 ${droneData.speed.toFixed(1)}m/s — 권장 속도(12m/s)를 초과했습니다`,
+      action: "즉시 스로틀을 줄여 속도를 낮추세요",
+    })
+
+  // 위험 조합 키 — 달라지면 모달 재등장
+  const modalKey = dangerModalItems.map((a) => a.id).join(",")
+  if (modalKey !== prevModalKeyRef.current) {
+    prevModalKeyRef.current = modalKey
+    if (modalKey) setModalDismissed(false)
+  }
+
+  const showDangerModal =
+    droneConnected && dangerModalItems.length > 0 && !modalDismissed
+
   useEffect(() => {
     if (
       alertLevel === "danger" &&
@@ -2373,6 +2422,88 @@ export function UavDashboard() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900">
+      {/* ── 위험 경고 모달 (배터리 ≤20% 또는 속도 >12m/s) ── */}
+      {createPortal(
+        showDangerModal ? (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+            {/* 배경 딤 */}
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+
+            {/* 모달 카드 */}
+            <div className="relative w-[min(480px,calc(100vw-2rem))] overflow-hidden rounded-3xl border-2 border-red-600/60 bg-red-950 shadow-2xl shadow-red-950/80">
+              {/* 헤더 */}
+              <div className="flex items-center gap-3 border-b border-red-800/60 bg-red-900/60 px-6 py-4">
+                <span className="flex h-10 w-10 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-500/20">
+                  <AlertOctagon className="h-6 w-6 text-red-400" />
+                </span>
+                <div>
+                  <p className="text-base font-bold tracking-wide text-red-200">
+                    위험 경고 발생
+                  </p>
+                  <p className="text-xs text-red-500/80">
+                    즉각적인 조치가 필요합니다
+                  </p>
+                </div>
+                <span className="ml-auto rounded-full bg-red-500/20 px-3 py-1 text-sm font-bold text-red-300">
+                  {dangerModalItems.length}건
+                </span>
+              </div>
+
+              {/* 위험 항목 목록 */}
+              <div className="space-y-3 px-6 py-5">
+                {dangerModalItems.map((item) => {
+                  const iconMap = {
+                    battery: <BatteryLow className="h-5 w-5 text-red-400" />,
+                    speed: <Gauge className="h-5 w-5 text-red-400" />,
+                  }
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-red-700/40 bg-red-900/40 px-4 py-3.5"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-500/15">
+                          {iconMap[item.type]}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-red-200">
+                            {item.label}
+                          </p>
+                          <p className="mt-0.5 text-xs text-red-400/80">
+                            {item.detail}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-red-950/60 px-3 py-2">
+                        <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400" />
+                        <p className="text-[11px] font-medium text-red-300">
+                          {item.action}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* 확인 버튼 */}
+              <div className="border-t border-red-800/60 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setModalDismissed(true)}
+                  className="w-full rounded-2xl bg-red-500 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-red-400 active:scale-[0.98]"
+                >
+                  네, 확인했습니다
+                </button>
+                <p className="mt-2 text-center text-[10px] text-red-600/60">
+                  위험 상황이 해소되거나 새로운 경고 발생 시 다시 표시됩니다
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : null,
+        document.body,
+      )}
+
       <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
         {/* 헤더 */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
