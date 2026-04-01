@@ -1,9 +1,85 @@
+// ★ DroneSimulation.tsx 수정 사항 — 전체 파일 중 변경된 부분만 표시
+//
+// 1. DroneData 인터페이스에 missionWaypoints 추가
+// 2. useDroneWs 훅의 ws.onmessage 에서 missionWaypoints 파싱
+// 3. DroneSimulationProps / onMissionWaypoints 콜백 추가
+// 4. UavDashboard 에서 flightPath 로 NaverMap 에 전달
+//
+// ──────────────────────────────────────────────────────────────
+// [1] DroneData 인터페이스 수정
+// ──────────────────────────────────────────────────────────────
+//
+// export interface DroneData {
+//   ...기존 필드...
+//
+//   // ★ 추가
+//   missionWaypoints?: Array<{
+//     index:   number
+//     command: number
+//     lat:     number
+//     lng:     number
+//     alt:     number
+//   }>
+// }
+//
+// ──────────────────────────────────────────────────────────────
+// [2] useDroneWs 의 ws.onmessage 수정
+//     targetRef.current 설정 부분 끝에 아래 코드 추가
+// ──────────────────────────────────────────────────────────────
+//
+//   targetRef.current = {
+//     ...기존 필드...
+//     timestamp: msg.server_ts,
+//
+//     // ★ 추가: 미션 웨이포인트 (없으면 이전 값 유지)
+//     missionWaypoints:
+//       Array.isArray(msg.mission_waypoints) && msg.mission_waypoints.length > 0
+//         ? msg.mission_waypoints
+//         : targetRef.current?.missionWaypoints,
+//   }
+//
+// ──────────────────────────────────────────────────────────────
+// [3] DroneSimulationProps 수정
+// ──────────────────────────────────────────────────────────────
+//
+// interface DroneSimulationProps {
+//   onData?: (data: DroneData | null) => void
+//   onConnectionChange?: (connected: boolean) => void
+//   onAllDroneStates?: (states: DroneWsState[]) => void
+//   // ★ 추가
+//   onMissionWaypoints?: (waypoints: DroneData["missionWaypoints"]) => void
+// }
+//
+// ──────────────────────────────────────────────────────────────
+// [4] DroneSimulation 컴포넌트 내부 수정
+//     selectedState 의 데이터가 바뀔 때 미션도 콜백으로 전달
+// ──────────────────────────────────────────────────────────────
+//
+//   useEffect(() => {
+//     if (onMissionWaypoints) {
+//       onMissionWaypoints(selectedState?.data?.missionWaypoints)
+//     }
+//   }, [selectedState?.data?.missionWaypoints, onMissionWaypoints])
+//
+// ──────────────────────────────────────────────────────────────
+// 아래는 실제 수정된 전체 파일입니다.
+// ──────────────────────────────────────────────────────────────
+
 import React, { useState, useRef, useEffect, useCallback } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
 /* =========================
  * Types
  * ========================= */
+
+// ★ missionWaypoints 추가
+export interface MissionWaypoint {
+  index: number
+  command: number
+  lat: number
+  lng: number
+  alt: number
+}
 
 export interface DroneData {
   altitude?: number
@@ -28,6 +104,9 @@ export interface DroneData {
   droneId?: string
   lteIp?: string
   online?: boolean
+
+  // ★ 추가: 미션 웨이포인트
+  missionWaypoints?: MissionWaypoint[]
 }
 
 /* =========================
@@ -174,19 +253,15 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(true)
   const droneActiveRef = useRef(false)
-
-  // [FIX 2] clearDroneData 호출 직후 RAF 루프가 잔류 데이터를 한 프레임
-  // 더 처리하지 않도록 별도 플래그로 즉시 차단
   const clearingRef = useRef(false)
 
   const clearDroneData = useCallback(() => {
-    clearingRef.current = true // RAF 루프 즉시 차단
+    clearingRef.current = true
     targetRef.current = null
     smoothRef.current = null
     droneActiveRef.current = false
     setDroneActive(false)
     setData(null)
-    // 다음 RAF 틱에서 clearingRef를 해제 — 정상 루프 재개
     requestAnimationFrame(() => {
       clearingRef.current = false
     })
@@ -232,12 +307,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         return
       }
 
-      // sysid가 없는 메시지는 기체 데이터로 보지 않음
       if (typeof msg.sysid !== "number") return
-
-      // [FIX 1] lte_ip 검증 강화:
-      // 기존: msg.lte_ip가 없으면 검증 자체를 건너뛰어 다른 기체 데이터가 유입될 수 있었음
-      // 수정: lte_ip가 없거나 일치하지 않으면 무조건 차단
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
       droneActiveRef.current = true
@@ -251,6 +321,13 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
           : typeof vx === "number" && typeof vy === "number"
             ? Math.sqrt(vx * vx + vy * vy)
             : undefined
+
+      // ★ 미션 웨이포인트 파싱
+      //    값이 있을 때만 갱신 (없으면 이전 값 유지 — 매 프레임 지우지 않도록)
+      const incomingWps =
+        Array.isArray(msg.mission_waypoints) && msg.mission_waypoints.length > 0
+          ? (msg.mission_waypoints as MissionWaypoint[])
+          : undefined
 
       targetRef.current = {
         droneId: msg.drone_id,
@@ -272,6 +349,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         yaw: radToDeg(msg.attitude?.yaw),
         speed,
         timestamp: msg.server_ts,
+        // ★ 미션 웨이포인트: 새 데이터가 있으면 갱신, 없으면 이전 값 유지
+        missionWaypoints: incomingWps ?? targetRef.current?.missionWaypoints,
       }
     }
 
@@ -288,11 +367,10 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [drone.lteIp, clearDroneData])
 
-  // RAF 스무딩
+  // RAF 스무딩 (미션 웨이포인트는 스무딩 없이 그대로 전달)
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
-      // [FIX 2] clearingRef가 true면 이번 프레임은 건너뜀 (잔류 데이터 방지)
       if (
         clearingRef.current ||
         !droneActiveRef.current ||
@@ -329,6 +407,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
           prev?.yaw != null && target.yaw != null
             ? smoothYaw(prev.yaw, target.yaw, dt, 120)
             : target.yaw,
+        // ★ 미션 웨이포인트는 스무딩 없이 그대로
+        missionWaypoints: target.missionWaypoints,
       }
 
       rafId = requestAnimationFrame(rafLoop)
@@ -341,7 +421,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   useEffect(() => {
     const id = window.setInterval(
       () => {
-        // [FIX 2] clearingRef 중이면 스냅샷도 건너뜀
         if (clearingRef.current) {
           setData(null)
           return
@@ -392,6 +471,8 @@ interface DroneSimulationProps {
   onData?: (data: DroneData | null) => void
   onConnectionChange?: (connected: boolean) => void
   onAllDroneStates?: (states: DroneWsState[]) => void
+  // ★ 추가: 미션 웨이포인트 변경 콜백
+  onMissionWaypoints?: (waypoints: MissionWaypoint[] | undefined) => void
 }
 
 /* =========================
@@ -401,6 +482,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   onData,
   onConnectionChange,
   onAllDroneStates,
+  onMissionWaypoints, // ★ 추가
 }) => {
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
@@ -409,7 +491,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const allStates = [drone0, drone1, drone2]
 
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
-
   const selectedState = selectedIdx !== null ? allStates[selectedIdx] : null
 
   useEffect(() => {
@@ -425,6 +506,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     if (onData)
       onData(selectedState?.droneActive ? (selectedState?.data ?? null) : null)
   }, [selectedState?.data, selectedState?.droneActive, onData])
+
+  // ★ 미션 웨이포인트 변경 시 콜백
+  useEffect(() => {
+    if (onMissionWaypoints) {
+      onMissionWaypoints(selectedState?.data?.missionWaypoints)
+    }
+  }, [selectedState?.data?.missionWaypoints, onMissionWaypoints]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6">
@@ -469,6 +557,9 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 ? "서버 연결됨 (기체 없음)"
                 : "연결 중..."
 
+            // ★ 미션 웨이포인트 수 표시
+            const wpCount = state.data?.missionWaypoints?.length ?? 0
+
             return (
               <button
                 key={drone.lteIp}
@@ -504,6 +595,12 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                     {state.data.altitude != null && (
                       <span className="font-mono">
                         ↑ {state.data.altitude.toFixed(0)}m
+                      </span>
+                    )}
+                    {/* ★ 미션 웨이포인트 수 표시 */}
+                    {wpCount > 0 && (
+                      <span className="font-mono text-blue-500">
+                        📍 WP {wpCount}
                       </span>
                     )}
                   </div>

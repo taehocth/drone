@@ -5,6 +5,7 @@ import DroneSimulation, {
   DroneData,
   DroneWsState,
   FlightStatusBadge,
+  MissionWaypoint,
 } from "./DroneSimulation"
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
 import { convertGRID_GPS } from "@/utils/convertGrid"
@@ -2146,6 +2147,11 @@ export function UavDashboard() {
   const [droneConnected, setDroneConnected] = useState(false)
   const [droneData, setDroneData] = useState<DroneData | null>(null)
 
+  // ★ 미션 웨이포인트 — DroneSimulation → NaverMap flightPath 로 전달
+  const [missionWaypoints, setMissionWaypoints] = useState<MissionWaypoint[]>(
+    [],
+  )
+
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
       const { nx, ny } = convertGRID_GPS(
@@ -2302,7 +2308,7 @@ export function UavDashboard() {
   // ==========================
   interface DangerModalItem {
     id: string
-    type: "battery" | "speed" | "gps"
+    type: "battery" | "speed"
     label: string
     detail: string
     action: string
@@ -2328,15 +2334,6 @@ export function UavDashboard() {
       action: "즉시 스로틀을 줄여 속도를 낮추세요",
     })
 
-  if (droneData?.gpsSatellites != null && droneData.gpsSatellites <= 20)
-    dangerModalItems.push({
-      id: "gps",
-      type: "gps",
-      label: "GPS 신호 불량",
-      detail: `현재 ${droneData.gpsSatellites}위성 — 안정적인 비행을 위해 25위성 이상이 필요합니다`,
-      action: "개활지로 이동하거나 비행을 중단하세요",
-    })
-
   // 위험 조합 키 — 달라지면 모달 재등장
   const modalKey = dangerModalItems.map((a) => a.id).join(",")
   if (modalKey !== prevModalKeyRef.current) {
@@ -2344,7 +2341,8 @@ export function UavDashboard() {
     if (modalKey) setModalDismissed(false)
   }
 
-  const showDangerModal = dangerModalItems.length > 0 && !modalDismissed
+  const showDangerModal =
+    droneConnected && dangerModalItems.length > 0 && !modalDismissed
 
   useEffect(() => {
     if (
@@ -2463,7 +2461,6 @@ export function UavDashboard() {
                   const iconMap = {
                     battery: <BatteryLow className="h-5 w-5 text-red-400" />,
                     speed: <Gauge className="h-5 w-5 text-red-400" />,
-                    gps: <MapPin className="h-5 w-5 text-red-400" />,
                   }
                   return (
                     <div
@@ -2713,6 +2710,15 @@ export function UavDashboard() {
                   altitude: droneData?.altitude,
                   speed: droneData?.speed,
                 }}
+                flightPath={
+                  missionWaypoints.length > 0
+                    ? missionWaypoints.map((wp) => ({
+                        lat: wp.lat,
+                        lng: wp.lng,
+                        alt: wp.alt,
+                      }))
+                    : undefined
+                }
               />
             </div>
           )}
@@ -2745,6 +2751,7 @@ export function UavDashboard() {
                     onConnectionChange={setDroneConnected}
                     onData={setDroneData}
                     onAllDroneStates={setAllDroneStates}
+                    onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
                   />
                 </div>
               </div>
