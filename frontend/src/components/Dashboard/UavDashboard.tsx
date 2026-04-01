@@ -2745,8 +2745,22 @@ export function UavDashboard() {
                   }
                 />
               </div>
-              <div className="p-4">
-                <div className={collapseMonitor ? "hidden" : ""}>
+              <div className={collapseMonitor ? "" : "p-4"}>
+                {/* ★ hidden 대신 CSS로만 숨김 — DroneSimulation은 항상 마운트 유지
+                    hidden을 쓰면 컴포넌트가 언마운트되어 WebSocket 연결이 끊김 */}
+                <div
+                  style={
+                    collapseMonitor
+                      ? {
+                          visibility: "hidden",
+                          height: 0,
+                          overflow: "hidden",
+                          padding: 0,
+                          margin: 0,
+                        }
+                      : {}
+                  }
+                >
                   <DroneSimulation
                     onConnectionChange={setDroneConnected}
                     onData={setDroneData}
