@@ -2197,7 +2197,8 @@ export function UavDashboard() {
   const [collapseMonitor, setCollapseMonitor] = useState(false)
   const [collapseWeather, setCollapseWeather] = useState(false)
   const [collapseCBM, setCollapseCBM] = useState(false)
-  // ★ 상단 2열(지금 뭘 해야? + 기상정보) 공유 아코디언 상태
+  // 상단 2열 — 각 카드 독립 아코디언
+  const [collapseAction, setCollapseAction] = useState(false)
   const [collapseTopPanel, setCollapseTopPanel] = useState(false)
 
   const { permission, requestPermission, sendNotification } =
@@ -2556,17 +2557,17 @@ export function UavDashboard() {
           droneData={droneData}
         />
 
-        {/* 상단 2열: [지금 뭘 해야?] + [기상 정보] — 공유 아코디언 */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* ★ collapsed/onToggle을 외부에서 주입 → 두 카드가 동시에 접힘 */}
+        {/* 상단 2열: [지금 뭘 해야?] + [기상 정보] — 각자 독립 아코디언 */}
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+          {/* 지금 뭘 해야? — 독립 상태 */}
           <ActionGuideWidget
             droneConnected={droneConnected}
             droneData={droneData}
             alerts={alerts}
-            collapsed={collapseTopPanel}
-            onToggle={() => setCollapseTopPanel((v) => !v)}
+            collapsed={collapseAction}
+            onToggle={() => setCollapseAction((v) => !v)}
           />
-          {/* 기상 정보 — 같은 collapseTopPanel 공유 */}
+          {/* 기상 정보 — 독립 상태 */}
           <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
               className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3 transition-colors hover:bg-slate-100/60"
