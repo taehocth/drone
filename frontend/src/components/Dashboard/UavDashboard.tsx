@@ -2601,59 +2601,6 @@ export function UavDashboard() {
             )}
           </div>
         </div>
-
-        {/* Sticky 상태바 */}
-        <div className="sticky top-2 z-20 rounded-2xl border border-slate-200/60 bg-white/90 px-4 py-3 shadow-lg shadow-slate-200/40 ring-1 ring-white/70 backdrop-blur-md">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex flex-wrap items-center gap-4">
-              <span className="font-semibold uppercase tracking-widest text-slate-400">
-                운영 상태
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-600">
-                <Wifi className="h-3.5 w-3.5" />
-                <span
-                  className={`rounded-full px-2 py-0.5 font-semibold ${connectionTone}`}
-                >
-                  {connectionLabel}
-                </span>
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-600">
-                <span className="text-slate-400">마지막 갱신</span>
-                <span className="font-semibold text-slate-800">
-                  {lastUpdateLabel}
-                </span>
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setShowAlertDetails((prev) => (alerts.length ? !prev : prev))
-                }
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
-                disabled={!alerts.length}
-              >
-                <AlertTriangle className="h-3.5 w-3.5" />
-                알림 {alerts.length ? `${alerts.length}건` : "없음"}
-              </button>
-            </div>
-            <HelpHint text="관제 핵심 상태를 한 줄로 요약합니다." />
-          </div>
-          {showAlertDetails && alerts.length > 0 && (
-            <div className="mt-3 space-y-1.5 border-t border-slate-200/60 pt-3">
-              {alerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium ${alert.level === "danger" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}
-                >
-                  <span
-                    className={`h-2 w-2 rounded-full ${alert.level === "danger" ? "bg-red-500" : "bg-amber-500"}`}
-                  />
-                  {alert.label}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* 핵심 수치 */}
         {droneConnected && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
