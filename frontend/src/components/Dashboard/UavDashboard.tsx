@@ -464,6 +464,8 @@ function ActionGuideWidget({
   droneConnected,
   droneData,
   alerts,
+  collapsed,
+  onToggle,
 }: {
   droneConnected: boolean
   droneData: DroneData | null
@@ -472,8 +474,9 @@ function ActionGuideWidget({
     level: "safe" | "caution" | "danger"
     label: string
   }>
+  collapsed: boolean
+  onToggle: () => void
 }) {
-  const [collapsed, setCollapsed] = useState(false)
   const guides = buildActionGuides(droneConnected, droneData, alerts)
   const topGuide = guides[0]
   if (!topGuide) return null
@@ -482,15 +485,15 @@ function ActionGuideWidget({
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
       <div
-        className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
-        onClick={() => setCollapsed((v) => !v)}
+        className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3 transition-colors hover:bg-slate-100/60"
+        onClick={onToggle}
       >
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-2 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 p-1.5 shadow-sm">
             <Lightbulb className="h-4 w-4 text-white" />
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-900">
+            <p className="text-sm font-semibold text-slate-900">
               지금 뭘 해야 하나요?
             </p>
             <p className="text-xs text-slate-500">
@@ -512,7 +515,7 @@ function ActionGuideWidget({
         </div>
       </div>
       {!collapsed && (
-        <div className="space-y-3 p-4">
+        <div className="space-y-2.5 p-3">
           {guides.map((guide, idx) => {
             const c = PRIORITY_CONFIG[guide.priority]
             return (
@@ -520,9 +523,9 @@ function ActionGuideWidget({
                 key={idx}
                 className={`rounded-2xl border ${c.border} ${c.bg} overflow-hidden`}
               >
-                <div className="flex items-center gap-3 px-4 py-3">
+                <div className="flex items-center gap-3 px-3 py-2.5">
                   <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${c.iconBg} text-white shadow-sm`}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${c.iconBg} text-white shadow-sm`}
                   >
                     {guide.icon}
                   </div>
@@ -543,11 +546,11 @@ function ActionGuideWidget({
                     <p className="mt-0.5 text-xs text-slate-500">{guide.why}</p>
                   </div>
                 </div>
-                <div className="space-y-2 border-t border-white/60 px-4 py-3">
+                <div className="space-y-1.5 border-t border-white/60 px-3 py-2.5">
                   {guide.steps.map((step, si) => (
-                    <div key={si} className="flex items-start gap-2.5">
+                    <div key={si} className="flex items-start gap-2">
                       <span
-                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/80 text-xs font-bold ${c.text}`}
+                        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/80 text-[10px] font-bold ${c.text}`}
                       >
                         {si + 1}
                       </span>
@@ -2194,6 +2197,8 @@ export function UavDashboard() {
   const [collapseMonitor, setCollapseMonitor] = useState(false)
   const [collapseWeather, setCollapseWeather] = useState(false)
   const [collapseCBM, setCollapseCBM] = useState(false)
+  // ★ 상단 2열(지금 뭘 해야? + 기상정보) 공유 아코디언 상태
+  const [collapseTopPanel, setCollapseTopPanel] = useState(false)
 
   const { permission, requestPermission, sendNotification } =
     useWebNotification()
@@ -2551,27 +2556,45 @@ export function UavDashboard() {
           droneData={droneData}
         />
 
-        {/* 상단 2열: [지금 뭘 해야?] [판단불가↔기상정보 교체로 여기 이동] */}
+        {/* 상단 2열: [지금 뭘 해야?] + [기상 정보] — 공유 아코디언 */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* ★ collapsed/onToggle을 외부에서 주입 → 두 카드가 동시에 접힘 */}
           <ActionGuideWidget
             droneConnected={droneConnected}
             droneData={droneData}
             alerts={alerts}
+            collapsed={collapseTopPanel}
+            onToggle={() => setCollapseTopPanel((v) => !v)}
           />
-          {/* ★ 기상 정보가 이 자리로 이동 (원래 판단불가 카드 위치) */}
-          <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <SectionHeader
-                icon={<Cloud />}
-                title="기상 정보"
-                desc="지도 클릭 위치의 실시간 기상 및 비행 안전성"
-                collapsible
-                collapsed={collapseWeather}
-                onToggle={() => setCollapseWeather((v) => !v)}
-              />
+          {/* 기상 정보 — 같은 collapseTopPanel 공유 */}
+          <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+            <div
+              className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3 transition-colors hover:bg-slate-100/60"
+              onClick={() => setCollapseTopPanel((v) => !v)}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="rounded-xl bg-gradient-to-br from-sky-500 to-cyan-500 p-1.5 shadow-sm">
+                  <Cloud className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    기상 정보
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    지도 클릭 위치의 실시간 기상 및 비행 안전성
+                  </p>
+                </div>
+              </div>
+              <span className="text-slate-400">
+                {collapseTopPanel ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronUp className="h-4 w-4" />
+                )}
+              </span>
             </div>
-            {!collapseWeather && (
-              <div className="p-4">
+            {!collapseTopPanel && (
+              <div className="p-3">
                 <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
               </div>
             )}
