@@ -2551,19 +2551,31 @@ export function UavDashboard() {
           droneData={droneData}
         />
 
+        {/* 상단 2열: [지금 뭘 해야?] [판단불가↔기상정보 교체로 여기 이동] */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <FlightFeasibilityWidget
-            droneConnected={droneConnected}
-            droneData={droneData}
-            alertLevel={alertLevel}
-            alerts={alerts}
-            allDroneStates={allDroneStates}
-          />
           <ActionGuideWidget
             droneConnected={droneConnected}
             droneData={droneData}
             alerts={alerts}
           />
+          {/* ★ 기상 정보가 이 자리로 이동 (원래 판단불가 카드 위치) */}
+          <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <SectionHeader
+                icon={<Cloud />}
+                title="기상 정보"
+                desc="지도 클릭 위치의 실시간 기상 및 비행 안전성"
+                collapsible
+                collapsed={collapseWeather}
+                onToggle={() => setCollapseWeather((v) => !v)}
+              />
+            </div>
+            {!collapseWeather && (
+              <div className="p-4">
+                <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Sticky 상태바 */}
@@ -2827,24 +2839,14 @@ export function UavDashboard() {
           </div>
 
           <div className="space-y-5">
-            {/* 기상 정보 */}
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <SectionHeader
-                  icon={<Cloud />}
-                  title="기상 정보"
-                  desc="지도 클릭 위치의 실시간 기상 및 비행 안전성"
-                  collapsible
-                  collapsed={collapseWeather}
-                  onToggle={() => setCollapseWeather((v) => !v)}
-                />
-              </div>
-              {!collapseWeather && (
-                <div className="p-4">
-                  <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
-                </div>
-              )}
-            </div>
+            {/* ★ 판단불가 카드가 이 자리로 이동 (원래 기상 정보 위치) */}
+            <FlightFeasibilityWidget
+              droneConnected={droneConnected}
+              droneData={droneData}
+              alertLevel={alertLevel}
+              alerts={alerts}
+              allDroneStates={allDroneStates}
+            />
 
             {/* CBM */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
