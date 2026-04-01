@@ -24,6 +24,10 @@ import {
   TrendingDown,
   TriangleAlert,
   Info,
+  Upload,
+  Route,
+  Trash2,
+  Flag,
 } from "lucide-react"
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
@@ -475,6 +479,7 @@ function ChecklistCard({
   connected,
 }: ChecklistCardProps) {
   const [showWeather, setShowWeather] = useState(false)
+  const [collapsed, setCollapsed] = useState(false) // ★ 아코디언 상태
 
   type CheckResult = "pass" | "warn" | "fail" | "unknown"
 
@@ -492,35 +497,45 @@ function ChecklistCard({
     // 미연결 상태 — 연결 가이드
     return (
       <div className="w-[220px] rounded-2xl border border-slate-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
-        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+        {/* ★ 헤더 — 클릭으로 접기/펼치기 */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2 text-left transition hover:bg-white/5"
+        >
           <Info className="h-4 w-4 text-slate-400" />
-          <span className="text-xs font-bold text-slate-300">
+          <span className="flex-1 text-xs font-bold text-slate-300">
             관제 체크리스트
           </span>
-        </div>
-        <div className="space-y-2 px-3 py-3">
-          {[
-            "1. 배터리 셀 체크 확인",
-            "2. 조종기 / 기체 전원 확인",
-            "3. QGC LTE 연결/ P900 연결 확인",
-            "4. GPS 신호 확인 (25위성+)",
-            "5. 미션 플랜 경로 일치 확인",
-            "6. 수평캘리브레이션 확인",
-            "7. 식별장치 확인",
-          ].map((item, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[9px] text-slate-500">
-                {i + 1}
-              </span>
-              <p className="text-[10px] text-slate-400">
-                {item.replace(/^\d+\.\s/, "")}
-              </p>
-            </div>
-          ))}
-          <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-slate-500">
-            기체 연결 시 실시간 체크리스트로 전환됩니다.
-          </p>
-        </div>
+          <span className="text-[9px] text-white/25">
+            {collapsed ? "▼" : "▲"}
+          </span>
+        </button>
+        {!collapsed && (
+          <div className="space-y-2 px-3 py-3">
+            {[
+              "1. 배터리 셀 체크 확인",
+              "2. 조종기 / 기체 전원 확인",
+              "3. QGC LTE 연결/ P900 연결 확인",
+              "4. GPS 신호 확인 (25위성+)",
+              "5. 미션 플랜 경로 일치 확인",
+              "6. 수평캘리브레이션 확인",
+              "7. 식별장치 확인",
+            ].map((item, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[9px] text-slate-500">
+                  {i + 1}
+                </span>
+                <p className="text-[10px] text-slate-400">
+                  {item.replace(/^\d+\.\s/, "")}
+                </p>
+              </div>
+            ))}
+            <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-slate-500">
+              기체 연결 시 실시간 체크리스트로 전환됩니다.
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -670,9 +685,11 @@ function ChecklistCard({
 
   return (
     <div className="w-[220px] overflow-hidden rounded-2xl border border-slate-600/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
-      {/* 헤더 — 종합 결과 */}
-      <div
-        className={`flex items-center gap-2 border-b border-white/10 px-3 py-2 ${
+      {/* ★ 헤더 — 클릭으로 접기/펼치기 */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        className={`flex w-full items-center gap-2 px-3 py-2 text-left transition hover:brightness-110 ${
           overallResult === "fail"
             ? "bg-red-950/60"
             : overallResult === "warn"
@@ -682,7 +699,7 @@ function ChecklistCard({
       >
         {resultStyle[overallResult].icon}
         <span
-          className={`text-xs font-bold ${resultStyle[overallResult].color}`}
+          className={`flex-1 text-xs font-bold ${resultStyle[overallResult].color}`}
         >
           {overallResult === "fail"
             ? "위험 항목 발생"
@@ -690,89 +707,98 @@ function ChecklistCard({
               ? "주의 항목 있음"
               : "모든 항목 정상"}
         </span>
-        <span className="ml-auto text-[10px] text-white/30">
+        <span className="mr-1 text-[10px] text-white/30">
           {passCount}/{checks.length}
         </span>
-      </div>
+        <span className="text-[9px] text-white/25">
+          {collapsed ? "▼" : "▲"}
+        </span>
+      </button>
 
-      {/* 체크 항목 목록 */}
-      <div className="divide-y divide-white/5">
-        {checks.map((check) => {
-          const rs = resultStyle[check.result]
-          return (
-            <div
-              key={check.label}
-              className={`flex items-center gap-2 px-3 py-2 ${rs.bg}`}
-            >
-              <span className={rs.color}>{check.icon}</span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-[10px] font-semibold text-white/70">
-                    {check.label}
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold tabular-nums ${rs.color}`}
-                  >
-                    {check.value}
-                  </span>
-                </div>
-                <p className={`text-[9px] ${rs.color} opacity-80`}>
-                  {check.tip}
-                </p>
-              </div>
-              <span className="shrink-0">{rs.icon}</span>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* 기상 토글 */}
-      {(temperature != null || windSpeed != null || precipitation != null) && (
+      {!collapsed && (
         <>
-          <button
-            type="button"
-            onClick={() => setShowWeather((v) => !v)}
-            className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2 text-left transition hover:bg-white/5"
-          >
-            <Thermometer className="h-3.5 w-3.5 text-orange-400" />
-            <span className="text-[10px] font-semibold text-white/50">
-              기상 정보
-            </span>
-            <span className="ml-auto text-[9px] text-white/25">
-              {showWeather ? "▲" : "▼"}
-            </span>
-          </button>
-          {showWeather && (
-            <div className="grid grid-cols-3 gap-2 border-t border-white/5 px-3 py-2.5 text-center">
-              {temperature != null && (
-                <div>
-                  <p className="text-sm font-bold text-orange-300">
-                    {temperature}°
-                  </p>
-                  <p className="text-[9px] text-white/30">기온</p>
+          {/* 체크 항목 목록 */}
+          <div className="divide-y divide-white/5">
+            {checks.map((check) => {
+              const rs = resultStyle[check.result]
+              return (
+                <div
+                  key={check.label}
+                  className={`flex items-center gap-2 px-3 py-2 ${rs.bg}`}
+                >
+                  <span className={rs.color}>{check.icon}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-semibold text-white/70">
+                        {check.label}
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold tabular-nums ${rs.color}`}
+                      >
+                        {check.value}
+                      </span>
+                    </div>
+                    <p className={`text-[9px] ${rs.color} opacity-80`}>
+                      {check.tip}
+                    </p>
+                  </div>
+                  <span className="shrink-0">{rs.icon}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* 기상 토글 */}
+          {(temperature != null ||
+            windSpeed != null ||
+            precipitation != null) && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowWeather((v) => !v)}
+                className="flex w-full items-center gap-2 border-t border-white/10 px-3 py-2 text-left transition hover:bg-white/5"
+              >
+                <Thermometer className="h-3.5 w-3.5 text-orange-400" />
+                <span className="text-[10px] font-semibold text-white/50">
+                  기상 정보
+                </span>
+                <span className="ml-auto text-[9px] text-white/25">
+                  {showWeather ? "▲" : "▼"}
+                </span>
+              </button>
+              {showWeather && (
+                <div className="grid grid-cols-3 gap-2 border-t border-white/5 px-3 py-2.5 text-center">
+                  {temperature != null && (
+                    <div>
+                      <p className="text-sm font-bold text-orange-300">
+                        {temperature}°
+                      </p>
+                      <p className="text-[9px] text-white/30">기온</p>
+                    </div>
+                  )}
+                  {windSpeed != null && (
+                    <div>
+                      <p
+                        className={`text-sm font-bold ${windSpeed >= 14 ? "text-red-400" : windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
+                      >
+                        {windSpeed}
+                        <span className="text-[9px] font-normal">m/s</span>
+                      </p>
+                      <p className="text-[9px] text-white/30">풍속</p>
+                    </div>
+                  )}
+                  {precipitation != null && (
+                    <div>
+                      <p className="text-sm font-bold text-sky-300">
+                        {precipitation}
+                        <span className="text-[9px] font-normal">mm</span>
+                      </p>
+                      <p className="text-[9px] text-white/30">강수</p>
+                    </div>
+                  )}
                 </div>
               )}
-              {windSpeed != null && (
-                <div>
-                  <p
-                    className={`text-sm font-bold ${windSpeed >= 14 ? "text-red-400" : windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
-                  >
-                    {windSpeed}
-                    <span className="text-[9px] font-normal">m/s</span>
-                  </p>
-                  <p className="text-[9px] text-white/30">풍속</p>
-                </div>
-              )}
-              {precipitation != null && (
-                <div>
-                  <p className="text-sm font-bold text-sky-300">
-                    {precipitation}
-                    <span className="text-[9px] font-normal">mm</span>
-                  </p>
-                  <p className="text-[9px] text-white/30">강수</p>
-                </div>
-              )}
-            </div>
+            </>
           )}
         </>
       )}
@@ -855,6 +881,233 @@ function FlightStatusMiniCard({
 }
 
 // ─────────────────────────────────────────────────────────────
+// QGC .plan 파서 + 미션 오버레이
+// ─────────────────────────────────────────────────────────────
+
+interface MissionWaypoint {
+  index: number // 웨이포인트 순서 번호
+  lat: number
+  lng: number
+  alt: number
+  command: number // MAVLink command (22=이륙, 16=웨이포인트, 21=착륙 등)
+}
+
+interface MissionPlan {
+  waypoints: MissionWaypoint[]
+  totalDistanceM: number
+}
+
+// MAVLink command → 라벨
+const commandLabel = (cmd: number): string => {
+  if (cmd === 22) return "이륙"
+  if (cmd === 21) return "착륙"
+  if (cmd === 20) return "RTL"
+  if (cmd === 177) return "루프"
+  return `WP`
+}
+
+// 두 좌표 간 거리 계산 (Haversine, 단위: m)
+function haversineM(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371000
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// QGC .plan JSON → MissionPlan 변환
+function parseQGCPlan(json: any): MissionPlan | null {
+  try {
+    // QGC plan 구조: { mission: { items: [...] } }
+    const items: any[] = json?.mission?.items ?? json?.items ?? []
+    if (!items.length) return null
+
+    const waypoints: MissionWaypoint[] = []
+    let idx = 0
+
+    for (const item of items) {
+      // SimpleItem 형식
+      if (item.type === "SimpleItem" || item.command !== undefined) {
+        const cmd = item.command ?? 16
+        const params: number[] = item.params ?? []
+        // params[4]=lat, params[5]=lng, params[6]=alt  (구 형식)
+        // params[6]=lat, params[7]=lng, params[2]=alt  (신 형식)
+        let lat = 0,
+          lng = 0,
+          alt = 0
+
+        // 신 형식 우선
+        if (params.length >= 8) {
+          lat = params[6] ?? 0
+          lng = params[7] ?? 0
+          alt = params[2] ?? 0
+        } else if (params.length >= 6) {
+          lat = params[4] ?? 0
+          lng = params[5] ?? 0
+          alt = params[2] ?? 0
+        }
+
+        // 위/경도가 유효한 경우만 추가
+        if (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001) {
+          waypoints.push({ index: idx++, lat, lng, alt, command: cmd })
+        }
+      }
+      // ComplexItem (Survey 등) — 내부 items 재귀 처리
+      if (item.type === "ComplexItem" && Array.isArray(item.transectPoints)) {
+        for (const pt of item.transectPoints) {
+          waypoints.push({
+            index: idx++,
+            lat: pt[0],
+            lng: pt[1],
+            alt: pt[2] ?? 50,
+            command: 16,
+          })
+        }
+      }
+    }
+
+    if (!waypoints.length) return null
+
+    // 총 거리 계산
+    let totalDistanceM = 0
+    for (let i = 1; i < waypoints.length; i++) {
+      totalDistanceM += haversineM(
+        waypoints[i - 1].lat,
+        waypoints[i - 1].lng,
+        waypoints[i].lat,
+        waypoints[i].lng,
+      )
+    }
+
+    return { waypoints, totalDistanceM }
+  } catch {
+    return null
+  }
+}
+
+// 미션 정보 미니카드 (지도 좌상단 — 연결 후)
+function MissionInfoCard({
+  plan,
+  onClear,
+  currentWpIndex,
+}: {
+  plan: MissionPlan
+  onClear: () => void
+  currentWpIndex: number
+}) {
+  const [collapsed, setCollapsed] = useState(false)
+  const distKm = (plan.totalDistanceM / 1000).toFixed(2)
+
+  return (
+    <div className="w-[200px] overflow-hidden rounded-2xl border border-blue-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
+      {/* 헤더 */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((v) => !v)}
+        className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2 text-left transition hover:bg-white/5"
+      >
+        <Route className="h-3.5 w-3.5 text-blue-400" />
+        <span className="flex-1 text-xs font-bold text-blue-300">
+          미션 플랜
+        </span>
+        <span className="text-[9px] text-white/25">
+          {collapsed ? "▼" : "▲"}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onClear()
+          }}
+          className="ml-1 rounded p-0.5 text-white/30 transition hover:bg-red-500/20 hover:text-red-400"
+          title="미션 초기화"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </button>
+
+      {!collapsed && (
+        <>
+          {/* 요약 */}
+          <div className="grid grid-cols-3 gap-1 border-b border-white/5 px-3 py-2 text-center">
+            <div>
+              <p className="text-sm font-bold text-blue-300">
+                {plan.waypoints.length}
+              </p>
+              <p className="text-[9px] text-white/30">웨이포인트</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-sky-300">{distKm}</p>
+              <p className="text-[9px] text-white/30">거리(km)</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-emerald-300">
+                {currentWpIndex >= 0 ? `${currentWpIndex + 1}` : "—"}
+              </p>
+              <p className="text-[9px] text-white/30">현재 WP</p>
+            </div>
+          </div>
+
+          {/* 웨이포인트 목록 */}
+          <div className="max-h-36 overflow-y-auto">
+            {plan.waypoints.map((wp, i) => {
+              const isActive = i === currentWpIndex
+              const isDone = currentWpIndex >= 0 && i < currentWpIndex
+              const isStart = wp.command === 22
+              const isLand = wp.command === 21 || wp.command === 20
+              return (
+                <div
+                  key={wp.index}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-[10px] ${
+                    isActive
+                      ? "bg-blue-500/20 text-blue-300"
+                      : isDone
+                        ? "text-white/25"
+                        : "text-white/50"
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
+                      isActive
+                        ? "bg-blue-500 text-white"
+                        : isDone
+                          ? "bg-white/10 text-white/30"
+                          : isStart
+                            ? "bg-emerald-500/30 text-emerald-400"
+                            : isLand
+                              ? "bg-amber-500/30 text-amber-400"
+                              : "bg-white/10 text-white/50"
+                    }`}
+                  >
+                    {isStart ? "↑" : isLand ? "↓" : i + 1}
+                  </span>
+                  <span className="flex-1">{commandLabel(wp.command)}</span>
+                  <span className="tabular-nums text-white/30">
+                    {wp.alt.toFixed(0)}m
+                  </span>
+                  {isActive && (
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-400" />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 // 메인 NaverMap 컴포넌트
 // ─────────────────────────────────────────────────────────────
 export function NaverMap({
@@ -891,6 +1144,15 @@ export function NaverMap({
   const [isDroneConnected, setIsDroneConnected] = useState(false)
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // ── 미션 플랜 상태 ──────────────────────────────────────────
+  const [missionPlan, setMissionPlan] = useState<MissionPlan | null>(null)
+  const [currentWpIndex, setCurrentWpIndex] = useState(-1)
+  const [missionError, setMissionError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const missionPolylineRef = useRef<any>(null) // 전체 경로선
+  const missionDoneLineRef = useRef<any>(null) // 완료 구간선
+  const missionMarkersRef = useRef<any[]>([]) // 웨이포인트 마커들
 
   const { overall: safetyOverall, items: safetyItems } = calcSafety(
     droneStats,
@@ -1190,6 +1452,186 @@ export function NaverMap({
     }
   }, [flightPath])
 
+  // ── 미션 플랜 지도 렌더링 ──────────────────────────────────
+  useEffect(() => {
+    const naver = (window as any).naver
+    if (!naver || !mapInstance.current) return
+
+    // 기존 미션 오버레이 초기화
+    missionPolylineRef.current?.setMap(null)
+    missionDoneLineRef.current?.setMap(null)
+    missionMarkersRef.current.forEach((m) => m.setMap(null))
+    missionMarkersRef.current = []
+
+    if (!missionPlan || !missionPlan.waypoints.length) return
+
+    const wps = missionPlan.waypoints
+    const allLatLngs = wps.map((wp) => new naver.maps.LatLng(wp.lat, wp.lng))
+
+    // 전체 경로선 (파란색 점선 스타일)
+    missionPolylineRef.current = new naver.maps.Polyline({
+      map: mapInstance.current,
+      path: allLatLngs,
+      strokeColor: "#3b82f6",
+      strokeWeight: 2,
+      strokeOpacity: 0.6,
+      strokeStyle: "shortdash",
+      zIndex: 250,
+    })
+
+    // 완료 구간선 (흰색 실선)
+    if (currentWpIndex > 0) {
+      const donePath = allLatLngs.slice(0, currentWpIndex + 1)
+      missionDoneLineRef.current = new naver.maps.Polyline({
+        map: mapInstance.current,
+        path: donePath,
+        strokeColor: "#ffffff",
+        strokeWeight: 2.5,
+        strokeOpacity: 0.9,
+        zIndex: 260,
+      })
+    }
+
+    // 웨이포인트 마커
+    wps.forEach((wp, i) => {
+      const isActive = i === currentWpIndex
+      const isDone = currentWpIndex >= 0 && i < currentWpIndex
+      const isStart = wp.command === 22
+      const isLand = wp.command === 21 || wp.command === 20
+
+      // 마커 색상
+      const bgColor = isActive
+        ? "#3b82f6"
+        : isDone
+          ? "#ffffff40"
+          : isStart
+            ? "#22c55e"
+            : isLand
+              ? "#f59e0b"
+              : "#1e40af"
+
+      const borderColor = isActive ? "#ffffff" : "#93c5fd"
+      const label = isStart ? "▲" : isLand ? "▼" : String(i + 1)
+
+      const marker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(wp.lat, wp.lng),
+        map: mapInstance.current,
+        icon: {
+          content: `
+            <div style="
+              position:relative;
+              display:flex;align-items:center;justify-content:center;
+              width:26px;height:26px;
+              background:${bgColor};
+              border:2px solid ${borderColor};
+              border-radius:50%;
+              font-size:9px;font-weight:bold;color:white;
+              box-shadow:0 2px 8px rgba(0,0,0,0.5);
+              ${isActive ? "animation:pulse 1.5s infinite;" : ""}
+            ">${label}</div>
+            <div style="
+              position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
+              width:0;height:0;
+              border-left:5px solid transparent;
+              border-right:5px solid transparent;
+              border-top:6px solid ${bgColor};
+            "></div>
+          `,
+          anchor: new naver.maps.Point(13, 32),
+        },
+        zIndex: isActive ? 400 : 300,
+      })
+
+      // 고도 툴팁
+      naver.maps.Event.addListener(marker, "mouseover", () => {
+        const infoWindow = new naver.maps.InfoWindow({
+          content: `
+            <div style="
+              padding:6px 10px;background:#1e293b;border:1px solid #3b82f6;
+              border-radius:8px;font-size:11px;color:#e2e8f0;
+              box-shadow:0 4px 12px rgba(0,0,0,0.4);
+            ">
+              <b style="color:#60a5fa">${commandLabel(wp.command)} ${i + 1}</b><br/>
+              고도: ${wp.alt.toFixed(0)}m<br/>
+              <span style="color:#94a3b8;font-size:10px">
+                ${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}
+              </span>
+            </div>
+          `,
+          borderWidth: 0,
+          backgroundColor: "transparent",
+          anchorSize: new naver.maps.Size(0, 0),
+          pixelOffset: new naver.maps.Point(0, -8),
+        })
+        infoWindow.open(mapInstance.current, marker)
+        setTimeout(() => infoWindow.close(), 2500)
+      })
+
+      missionMarkersRef.current.push(marker)
+    })
+
+    // 미션 전체가 보이도록 fitBounds
+    if (allLatLngs.length > 0) {
+      const bounds = new naver.maps.LatLngBounds(allLatLngs[0], allLatLngs[0])
+      allLatLngs.forEach((ll: any) => bounds.extend(ll))
+      mapInstance.current.fitBounds(bounds, { padding: 60 })
+    }
+  }, [missionPlan, currentWpIndex])
+
+  // ── 기체 위치 → 현재 웨이포인트 자동 추적 ──────────────────
+  useEffect(() => {
+    if (!missionPlan || !dronePosition) return
+    const { lat: dLat, lng: dLng } = dronePosition
+    if (typeof dLat !== "number" || typeof dLng !== "number") return
+
+    // 가장 가까운 미완료 웨이포인트 찾기
+    let minDist = Infinity
+    let closestIdx = -1
+    missionPlan.waypoints.forEach((wp, i) => {
+      const d = haversineM(dLat, dLng, wp.lat, wp.lng)
+      if (d < minDist) {
+        minDist = d
+        closestIdx = i
+      }
+    })
+    // 30m 이내면 해당 WP를 현재로 설정
+    if (minDist < 30) setCurrentWpIndex(closestIdx)
+  }, [dronePosition, missionPlan])
+
+  // ── .plan 파일 업로드 핸들러 ────────────────────────────────
+  const handlePlanFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setMissionError(null)
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const json = JSON.parse(ev.target?.result as string)
+        const plan = parseQGCPlan(json)
+        if (!plan) {
+          setMissionError(
+            "웨이포인트를 찾을 수 없습니다. QGC .plan 파일인지 확인하세요.",
+          )
+          return
+        }
+        setMissionPlan(plan)
+        setCurrentWpIndex(-1)
+      } catch {
+        setMissionError("파일 파싱 실패. 올바른 JSON 형식인지 확인하세요.")
+      }
+    }
+    reader.readAsText(file)
+    // 같은 파일 재업로드 허용
+    e.target.value = ""
+  }
+
+  const clearMission = () => {
+    setMissionPlan(null)
+    setCurrentWpIndex(-1)
+    setMissionError(null)
+  }
+
   return (
     <div ref={mapContainerRef} className="relative flex h-full w-full flex-col">
       {/* 검색창 — 기체 연결 시 숨김 */}
@@ -1302,6 +1744,73 @@ export function NaverMap({
               {satellites < 10 ? "불량" : satellites < 25 ? "보통" : "양호"} (
               {satellites})
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────
+          ★ 미션 플랜 업로드 버튼 (좌측 중단)
+             — 미션 없을 때: 업로드 버튼
+             — 미션 있을 때: 미션 정보 카드
+          ───────────────────────────────────────────── */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".plan,.json"
+        className="hidden"
+        onChange={handlePlanFileUpload}
+      />
+
+      {/* 미션 미로딩 상태: 업로드 버튼 */}
+      {!missionPlan && (
+        <div
+          className="absolute left-3 z-50"
+          style={{
+            top: isDroneConnected ? "7.5rem" : "4rem",
+            marginTop: isDroneConnected ? "8rem" : "0",
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 rounded-xl border border-blue-500/40 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md transition hover:bg-blue-950/80"
+            >
+              <Upload className="h-3.5 w-3.5 text-blue-400" />
+              <span className="font-semibold text-blue-300">
+                미션 .plan 업로드
+              </span>
+            </button>
+            {missionError && (
+              <div className="max-w-[200px] rounded-xl border border-red-500/40 bg-red-950/80 px-3 py-2 text-[10px] text-red-300 shadow-lg backdrop-blur-md">
+                ⚠ {missionError}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 미션 로딩 상태: 미션 정보 카드 */}
+      {missionPlan && (
+        <div
+          className="absolute left-3 z-50"
+          style={{ top: isDroneConnected ? "calc(7.5rem + 8.5rem)" : "4rem" }}
+        >
+          <div className="flex flex-col gap-2">
+            <MissionInfoCard
+              plan={missionPlan}
+              onClear={clearMission}
+              currentWpIndex={currentWpIndex}
+            />
+            {/* 재업로드 버튼 */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-[10px] text-white/40 shadow-lg backdrop-blur-md transition hover:text-blue-300"
+            >
+              <Upload className="h-3 w-3" />
+              다른 파일 불러오기
+            </button>
           </div>
         </div>
       )}
