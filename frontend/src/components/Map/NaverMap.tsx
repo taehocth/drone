@@ -272,7 +272,7 @@ function SafetyBanner({
 }
 
 // ─────────────────────────────────────────────────────────────
-// 좌하단: 배터리 + RTL 가이드 카드
+// 좌하단: 추적 버튼 + 배터리 + RTL 가이드 카드 (세로 묶음)
 // ─────────────────────────────────────────────────────────────
 function BatteryGuideCard({
   battery,
@@ -890,7 +890,7 @@ function haversineM(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 미션 정보 카드 (QGC에서 자동 수신된 미션 표시)
+// 미션 정보 카드
 // ─────────────────────────────────────────────────────────────
 function MissionInfoCard({
   plan,
@@ -1039,7 +1039,7 @@ export function NaverMap({
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // ── ★ 미션 플랜 상태 (QGC에서 자동 수신) ──────────────────
+  // ── 미션 플랜 상태 (QGC에서 자동 수신) ──────────────────────
   const [missionPlan, setMissionPlan] = useState<MissionPlan | null>(null)
   const [currentWpIndex, setCurrentWpIndex] = useState(-1)
   const missionPolylineRef = useRef<any>(null)
@@ -1052,12 +1052,11 @@ export function NaverMap({
     weatherData?.windSpeed,
   )
 
-  // ── ★ QGC 미션 자동 수신 ──────────────────────────────────
+  // ── QGC 미션 자동 수신 ────────────────────────────────────────
   useEffect(() => {
     const onMissionUpdate = (e: CustomEvent) => {
       const { waypoints } = e.detail
       if (!waypoints?.length) return
-
       let totalDistanceM = 0
       for (let i = 1; i < waypoints.length; i++) {
         totalDistanceM += haversineM(
@@ -1070,7 +1069,6 @@ export function NaverMap({
       setMissionPlan({ waypoints, totalDistanceM })
       setCurrentWpIndex(-1)
     }
-
     window.addEventListener("missionUpdate", onMissionUpdate as EventListener)
     return () =>
       window.removeEventListener(
@@ -1371,7 +1369,7 @@ export function NaverMap({
     }
   }, [flightPath])
 
-  // ── 미션 지도 렌더링 ──────────────────────────────────────
+  // ── 미션 지도 렌더링 ──────────────────────────────────────────
   useEffect(() => {
     const naver = (window as any).naver
     if (!naver || !mapInstance.current) return
@@ -1466,7 +1464,7 @@ export function NaverMap({
     }
   }, [missionPlan, currentWpIndex])
 
-  // ── 기체 위치 → 현재 웨이포인트 자동 추적 ──────────────────
+  // ── 기체 위치 → 현재 웨이포인트 자동 추적 ────────────────────
   useEffect(() => {
     if (!missionPlan || !dronePosition) return
     const { lat: dLat, lng: dLng } = dronePosition
@@ -1604,7 +1602,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ★ 미션 정보 카드 (QGC 자동 수신 시 표시) */}
+      {/* 미션 정보 카드 (QGC 자동 수신 시 표시) */}
       {missionPlan && (
         <div
           className="absolute left-3 z-50"
@@ -1618,9 +1616,27 @@ export function NaverMap({
         </div>
       )}
 
-      {/* 좌하단: 배터리 가이드 카드 */}
+      {/* ★ 좌하단: 추적 버튼 + 배터리 가이드 카드 (세로로 묶어서 겹침 방지) */}
       {isDroneConnected && (
-        <div className="absolute bottom-4 left-3 z-50">
+        <div className="absolute bottom-4 left-3 z-50 flex flex-col items-start gap-2">
+          {/* 추적 버튼 — 배터리 카드 바로 위 */}
+          <button
+            onClick={() => setIsTrackingDrone((v) => !v)}
+            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${
+              isTrackingDrone
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-slate-600/80 backdrop-blur-sm hover:bg-slate-700"
+            }`}
+          >
+            {isTrackingDrone ? (
+              <Navigation className="h-4 w-4" />
+            ) : (
+              <NavigationOff className="h-4 w-4" />
+            )}
+            {isTrackingDrone ? "추적 중" : "추적 해제"}
+          </button>
+
+          {/* 배터리 + RTL 가이드 카드 */}
           <BatteryGuideCard
             battery={droneStats?.battery}
             altitude={droneStats?.altitude}
@@ -1628,7 +1644,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* 우하단: 체크리스트 + 비행 시간 */}
+      {/* 우하단: 비행 시간 + 체크리스트 */}
       {isDroneConnected && (
         <div className="absolute bottom-4 right-3 z-50 flex flex-col items-end gap-2">
           <FlightStatusMiniCard
@@ -1658,25 +1674,6 @@ export function NaverMap({
             precipitation={weatherData?.precipitationAmount ?? null}
           />
         </div>
-      )}
-
-      {/* 드론 추적 버튼 */}
-      {isDroneConnected && (
-        <button
-          onClick={() => setIsTrackingDrone((v) => !v)}
-          className={`absolute bottom-16 left-3 z-50 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${
-            isTrackingDrone
-              ? "bg-blue-600 hover:bg-blue-700"
-              : "bg-slate-600/80 backdrop-blur-sm hover:bg-slate-700"
-          }`}
-        >
-          {isTrackingDrone ? (
-            <Navigation className="h-4 w-4" />
-          ) : (
-            <NavigationOff className="h-4 w-4" />
-          )}
-          {isTrackingDrone ? "추적 중" : "추적 해제"}
-        </button>
       )}
 
       {/* 전체화면 버튼 */}
