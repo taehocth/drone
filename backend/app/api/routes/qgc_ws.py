@@ -46,9 +46,7 @@ async def push_telemetry(data: dict = Body(...)):
 
 
 # =====================================================
-# ★ 미션 push (agent → 서버, 별도 엔드포인트)
-#   agent 가 텔레메트리 payload 에 미션을 포함해서 보내는 경우엔
-#   이 엔드포인트 없이도 동작하지만, 별도로 push 할 때도 사용 가능
+# 미션 push (agent → 서버)
 # =====================================================
 
 @router.post("/mission/push")
@@ -72,7 +70,7 @@ async def push_mission(payload: MissionPushPayload):
 
 
 # =====================================================
-# ★ 미션 조회 REST API (프론트에서 직접 GET 가능)
+# 미션 조회 REST API
 # =====================================================
 
 @router.get("/mission/{drone_id}")
@@ -106,7 +104,27 @@ async def get_mission_by_lte(lte_ip: str):
 
 
 # =====================================================
-# WebSocket (프론트 → 실시간 텔레메트리 + 미션 수신)
+# ★ 비행 이벤트 조회 REST API
+# =====================================================
+
+@router.get("/events/{drone_id}")
+async def get_events(drone_id: str):
+    """
+    프론트 페이지 첫 로드 시 과거 이벤트 로그 복원용.
+    GET /api/v1/qgc/events/{drone_id}
+    ※ pop 하지 않으므로 WebSocket 전송과 중복될 수 있음 — 프론트에서 중복 제거 필요.
+    """
+    registry = get_vehicle_registry()
+    events   = registry.get_all_events(drone_id)
+    return {
+        "drone_id":    drone_id,
+        "events":      events,
+        "event_count": len(events),
+    }
+
+
+# =====================================================
+# WebSocket (프론트 → 실시간 텔레메트리 + 미션 + 이벤트 수신)
 # =====================================================
 
 @router.websocket("/ws/qgc")
@@ -115,7 +133,7 @@ async def qgc_ws(websocket: WebSocket):
     쿼리 파라미터: ?lte_ip=3.36.81.238:51067
     프론트(DroneSimulation.tsx)가 lte_ip 로 드론을 구분해서 연결.
 
-    응답 payload 에 mission_waypoints 가 포함됨:
+    응답 payload:
     {
       "sysid": 1,
       "lte_ip": "...",
@@ -124,23 +142,24 @@ async def qgc_ws(websocket: WebSocket):
       ...
       "mission_waypoints": [
         { "index": 0, "command": 22, "lat": 36.788, "lng": 126.466, "alt": 50 },
-        { "index": 1, "command": 16, "lat": 36.791, "lng": 126.470, "alt": 50 },
+        ...
+      ],
+      "flight_events": [
+        { "type": "mode_change", "level": "info", "message": "비행 모드 변경 → Auto", "time": "14:23:01" },
+        { "type": "statustext",  "level": "caution", "message": "Low Battery", "time": "14:25:11" },
         ...
       ]
     }
     """
     await websocket.accept()
 
-    # lte_ip 파라미터로 드론 식별
     lte_ip   = websocket.query_params.get("lte_ip")
     registry = get_vehicle_registry()
 
-    last_payload      = None
-    last_mission_hash = None   # 미션 변경 감지용
+    last_payload = None
 
     try:
         while True:
-            # lte_ip 가 있으면 해당 드론만, 없으면 가장 최근 드론
             if lte_ip:
                 payload = registry.latest_flattened_by_lte_ip(lte_ip)
             else:
@@ -150,19 +169,25 @@ async def qgc_ws(websocket: WebSocket):
                 last_payload = payload
 
             if last_payload:
-                out             = dict(last_payload)
+                out = dict(last_payload)
                 out["server_ts"] = datetime.now(
                     timezone(timedelta(hours=9))
                 ).isoformat()
 
-                # ★ mission_waypoints 는 manager 에서 이미 포함시켜 줌
-                # 없으면 빈 배열로 보장
+                # 미션 웨이포인트 보장
                 if "mission_waypoints" not in out:
                     out["mission_waypoints"] = []
 
+                # ★ 비행 이벤트 포함 (소비 후 초기화 — 중복 전송 방지)
+                drone_id = out.get("drone_id")
+                if drone_id:
+                    out["flight_events"] = registry.pop_events(drone_id)
+                else:
+                    out["flight_events"] = []
+
                 await websocket.send_json(out)
 
-            await asyncio.sleep(0.1)   # 10Hz
+            await asyncio.sleep(0.1)  # 10Hz
 
     except WebSocketDisconnect:
         pass

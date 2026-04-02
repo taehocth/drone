@@ -2,6 +2,7 @@ import os
 import time
 import threading
 import math
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 
 import requests
@@ -12,9 +13,9 @@ from pymavlink import mavutil
 # CONFIG
 # =====================================================
 
-SERVER_BASE_URL = os.getenv("SERVER_BASE_URL", "https://drone-5-2qlc.onrender.com")
+SERVER_BASE_URL    = os.getenv("SERVER_BASE_URL", "https://drone-5-2qlc.onrender.com")
 TELEMETRY_PUSH_URL = f"{SERVER_BASE_URL}/api/v1/qgc/telemetry/push"
-MISSION_PUSH_URL   = f"{SERVER_BASE_URL}/api/v1/qgc/mission/push"   # ★ 추가
+MISSION_PUSH_URL   = f"{SERVER_BASE_URL}/api/v1/qgc/mission/push"
 
 PUSH_INTERVAL_SEC          = 0.1
 HTTP_TIMEOUT_SEC           = 5.0
@@ -22,11 +23,11 @@ VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 LTE_HEARTBEAT_TIMEOUT_SEC  = 8.0
 LTE_RETRY_SEC              = 5.0
 
-MISSION_DOWNLOAD_TIMEOUT_SEC = 3.0   # 웨이포인트 1개당 응답 대기
-MISSION_RETRY_INTERVAL_SEC   = 30.0  # 미션 다운로드 재시도 주기
+MISSION_DOWNLOAD_TIMEOUT_SEC = 3.0
+MISSION_RETRY_INTERVAL_SEC   = 30.0
 
 # =====================================================
-# 기체 목록 (포트 / 이름 여기서 관리)
+# 기체 목록
 # =====================================================
 
 DRONE_LIST = [
@@ -72,9 +73,12 @@ def fmt_num(v, unit: str = "") -> str:
         return str(v)
 
 
-# MAVLink command → 라벨 (디버그 출력용)
 def cmd_label(cmd: int) -> str:
     return {22: "TAKEOFF", 21: "LAND", 20: "RTL", 16: "WAYPOINT"}.get(cmd, f"CMD{cmd}")
+
+
+def _kst_now() -> str:
+    return datetime.now(timezone(timedelta(hours=9))).strftime("%H:%M:%S")
 
 
 # =====================================================
@@ -88,8 +92,8 @@ class DroneAgent:
         self.lte_connection = lte_connection
         self.lte_ip         = lte_ip
 
-        self.mav:   Optional[mavutil.mavfile] = None
-        self.sysid: Optional[int]             = None
+        self.mav:    Optional[mavutil.mavfile] = None
+        self.sysid:  Optional[int]             = None
         self.running = True
 
         self._cache: Dict[str, Any] = {
@@ -109,14 +113,39 @@ class DroneAgent:
             "gps":      0.0,
         }
 
-        # ★ 미션 캐시
+        # ── 미션 캐시 ──────────────────────────────────────
         self._mission_waypoints: List[Dict[str, Any]] = []
         self._mission_lock      = threading.Lock()
-        self._last_mission_try  = 0.0   # 마지막 다운로드 시도 시각
+        self._last_mission_try  = 0.0
 
-        self._lock        = threading.Lock()
+        # ── 비행 이벤트 ────────────────────────────────────
+        self._flight_events:   List[Dict[str, Any]] = []
+        self._events_lock      = threading.Lock()
+        self._last_mode:       Optional[str] = None
+        self._last_gps_fix:    Optional[int] = None
+        self._battery_warned:  set           = set()
+
+        self._lock         = threading.Lock()
         self._last_push_at = 0.0
-        self._session     = requests.Session()
+        self._session      = requests.Session()
+
+    # -------------------------------------------------
+    # 이벤트 헬퍼
+    # -------------------------------------------------
+    def _add_event(self, event: Dict[str, Any]) -> None:
+        """이벤트 생성 — 최대 100개 유지"""
+        event["time"] = _kst_now()
+        with self._events_lock:
+            self._flight_events.append(event)
+            if len(self._flight_events) > 100:
+                self._flight_events = self._flight_events[-100:]
+
+    def pop_events(self) -> List[Dict[str, Any]]:
+        """push_loop 에서 호출 — 쌓인 이벤트를 꺼내고 초기화"""
+        with self._events_lock:
+            events = list(self._flight_events)
+            self._flight_events = []
+        return events
 
     # -------------------------------------------------
     # Connect
@@ -127,7 +156,7 @@ class DroneAgent:
             mav = mavutil.mavlink_connection(self.lte_connection)
             mav.wait_heartbeat(timeout=LTE_HEARTBEAT_TIMEOUT_SEC)
 
-            hb = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
+            hb    = mav.recv_match(type="HEARTBEAT", blocking=True, timeout=2)
             sysid = None
             if hb is not None:
                 try:
@@ -146,9 +175,14 @@ class DroneAgent:
 
             print(f"[{self.drone_id}] Connected! sysid={self.sysid} lte_ip={self.lte_ip}")
 
-            # ★ 연결 직후 미션 다운로드 시도
-            self._try_download_mission()
+            self._add_event({
+                "type":    "connected",
+                "level":   "success",
+                "message": f"드론 연결됨 — sysid={self.sysid}",
+            })
 
+            # 연결 직후 미션 다운로드
+            self._try_download_mission()
             return True
 
         except Exception as e:
@@ -158,24 +192,17 @@ class DroneAgent:
             return False
 
     # -------------------------------------------------
-    # ★ 미션 다운로드 (MISSION_REQUEST_LIST → MISSION_ITEM_INT)
+    # 미션 다운로드
     # -------------------------------------------------
     def _try_download_mission(self) -> None:
-        """
-        기체에서 미션 웨이포인트 전체를 MAVLink로 내려받아
-        self._mission_waypoints 에 저장하고 서버로 push한다.
-        실패해도 예외를 전파하지 않는다 (텔레메트리 루프와 독립).
-        """
         if self.mav is None:
             return
 
-        now = now_ts()
-        self._last_mission_try = now
+        self._last_mission_try = now_ts()
 
         try:
             mav = self.mav
 
-            # 1) 미션 개수 요청
             mav.mav.mission_request_list_send(
                 mav.target_system,
                 mav.target_component,
@@ -201,7 +228,6 @@ class DroneAgent:
             print(f"[{self.drone_id}] Mission: downloading {count} items...")
             waypoints: List[Dict[str, Any]] = []
 
-            # 2) 개별 웨이포인트 요청
             for i in range(count):
                 mav.mav.mission_request_int_send(
                     mav.target_system,
@@ -215,15 +241,13 @@ class DroneAgent:
                 )
                 if item is None:
                     print(f"[{self.drone_id}] Mission: timeout at item {i}")
-                    return   # 중간 실패 시 불완전 저장 방지
+                    return
 
-                # MISSION_ITEM_INT: x=lat*1e7, y=lon*1e7, z=alt(m)
                 lat = float(item.x) / 1e7
                 lng = float(item.y) / 1e7
                 alt = float(item.z)
                 cmd = int(item.command)
 
-                # 유효 좌표만 포함 (home 등 lat=0,lng=0 제외)
                 if abs(lat) < 0.0001 and abs(lng) < 0.0001:
                     continue
 
@@ -235,11 +259,10 @@ class DroneAgent:
                     "alt":     alt,
                 })
 
-            # 3) 완료 ACK
             mav.mav.mission_ack_send(
                 mav.target_system,
                 mav.target_component,
-                0,   # MAV_MISSION_ACCEPTED
+                0,  # MAV_MISSION_ACCEPTED
             )
 
             with self._mission_lock:
@@ -255,21 +278,19 @@ class DroneAgent:
                     f"lat={wp['lat']:.6f} lng={wp['lng']:.6f} alt={wp['alt']:.1f}m"
                 )
 
-            # 4) 서버로 push
             self._push_mission()
 
         except Exception as e:
             print(f"[{self.drone_id}] Mission download error: {e}")
 
     def _push_mission(self) -> None:
-        """다운로드된 미션 웨이포인트를 서버 REST API로 push"""
         with self._mission_lock:
             waypoints = list(self._mission_waypoints)
 
         payload = {
-            "drone_id":   self.drone_id,
-            "lte_ip":     self.lte_ip,
-            "waypoints":  waypoints,
+            "drone_id":  self.drone_id,
+            "lte_ip":    self.lte_ip,
+            "waypoints": waypoints,
         }
         try:
             res = self._session.post(
@@ -282,6 +303,13 @@ class DroneAgent:
         except Exception as e:
             print(f"[{self.drone_id}] Mission push failed: {e}")
 
+        # 미션 동기화 완료 이벤트
+        self._add_event({
+            "type":    "mission_uploaded",
+            "level":   "success",
+            "message": f"미션 플랜 동기화 완료 — {len(waypoints)}개 웨이포인트",
+        })
+
     # -------------------------------------------------
     # Listen Loop
     # -------------------------------------------------
@@ -292,24 +320,7 @@ class DroneAgent:
                 msg = self.mav.recv_match(blocking=True, timeout=2)
                 if not msg:
                     continue
-
-                # ★ MISSION_ITEM_INT / MISSION_CURRENT 처리
-                t = msg.get_type()
-                if t == "MISSION_CURRENT":
-                    # QGC가 미션을 업로드하면 자동 재다운로드
-                    # (일정 간격 이상 지났을 때만)
-                    elapsed = now_ts() - self._last_mission_try
-                    if elapsed > MISSION_RETRY_INTERVAL_SEC:
-                        print(
-                            f"[{self.drone_id}] MISSION_CURRENT received → re-download"
-                        )
-                        threading.Thread(
-                            target=self._try_download_mission,
-                            daemon=True,
-                        ).start()
-
                 self._ingest(msg)
-
             except Exception as e:
                 print(f"[{self.drone_id}] listen error: {e}")
                 break
@@ -339,19 +350,57 @@ class DroneAgent:
                 self._last_update["attitude"] = ts
 
             elif t == "SYS_STATUS":
+                remaining = int(msg.battery_remaining)   if msg.battery_remaining is not None else None
+                voltage   = (float(msg.voltage_battery) / 1000.0) if msg.voltage_battery is not None else None
                 self._cache["battery"] = {
-                    "voltage":   (float(msg.voltage_battery) / 1000.0) if msg.voltage_battery is not None else None,
-                    "current":   (float(msg.current_battery) / 100.0)  if msg.current_battery is not None else None,
-                    "remaining": int(msg.battery_remaining)             if msg.battery_remaining is not None else None,
+                    "voltage":   voltage,
+                    "current":   (float(msg.current_battery) / 100.0) if msg.current_battery is not None else None,
+                    "remaining": remaining,
                 }
                 self._last_update["battery"] = ts
 
+                # ── 배터리 경고 이벤트 ──────────────────────
+                if remaining is not None:
+                    if remaining <= 20 and 20 not in self._battery_warned:
+                        self._battery_warned.add(20)
+                        self._add_event({
+                            "type":    "battery_critical",
+                            "level":   "danger",
+                            "message": f"배터리 위험 — {remaining}% ({voltage:.1f}V) 즉시 귀환",
+                        })
+                    elif remaining <= 35 and 35 not in self._battery_warned:
+                        self._battery_warned.add(35)
+                        self._add_event({
+                            "type":    "battery_low",
+                            "level":   "caution",
+                            "message": f"배터리 부족 — {remaining}% ({voltage:.1f}V) 귀환 준비",
+                        })
+                    elif remaining > 40:
+                        self._battery_warned.clear()
+
             elif t == "GPS_RAW_INT":
+                fix_type = int(msg.fix_type)           if msg.fix_type           is not None else None
+                sats     = int(msg.satellites_visible) if msg.satellites_visible is not None else None
                 self._cache["gps"] = {
-                    "fix_type":   int(msg.fix_type)           if msg.fix_type           is not None else None,
-                    "satellites": int(msg.satellites_visible) if msg.satellites_visible is not None else None,
+                    "fix_type":   fix_type,
+                    "satellites": sats,
                 }
                 self._last_update["gps"] = ts
+
+                # ── GPS fix 변경 이벤트 ─────────────────────
+                if fix_type != self._last_gps_fix:
+                    self._last_gps_fix = fix_type
+                    fix_map = {
+                        0: "No GPS", 1: "No Fix", 2: "2D Fix",
+                        3: "3D Fix", 4: "DGPS",   5: "RTK Float", 6: "RTK Fixed",
+                    }
+                    fix_label = fix_map.get(fix_type, str(fix_type))
+                    level     = "info" if (fix_type or 0) >= 3 else "caution"
+                    self._add_event({
+                        "type":    "gps_status",
+                        "level":   level,
+                        "message": f"GPS {fix_label} — {sats}위성",
+                    })
 
             elif t == "GLOBAL_POSITION_INT":
                 rel  = (float(msg.relative_alt) / 1000.0) if msg.relative_alt is not None else None
@@ -396,6 +445,84 @@ class DroneAgent:
                 except Exception:
                     pass
 
+        # ── lock 바깥에서 처리하는 이벤트들 ─────────────────
+
+        if t == "STATUSTEXT":
+            # QGC 로그창과 동일한 소스
+            severity_map = {
+                0: "danger", 1: "danger", 2: "danger", 3: "danger",
+                4: "caution", 5: "info", 6: "info", 7: "debug",
+            }
+            text  = (msg.text or "").rstrip('\x00')
+            level = severity_map.get(int(msg.severity), "info")
+            self._add_event({
+                "type":     "statustext",
+                "level":    level,
+                "message":  text,
+                "severity": int(msg.severity),
+            })
+
+        elif t == "HEARTBEAT":
+            # 비행 모드 변경 감지
+            try:
+                mode = mavutil.mode_string_v10(msg)
+                if mode and mode != self._last_mode:
+                    self._last_mode = mode
+                    self._add_event({
+                        "type":    "mode_change",
+                        "level":   "info",
+                        "message": f"비행 모드 변경 → {mode}",
+                        "detail":  mode,
+                    })
+            except Exception:
+                pass
+
+        elif t == "MISSION_ITEM_REACHED":
+            self._add_event({
+                "type":    "waypoint_reached",
+                "level":   "info",
+                "message": f"웨이포인트 {int(msg.seq) + 1} 도달",
+                "index":   int(msg.seq),
+            })
+
+        elif t == "MISSION_CURRENT":
+            self._add_event({
+                "type":    "mission_current",
+                "level":   "info",
+                "message": f"현재 목표 → WP {int(msg.seq) + 1}",
+                "index":   int(msg.seq),
+            })
+            # QGC 미션 업로드 감지 → 재다운로드
+            elapsed = now_ts() - self._last_mission_try
+            if elapsed > MISSION_RETRY_INTERVAL_SEC:
+                print(f"[{self.drone_id}] MISSION_CURRENT → re-download")
+                threading.Thread(
+                    target=self._try_download_mission, daemon=True
+                ).start()
+
+        elif t == "HOME_POSITION":
+            lat = float(msg.latitude)  / 1e7
+            lng = float(msg.longitude) / 1e7
+            self._add_event({
+                "type":    "home_set",
+                "level":   "info",
+                "message": f"홈 위치 설정 — {lat:.6f}, {lng:.6f}",
+            })
+
+        elif t == "MISSION_ACK":
+            # QGC → 드론 미션 업로드 완료 시 ACK 발생
+            if int(msg.type) == 0:  # MAV_MISSION_ACCEPTED
+                self._add_event({
+                    "type":    "mission_ack",
+                    "level":   "success",
+                    "message": "QGC 미션 업로드 확인 — 경로 재동기화 중",
+                })
+                # 즉시 재다운로드 (MISSION_CURRENT 간격 제한 우회)
+                self._last_mission_try = 0.0
+                threading.Thread(
+                    target=self._try_download_mission, daemon=True
+                ).start()
+
     # -------------------------------------------------
     # Build snapshot
     # -------------------------------------------------
@@ -430,9 +557,12 @@ class DroneAgent:
                 for k, v in self._last_update.items()
             }
 
-        # ★ 미션 웨이포인트 포함 (별도 lock)
+        # 미션 웨이포인트
         with self._mission_lock:
             snap["mission_waypoints"] = list(self._mission_waypoints)
+
+        # ★ 비행 이벤트 (소비 후 초기화)
+        snap["flight_events"] = self.pop_events()
 
         return snap
 
@@ -456,7 +586,8 @@ class DroneAgent:
                             f"[{self.drone_id}] PUSH status={res.status_code} "
                             f"alt={fmt_num(pos.get('alt'), 'm')} "
                             f"speed={fmt_num(snap.get('speed_m_s'), 'm/s')} "
-                            f"wp={len(snap.get('mission_waypoints', []))}"
+                            f"wp={len(snap.get('mission_waypoints', []))} "
+                            f"events={len(snap.get('flight_events', []))}"
                         )
                 except Exception as e:
                     print(f"[{self.drone_id}] Push failed: {e}")
@@ -464,7 +595,7 @@ class DroneAgent:
             time.sleep(PUSH_INTERVAL_SEC)
 
     # -------------------------------------------------
-    # Run (자동 재연결 포함)
+    # Run (자동 재연결)
     # -------------------------------------------------
     def run(self):
         while True:
@@ -482,9 +613,14 @@ class DroneAgent:
             else:
                 print(f"[{self.drone_id}] Retry in {LTE_RETRY_SEC:.0f}s...")
 
-            # 재연결 시 미션 캐시 초기화
+            # 재연결 시 캐시 초기화
             with self._mission_lock:
                 self._mission_waypoints = []
+            with self._events_lock:
+                self._flight_events = []
+            self._last_mode      = None
+            self._last_gps_fix   = None
+            self._battery_warned = set()
 
             time.sleep(LTE_RETRY_SEC)
 

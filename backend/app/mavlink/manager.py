@@ -31,11 +31,15 @@ class VehicleRegistry:
         # drone_id 기준 텔레메트리 저장
         self._vehicles_by_drone_id: Dict[str, Dict[str, Any]] = {}
 
-        # lte_ip -> drone_id 역인덱스
+        # lte_ip → drone_id 역인덱스
         self._drone_id_by_lte_ip: Dict[str, str] = {}
 
-        # ★ 미션 웨이포인트 저장 (drone_id 기준)
+        # 미션 웨이포인트 (drone_id 기준)
         self._mission_by_drone_id: Dict[str, List[Dict[str, Any]]] = {}
+
+        # ★ 비행 이벤트 (drone_id 기준, 최대 500개)
+        self._events_by_drone_id: Dict[str, List[Dict[str, Any]]] = {}
+        self._events_lock = Lock()
 
     # -------------------------------------------------
     # 텔레메트리 수신 (agent → push)
@@ -63,23 +67,27 @@ class VehicleRegistry:
             if lte_ip:
                 self._drone_id_by_lte_ip[lte_ip] = drone_id
 
-            # ★ 텔레메트리 payload 안에 미션 웨이포인트가 포함된 경우 함께 저장
+            # 텔레메트리 payload 안에 미션이 포함된 경우 함께 저장
             wps = data.get("mission_waypoints")
             if isinstance(wps, list) and len(wps) > 0:
                 self._mission_by_drone_id[drone_id] = wps
 
+        # ★ 비행 이벤트 수집 (별도 lock)
+        events = data.get("flight_events")
+        if isinstance(events, list) and events:
+            with self._events_lock:
+                bucket = self._events_by_drone_id.setdefault(drone_id, [])
+                bucket.extend(events)
+                # 최대 500개 유지
+                if len(bucket) > 500:
+                    self._events_by_drone_id[drone_id] = bucket[-500:]
+
     # -------------------------------------------------
-    # ★ 미션 웨이포인트 직접 저장 (REST push 엔드포인트용)
+    # 미션 웨이포인트 직접 저장 (REST push 엔드포인트용)
     # -------------------------------------------------
     def ingest_mission(self, drone_id: str, lte_ip: str, waypoints: List[Dict[str, Any]]) -> None:
-        """
-        agent 가 /mission/push 로 별도 전송할 때 사용.
-        텔레메트리 push 에 포함된 경우에도 ingest_from_agent 에서 처리되므로
-        이 메서드는 별도 엔드포인트가 있을 때만 호출된다.
-        """
         with self._lock:
             self._mission_by_drone_id[drone_id] = waypoints
-            # lte_ip → drone_id 역인덱스도 갱신
             if lte_ip and drone_id:
                 self._drone_id_by_lte_ip[lte_ip] = drone_id
 
@@ -96,6 +104,27 @@ class VehicleRegistry:
             if not drone_id:
                 return []
             return list(self._mission_by_drone_id.get(drone_id, []))
+
+    # -------------------------------------------------
+    # ★ 비행 이벤트 조회
+    # -------------------------------------------------
+    def pop_events(self, drone_id: str) -> List[Dict[str, Any]]:
+        """
+        WebSocket 루프에서 호출.
+        쌓인 이벤트를 반환하고 버킷을 초기화한다 (중복 전송 방지).
+        """
+        with self._events_lock:
+            events = list(self._events_by_drone_id.get(drone_id, []))
+            self._events_by_drone_id[drone_id] = []
+        return events
+
+    def get_all_events(self, drone_id: str) -> List[Dict[str, Any]]:
+        """
+        REST GET 용 — 초기화하지 않고 전체 반환.
+        프론트 페이지 첫 로드 시 과거 로그 복원에 사용.
+        """
+        with self._events_lock:
+            return list(self._events_by_drone_id.get(drone_id, []))
 
     # -------------------------------------------------
     # 온라인 판정
@@ -124,7 +153,6 @@ class VehicleRegistry:
                 return None
             out = dict(item)
             out["online"] = True
-            # ★ 미션 웨이포인트 포함
             out["mission_waypoints"] = list(
                 self._mission_by_drone_id.get(drone_id, [])
             )
@@ -142,7 +170,6 @@ class VehicleRegistry:
                 return None
             out = dict(item)
             out["online"] = True
-            # ★ 미션 웨이포인트 포함
             out["mission_waypoints"] = list(
                 self._mission_by_drone_id.get(drone_id, [])
             )
@@ -154,8 +181,8 @@ class VehicleRegistry:
             if not self._vehicles_by_drone_id:
                 return None
 
-            latest_item  = None
-            latest_dt    = None
+            latest_item = None
+            latest_dt   = None
 
             for item in self._vehicles_by_drone_id.values():
                 dt = _parse_iso(item.get("last_seen"))
@@ -168,10 +195,9 @@ class VehicleRegistry:
             if not latest_item:
                 return None
 
-            out          = dict(latest_item)
+            out           = dict(latest_item)
             out["online"] = self._is_online(latest_item)
-            drone_id     = latest_item.get("drone_id")
-            # ★ 미션 웨이포인트 포함
+            drone_id      = latest_item.get("drone_id")
             out["mission_waypoints"] = list(
                 self._mission_by_drone_id.get(drone_id, [])
             ) if drone_id else []
@@ -185,21 +211,24 @@ class VehicleRegistry:
                 battery = item.get("battery")  or {}
                 gps     = item.get("gps")      or {}
                 rows.append({
-                    "drone_id":      drone_id,
-                    "vehicle_name":  item.get("vehicle_name"),
-                    "lte_ip":        item.get("lte_ip"),
-                    "sysid":         item.get("sysid"),
-                    "last_seen":     item.get("last_seen"),
-                    "online":        self._is_online(item),
-                    "battery":       battery.get("remaining"),
-                    "gps_fix_type":  gps.get("fix_type"),
-                    "gps_satellites":gps.get("satellites"),
-                    "lat":           pos.get("lat"),
-                    "lon":           pos.get("lon"),
-                    "alt":           pos.get("alt"),
-                    # ★ 미션 웨이포인트 수
+                    "drone_id":       drone_id,
+                    "vehicle_name":   item.get("vehicle_name"),
+                    "lte_ip":         item.get("lte_ip"),
+                    "sysid":          item.get("sysid"),
+                    "last_seen":      item.get("last_seen"),
+                    "online":         self._is_online(item),
+                    "battery":        battery.get("remaining"),
+                    "gps_fix_type":   gps.get("fix_type"),
+                    "gps_satellites": gps.get("satellites"),
+                    "lat":            pos.get("lat"),
+                    "lon":            pos.get("lon"),
+                    "alt":            pos.get("alt"),
                     "mission_wp_count": len(
                         self._mission_by_drone_id.get(drone_id, [])
+                    ),
+                    # ★ 이벤트 수 (참고용)
+                    "event_count": len(
+                        self._events_by_drone_id.get(drone_id, [])
                     ),
                 })
             rows.sort(key=lambda x: x.get("last_seen") or "", reverse=True)
