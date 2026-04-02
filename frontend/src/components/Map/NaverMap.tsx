@@ -18,16 +18,11 @@ import {
   PlaneLanding,
   Wind,
   Thermometer,
-  Signal,
-  Crosshair,
   Clock,
   TrendingDown,
-  TriangleAlert,
   Info,
-  Upload,
   Route,
   Trash2,
-  Flag,
 } from "lucide-react"
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
@@ -277,7 +272,7 @@ function SafetyBanner({
 }
 
 // ─────────────────────────────────────────────────────────────
-// 좌하단: 배터리 + RTL 가이드 카드 (초보 관제사용)
+// 좌하단: 배터리 + RTL 가이드 카드
 // ─────────────────────────────────────────────────────────────
 function BatteryGuideCard({
   battery,
@@ -288,7 +283,6 @@ function BatteryGuideCard({
 }) {
   if (battery == null) return null
 
-  // 배터리 레벨별 조언
   const guide =
     battery <= 20
       ? {
@@ -342,7 +336,6 @@ function BatteryGuideCard({
               icon: <Battery className="h-4 w-4 text-emerald-400" />,
             }
 
-  // 배터리 바 색상
   const barColor =
     battery <= 20
       ? "bg-red-500"
@@ -356,7 +349,6 @@ function BatteryGuideCard({
     <div
       className={`rounded-2xl border shadow-2xl backdrop-blur-md ${guide.bg} w-[220px]`}
     >
-      {/* 헤더 */}
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
         {guide.icon}
         <span className={`text-xs font-bold ${guide.titleColor}`}>
@@ -372,7 +364,6 @@ function BatteryGuideCard({
         </span>
       </div>
 
-      {/* 배터리 바 */}
       <div className="px-3 pt-2.5">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[10px] text-white/40">배터리 잔량</span>
@@ -388,7 +379,6 @@ function BatteryGuideCard({
             style={{ width: `${battery}%` }}
           />
         </div>
-        {/* 예비 마커 20% */}
         <div className="relative mt-0.5 h-2 w-full">
           <div
             className="absolute top-0 h-full w-px bg-red-400/60"
@@ -404,7 +394,6 @@ function BatteryGuideCard({
         </div>
       </div>
 
-      {/* 가이드 */}
       <div className="px-3 pb-3 pt-1.5">
         <p className="mb-1.5 text-[10px] leading-relaxed text-white/50">
           {guide.desc}
@@ -421,7 +410,6 @@ function BatteryGuideCard({
         </div>
       </div>
 
-      {/* 고도 보조 표시 */}
       {altitude != null && (
         <div className="border-t border-white/10 px-3 py-2">
           <div className="flex items-center justify-between">
@@ -438,7 +426,6 @@ function BatteryGuideCard({
               )}
             </span>
           </div>
-          {/* 고도 한계선 표시 바 */}
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
             <div
               className={`h-full rounded-full transition-all duration-500 ${getAltitudeColor(altitude).replace("text-", "bg-")}`}
@@ -479,10 +466,9 @@ function ChecklistCard({
   connected,
 }: ChecklistCardProps) {
   const [showWeather, setShowWeather] = useState(false)
-  const [collapsed, setCollapsed] = useState(false) // ★ 아코디언 상태
+  const [collapsed, setCollapsed] = useState(false)
 
   type CheckResult = "pass" | "warn" | "fail" | "unknown"
-
   interface CheckRow {
     icon: React.ReactNode
     label: string
@@ -494,10 +480,8 @@ function ChecklistCard({
   const checks: CheckRow[] = []
 
   if (!connected) {
-    // 미연결 상태 — 연결 가이드
     return (
       <div className="w-[220px] rounded-2xl border border-slate-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
-        {/* ★ 헤더 — 클릭으로 접기/펼치기 */}
         <button
           type="button"
           onClick={() => setCollapsed((v) => !v)}
@@ -540,7 +524,6 @@ function ChecklistCard({
     )
   }
 
-  // 배터리
   checks.push({
     icon: <Battery className="h-3.5 w-3.5" />,
     label: "배터리",
@@ -562,8 +545,6 @@ function ChecklistCard({
             ? "귀환 준비"
             : "정상",
   })
-
-  // 고도
   checks.push({
     icon: <ArrowUp className="h-3.5 w-3.5" />,
     label: "고도",
@@ -585,8 +566,6 @@ function ChecklistCard({
             ? "한계 접근"
             : "안전 고도",
   })
-
-  // 속도
   checks.push({
     icon: <Gauge className="h-3.5 w-3.5" />,
     label: "속도",
@@ -608,8 +587,6 @@ function ChecklistCard({
             ? "속도 주의"
             : "정상",
   })
-
-  // GNSS
   checks.push({
     icon: <Satellite className="h-3.5 w-3.5" />,
     label: "GNSS",
@@ -631,8 +608,6 @@ function ChecklistCard({
             ? "신호 보통"
             : "신호 양호",
   })
-
-  // 풍속
   if (windSpeed != null) {
     checks.push({
       icon: <Wind className="h-3.5 w-3.5" />,
@@ -651,7 +626,6 @@ function ChecklistCard({
   const passCount = checks.filter((c) => c.result === "pass").length
   const failCount = checks.filter((c) => c.result === "fail").length
   const warnCount = checks.filter((c) => c.result === "warn").length
-
   const overallResult: CheckResult =
     failCount > 0 ? "fail" : warnCount > 0 ? "warn" : "pass"
 
@@ -685,7 +659,6 @@ function ChecklistCard({
 
   return (
     <div className="w-[220px] overflow-hidden rounded-2xl border border-slate-600/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
-      {/* ★ 헤더 — 클릭으로 접기/펼치기 */}
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
@@ -717,7 +690,6 @@ function ChecklistCard({
 
       {!collapsed && (
         <>
-          {/* 체크 항목 목록 */}
           <div className="divide-y divide-white/5">
             {checks.map((check) => {
               const rs = resultStyle[check.result]
@@ -748,7 +720,6 @@ function ChecklistCard({
             })}
           </div>
 
-          {/* 기상 토글 */}
           {(temperature != null ||
             windSpeed != null ||
             precipitation != null) && (
@@ -844,7 +815,6 @@ function FlightStatusMiniCard({
 
   return (
     <div className="flex gap-2">
-      {/* 비행 시간 */}
       <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md">
         <Clock
           className={`h-3.5 w-3.5 ${isFlying ? "text-emerald-400" : "text-slate-500"}`}
@@ -860,8 +830,6 @@ function FlightStatusMiniCard({
           </span>
         </div>
       </div>
-
-      {/* 속도 */}
       {speed != null && (
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md">
           <TrendingDown className={`h-3.5 w-3.5 ${getSpeedColor(speed)}`} />
@@ -881,15 +849,14 @@ function FlightStatusMiniCard({
 }
 
 // ─────────────────────────────────────────────────────────────
-// QGC .plan 파서 + 미션 오버레이
+// 미션 오버레이 타입 및 유틸
 // ─────────────────────────────────────────────────────────────
-
 interface MissionWaypoint {
-  index: number // 웨이포인트 순서 번호
+  index: number
   lat: number
   lng: number
   alt: number
-  command: number // MAVLink command (22=이륙, 16=웨이포인트, 21=착륙 등)
+  command: number
 }
 
 interface MissionPlan {
@@ -897,16 +864,14 @@ interface MissionPlan {
   totalDistanceM: number
 }
 
-// MAVLink command → 라벨
 const commandLabel = (cmd: number): string => {
   if (cmd === 22) return "이륙"
   if (cmd === 21) return "착륙"
   if (cmd === 20) return "RTL"
   if (cmd === 177) return "루프"
-  return `WP`
+  return "WP"
 }
 
-// 두 좌표 간 거리 계산 (Haversine, 단위: m)
 function haversineM(
   lat1: number,
   lng1: number,
@@ -924,77 +889,9 @@ function haversineM(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-// QGC .plan JSON → MissionPlan 변환
-function parseQGCPlan(json: any): MissionPlan | null {
-  try {
-    // QGC plan 구조: { mission: { items: [...] } }
-    const items: any[] = json?.mission?.items ?? json?.items ?? []
-    if (!items.length) return null
-
-    const waypoints: MissionWaypoint[] = []
-    let idx = 0
-
-    for (const item of items) {
-      // SimpleItem 형식
-      if (item.type === "SimpleItem" || item.command !== undefined) {
-        const cmd = item.command ?? 16
-        const params: number[] = item.params ?? []
-        // params[4]=lat, params[5]=lng, params[6]=alt  (구 형식)
-        // params[6]=lat, params[7]=lng, params[2]=alt  (신 형식)
-        let lat = 0,
-          lng = 0,
-          alt = 0
-
-        // 신 형식 우선
-        if (params.length >= 8) {
-          lat = params[6] ?? 0
-          lng = params[7] ?? 0
-          alt = params[2] ?? 0
-        } else if (params.length >= 6) {
-          lat = params[4] ?? 0
-          lng = params[5] ?? 0
-          alt = params[2] ?? 0
-        }
-
-        // 위/경도가 유효한 경우만 추가
-        if (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001) {
-          waypoints.push({ index: idx++, lat, lng, alt, command: cmd })
-        }
-      }
-      // ComplexItem (Survey 등) — 내부 items 재귀 처리
-      if (item.type === "ComplexItem" && Array.isArray(item.transectPoints)) {
-        for (const pt of item.transectPoints) {
-          waypoints.push({
-            index: idx++,
-            lat: pt[0],
-            lng: pt[1],
-            alt: pt[2] ?? 50,
-            command: 16,
-          })
-        }
-      }
-    }
-
-    if (!waypoints.length) return null
-
-    // 총 거리 계산
-    let totalDistanceM = 0
-    for (let i = 1; i < waypoints.length; i++) {
-      totalDistanceM += haversineM(
-        waypoints[i - 1].lat,
-        waypoints[i - 1].lng,
-        waypoints[i].lat,
-        waypoints[i].lng,
-      )
-    }
-
-    return { waypoints, totalDistanceM }
-  } catch {
-    return null
-  }
-}
-
-// 미션 정보 미니카드 (지도 좌상단 — 연결 후)
+// ─────────────────────────────────────────────────────────────
+// 미션 정보 카드 (QGC에서 자동 수신된 미션 표시)
+// ─────────────────────────────────────────────────────────────
 function MissionInfoCard({
   plan,
   onClear,
@@ -1009,7 +906,6 @@ function MissionInfoCard({
 
   return (
     <div className="w-[200px] overflow-hidden rounded-2xl border border-blue-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
-      {/* 헤더 */}
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
@@ -1037,7 +933,6 @@ function MissionInfoCard({
 
       {!collapsed && (
         <>
-          {/* 요약 */}
           <div className="grid grid-cols-3 gap-1 border-b border-white/5 px-3 py-2 text-center">
             <div>
               <p className="text-sm font-bold text-blue-300">
@@ -1057,7 +952,6 @@ function MissionInfoCard({
             </div>
           </div>
 
-          {/* 웨이포인트 목록 */}
           <div className="max-h-36 overflow-y-auto">
             {plan.waypoints.map((wp, i) => {
               const isActive = i === currentWpIndex
@@ -1145,20 +1039,45 @@ export function NaverMap({
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // ── 미션 플랜 상태 ──────────────────────────────────────────
+  // ── ★ 미션 플랜 상태 (QGC에서 자동 수신) ──────────────────
   const [missionPlan, setMissionPlan] = useState<MissionPlan | null>(null)
   const [currentWpIndex, setCurrentWpIndex] = useState(-1)
-  const [missionError, setMissionError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const missionPolylineRef = useRef<any>(null) // 전체 경로선
-  const missionDoneLineRef = useRef<any>(null) // 완료 구간선
-  const missionMarkersRef = useRef<any[]>([]) // 웨이포인트 마커들
+  const missionPolylineRef = useRef<any>(null)
+  const missionDoneLineRef = useRef<any>(null)
+  const missionMarkersRef = useRef<any[]>([])
 
   const { overall: safetyOverall, items: safetyItems } = calcSafety(
     droneStats,
     isDroneConnected ? satellites : null,
     weatherData?.windSpeed,
   )
+
+  // ── ★ QGC 미션 자동 수신 ──────────────────────────────────
+  useEffect(() => {
+    const onMissionUpdate = (e: CustomEvent) => {
+      const { waypoints } = e.detail
+      if (!waypoints?.length) return
+
+      let totalDistanceM = 0
+      for (let i = 1; i < waypoints.length; i++) {
+        totalDistanceM += haversineM(
+          waypoints[i - 1].lat,
+          waypoints[i - 1].lng,
+          waypoints[i].lat,
+          waypoints[i].lng,
+        )
+      }
+      setMissionPlan({ waypoints, totalDistanceM })
+      setCurrentWpIndex(-1)
+    }
+
+    window.addEventListener("missionUpdate", onMissionUpdate as EventListener)
+    return () =>
+      window.removeEventListener(
+        "missionUpdate",
+        onMissionUpdate as EventListener,
+      )
+  }, [])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1452,23 +1371,21 @@ export function NaverMap({
     }
   }, [flightPath])
 
-  // ── 미션 플랜 지도 렌더링 ──────────────────────────────────
+  // ── 미션 지도 렌더링 ──────────────────────────────────────
   useEffect(() => {
     const naver = (window as any).naver
     if (!naver || !mapInstance.current) return
 
-    // 기존 미션 오버레이 초기화
     missionPolylineRef.current?.setMap(null)
     missionDoneLineRef.current?.setMap(null)
     missionMarkersRef.current.forEach((m) => m.setMap(null))
     missionMarkersRef.current = []
 
-    if (!missionPlan || !missionPlan.waypoints.length) return
+    if (!missionPlan?.waypoints.length) return
 
     const wps = missionPlan.waypoints
     const allLatLngs = wps.map((wp) => new naver.maps.LatLng(wp.lat, wp.lng))
 
-    // 전체 경로선 (파란색 점선 스타일)
     missionPolylineRef.current = new naver.maps.Polyline({
       map: mapInstance.current,
       path: allLatLngs,
@@ -1479,7 +1396,6 @@ export function NaverMap({
       zIndex: 250,
     })
 
-    // 완료 구간선 (흰색 실선)
     if (currentWpIndex > 0) {
       const donePath = allLatLngs.slice(0, currentWpIndex + 1)
       missionDoneLineRef.current = new naver.maps.Polyline({
@@ -1492,14 +1408,11 @@ export function NaverMap({
       })
     }
 
-    // 웨이포인트 마커
     wps.forEach((wp, i) => {
       const isActive = i === currentWpIndex
       const isDone = currentWpIndex >= 0 && i < currentWpIndex
       const isStart = wp.command === 22
       const isLand = wp.command === 21 || wp.command === 20
-
-      // 마커 색상
       const bgColor = isActive
         ? "#3b82f6"
         : isDone
@@ -1509,7 +1422,6 @@ export function NaverMap({
             : isLand
               ? "#f59e0b"
               : "#1e40af"
-
       const borderColor = isActive ? "#ffffff" : "#93c5fd"
       const label = isStart ? "▲" : isLand ? "▼" : String(i + 1)
 
@@ -1518,44 +1430,21 @@ export function NaverMap({
         map: mapInstance.current,
         icon: {
           content: `
-            <div style="
-              position:relative;
-              display:flex;align-items:center;justify-content:center;
-              width:26px;height:26px;
-              background:${bgColor};
-              border:2px solid ${borderColor};
-              border-radius:50%;
-              font-size:9px;font-weight:bold;color:white;
-              box-shadow:0 2px 8px rgba(0,0,0,0.5);
-              ${isActive ? "animation:pulse 1.5s infinite;" : ""}
-            ">${label}</div>
-            <div style="
-              position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
-              width:0;height:0;
-              border-left:5px solid transparent;
-              border-right:5px solid transparent;
-              border-top:6px solid ${bgColor};
-            "></div>
+            <div style="position:relative;display:flex;align-items:center;justify-content:center;width:26px;height:26px;background:${bgColor};border:2px solid ${borderColor};border-radius:50%;font-size:9px;font-weight:bold;color:white;box-shadow:0 2px 8px rgba(0,0,0,0.5);${isActive ? "animation:pulse 1.5s infinite;" : ""}">${label}</div>
+            <div style="position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid ${bgColor};"></div>
           `,
           anchor: new naver.maps.Point(13, 32),
         },
         zIndex: isActive ? 400 : 300,
       })
 
-      // 고도 툴팁
       naver.maps.Event.addListener(marker, "mouseover", () => {
         const infoWindow = new naver.maps.InfoWindow({
           content: `
-            <div style="
-              padding:6px 10px;background:#1e293b;border:1px solid #3b82f6;
-              border-radius:8px;font-size:11px;color:#e2e8f0;
-              box-shadow:0 4px 12px rgba(0,0,0,0.4);
-            ">
+            <div style="padding:6px 10px;background:#1e293b;border:1px solid #3b82f6;border-radius:8px;font-size:11px;color:#e2e8f0;box-shadow:0 4px 12px rgba(0,0,0,0.4);">
               <b style="color:#60a5fa">${commandLabel(wp.command)} ${i + 1}</b><br/>
               고도: ${wp.alt.toFixed(0)}m<br/>
-              <span style="color:#94a3b8;font-size:10px">
-                ${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}
-              </span>
+              <span style="color:#94a3b8;font-size:10px">${wp.lat.toFixed(6)}, ${wp.lng.toFixed(6)}</span>
             </div>
           `,
           borderWidth: 0,
@@ -1570,7 +1459,6 @@ export function NaverMap({
       missionMarkersRef.current.push(marker)
     })
 
-    // 미션 전체가 보이도록 fitBounds
     if (allLatLngs.length > 0) {
       const bounds = new naver.maps.LatLngBounds(allLatLngs[0], allLatLngs[0])
       allLatLngs.forEach((ll: any) => bounds.extend(ll))
@@ -1583,10 +1471,8 @@ export function NaverMap({
     if (!missionPlan || !dronePosition) return
     const { lat: dLat, lng: dLng } = dronePosition
     if (typeof dLat !== "number" || typeof dLng !== "number") return
-
-    // 가장 가까운 미완료 웨이포인트 찾기
-    let minDist = Infinity
-    let closestIdx = -1
+    let minDist = Infinity,
+      closestIdx = -1
     missionPlan.waypoints.forEach((wp, i) => {
       const d = haversineM(dLat, dLng, wp.lat, wp.lng)
       if (d < minDist) {
@@ -1594,42 +1480,12 @@ export function NaverMap({
         closestIdx = i
       }
     })
-    // 30m 이내면 해당 WP를 현재로 설정
     if (minDist < 30) setCurrentWpIndex(closestIdx)
   }, [dronePosition, missionPlan])
-
-  // ── .plan 파일 업로드 핸들러 ────────────────────────────────
-  const handlePlanFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setMissionError(null)
-
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const json = JSON.parse(ev.target?.result as string)
-        const plan = parseQGCPlan(json)
-        if (!plan) {
-          setMissionError(
-            "웨이포인트를 찾을 수 없습니다. QGC .plan 파일인지 확인하세요.",
-          )
-          return
-        }
-        setMissionPlan(plan)
-        setCurrentWpIndex(-1)
-      } catch {
-        setMissionError("파일 파싱 실패. 올바른 JSON 형식인지 확인하세요.")
-      }
-    }
-    reader.readAsText(file)
-    // 같은 파일 재업로드 허용
-    e.target.value = ""
-  }
 
   const clearMission = () => {
     setMissionPlan(null)
     setCurrentWpIndex(-1)
-    setMissionError(null)
   }
 
   return (
@@ -1656,7 +1512,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* 안전 배너 — 최상단 */}
+      {/* 안전 배너 */}
       <div
         className={`absolute left-3 right-3 z-50 ${isDroneConnected ? "top-3" : "top-14"}`}
       >
@@ -1748,76 +1604,21 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────
-          ★ 미션 플랜 업로드 버튼 (좌측 중단)
-             — 미션 없을 때: 업로드 버튼
-             — 미션 있을 때: 미션 정보 카드
-          ───────────────────────────────────────────── */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".plan,.json"
-        className="hidden"
-        onChange={handlePlanFileUpload}
-      />
-
-      {/* 미션 미로딩 상태: 업로드 버튼 */}
-      {!missionPlan && (
-        <div
-          className="absolute left-3 z-50"
-          style={{
-            top: isDroneConnected ? "7.5rem" : "4rem",
-            marginTop: isDroneConnected ? "8rem" : "0",
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 rounded-xl border border-blue-500/40 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md transition hover:bg-blue-950/80"
-            >
-              <Upload className="h-3.5 w-3.5 text-blue-400" />
-              <span className="font-semibold text-blue-300">
-                미션 .plan 업로드
-              </span>
-            </button>
-            {missionError && (
-              <div className="max-w-[200px] rounded-xl border border-red-500/40 bg-red-950/80 px-3 py-2 text-[10px] text-red-300 shadow-lg backdrop-blur-md">
-                ⚠ {missionError}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 미션 로딩 상태: 미션 정보 카드 */}
+      {/* ★ 미션 정보 카드 (QGC 자동 수신 시 표시) */}
       {missionPlan && (
         <div
           className="absolute left-3 z-50"
           style={{ top: isDroneConnected ? "calc(7.5rem + 8.5rem)" : "4rem" }}
         >
-          <div className="flex flex-col gap-2">
-            <MissionInfoCard
-              plan={missionPlan}
-              onClear={clearMission}
-              currentWpIndex={currentWpIndex}
-            />
-            {/* 재업로드 버튼 */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-[10px] text-white/40 shadow-lg backdrop-blur-md transition hover:text-blue-300"
-            >
-              <Upload className="h-3 w-3" />
-              다른 파일 불러오기
-            </button>
-          </div>
+          <MissionInfoCard
+            plan={missionPlan}
+            onClear={clearMission}
+            currentWpIndex={currentWpIndex}
+          />
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────
-          ★ 좌하단: 배터리 + RTL 가이드 카드
-          ───────────────────────────────────────────── */}
+      {/* 좌하단: 배터리 가이드 카드 */}
       {isDroneConnected && (
         <div className="absolute bottom-4 left-3 z-50">
           <BatteryGuideCard
@@ -1827,18 +1628,13 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────
-          ★ 우하단: 실시간 체크리스트 카드
-              + 위에 비행 시간/속도 미니 카드
-          ───────────────────────────────────────────── */}
+      {/* 우하단: 체크리스트 + 비행 시간 */}
       {isDroneConnected && (
         <div className="absolute bottom-4 right-3 z-50 flex flex-col items-end gap-2">
-          {/* 비행 시간 + 속도 미니 카드 */}
           <FlightStatusMiniCard
             speed={droneStats?.speed}
             altitude={droneStats?.altitude}
           />
-          {/* 체크리스트 */}
           <ChecklistCard
             battery={droneStats?.battery}
             altitude={droneStats?.altitude}
@@ -1852,7 +1648,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* 미연결 시 우하단에도 사전 체크리스트 */}
+      {/* 미연결 시 사전 체크리스트 */}
       {!isDroneConnected && (
         <div className="absolute bottom-16 right-3 z-50">
           <ChecklistCard
