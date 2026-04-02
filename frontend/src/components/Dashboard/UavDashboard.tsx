@@ -101,11 +101,31 @@ const GuideBanner = ({
   droneConnected,
   alertLevel,
   droneData,
+  droneOffline,
 }: {
   droneConnected: boolean
   alertLevel: "safe" | "caution" | "danger"
   droneData: DroneData | null
+  droneOffline: boolean
 }) => {
+  if (droneOffline) {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border border-red-200/60 bg-red-50/80 px-5 py-4">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-100 text-red-600">
+          <WifiOff className="h-4 w-4" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-red-900">
+            기체 신호 끊김 — 재연결 대기 중
+          </p>
+          <p className="mt-0.5 text-xs text-red-700/80">
+            기체로부터 데이터가 수신되지 않습니다. LTE 통신 상태와 기체 전원을
+            확인하세요.
+          </p>
+        </div>
+      </div>
+    )
+  }
   if (!droneConnected) {
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4">
@@ -2012,6 +2032,8 @@ export function UavDashboard() {
   // ★ 선택된 기체 정보 (DroneSimulation에서 올라옴)
   const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
+  // ★ 기체 신호 끊김 상태
+  const [isDroneOffline, setIsDroneOffline] = useState(false)
 
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
@@ -2034,6 +2056,7 @@ export function UavDashboard() {
       connected: false,
       data: null,
       flightStatus: "unknown",
+      droneOffline: false,
     },
     {
       wsConnected: false,
@@ -2041,6 +2064,7 @@ export function UavDashboard() {
       connected: false,
       data: null,
       flightStatus: "unknown",
+      droneOffline: false,
     },
     {
       wsConnected: false,
@@ -2048,6 +2072,7 @@ export function UavDashboard() {
       connected: false,
       data: null,
       flightStatus: "unknown",
+      droneOffline: false,
     },
   ])
 
@@ -2265,10 +2290,16 @@ export function UavDashboard() {
       : alertLevel === "caution"
         ? "bg-amber-100 text-amber-700"
         : "bg-emerald-100 text-emerald-700"
-  const connectionLabel = droneConnected ? "연결됨" : "연결 대기"
-  const connectionTone = droneConnected
-    ? "bg-emerald-100 text-emerald-700"
-    : "bg-amber-100 text-amber-700"
+  const connectionLabel = isDroneOffline
+    ? "신호 끊김"
+    : droneConnected
+      ? "연결됨"
+      : "연결 대기"
+  const connectionTone = isDroneOffline
+    ? "bg-red-100 text-red-700"
+    : droneConnected
+      ? "bg-emerald-100 text-emerald-700"
+      : "bg-amber-100 text-amber-700"
   const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
   const batteryVal =
     droneData?.battery != null ? `${droneData.battery.toFixed(0)}` : null
@@ -2434,6 +2465,7 @@ export function UavDashboard() {
           droneConnected={droneConnected}
           alertLevel={alertLevel}
           droneData={droneData}
+          droneOffline={isDroneOffline}
         />
 
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
@@ -2620,11 +2652,11 @@ export function UavDashboard() {
                     onData={setDroneData}
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
-                    // ★ 선택된 기체 정보를 UavDashboard로 전달
                     onSelectedDrone={({ idx, lteIp }) => {
                       setSelectedDroneIdx(idx)
                       setSelectedLteIp(lteIp)
                     }}
+                    onDroneOffline={setIsDroneOffline}
                   />
                 </div>
               </div>

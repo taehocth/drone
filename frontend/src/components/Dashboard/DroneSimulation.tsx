@@ -78,6 +78,9 @@ const DRONE_TARGETS: DroneTarget[] = [
   { label: "DM3(삼길포항)", port: 52066, lteIp: "3.36.81.238:52066" },
 ]
 
+// ★ 기체 데이터가 이 시간(ms) 이상 오지 않으면 연결 끊김으로 판단
+const DRONE_OFFLINE_TIMEOUT_MS = 10_000
+
 /* =========================
  * 개별 드론 WS 상태
  * ========================= */
@@ -87,6 +90,8 @@ export interface DroneWsState {
   connected: boolean
   data: DroneData | null
   flightStatus: FlightStatus
+  // ★ 추가: 기체 연결 끊김 여부 (타임아웃 감지)
+  droneOffline: boolean
 }
 
 /* =========================
@@ -185,6 +190,8 @@ export function FlightStatusBadge({ status }: { status: FlightStatus }) {
 function useDroneWs(drone: DroneTarget): DroneWsState {
   const [wsConnected, setWsConnected] = useState(false)
   const [droneActive, setDroneActive] = useState(false)
+  // ★ 기체 데이터 타임아웃으로 인한 오프라인 상태
+  const [droneOffline, setDroneOffline] = useState(false)
   const [data, setData] = useState<DroneData | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -192,6 +199,9 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const smoothRef = useRef<DroneData | null>(null)
   const lastTsRef = useRef<number>(performance.now())
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // ★ 마지막 데이터 수신 시각 (타임아웃 감지용)
+  const lastDataReceivedRef = useRef<number | null>(null)
+  const offlineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
   const droneActiveRef = useRef(false)
   const clearingRef = useRef(false)
@@ -201,7 +211,9 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     targetRef.current = null
     smoothRef.current = null
     droneActiveRef.current = false
+    lastDataReceivedRef.current = null
     setDroneActive(false)
+    setDroneOffline(false)
     setData(null)
     requestAnimationFrame(() => {
       clearingRef.current = false
@@ -248,8 +260,13 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       if (typeof msg.sysid !== "number") return
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
+      // ★ 데이터 수신 시각 갱신 → 오프라인 해제
+      lastDataReceivedRef.current = Date.now()
+      if (droneOffline) setDroneOffline(false)
+
       droneActiveRef.current = true
       setDroneActive(true)
+      setDroneOffline(false)
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
@@ -312,8 +329,29 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         if (mountedRef.current) connect()
       }, 5000)
     }
-  }, [drone.lteIp, clearDroneData])
+  }, [drone.lteIp, clearDroneData, droneOffline])
 
+  // ★ 타임아웃 감지 폴링 — 마지막 수신으로부터 DRONE_OFFLINE_TIMEOUT_MS 초과 시 오프라인 처리
+  useEffect(() => {
+    offlineTimerRef.current = setInterval(() => {
+      if (!droneActiveRef.current) return
+      const last = lastDataReceivedRef.current
+      if (last === null) return
+      const age = Date.now() - last
+      if (age > DRONE_OFFLINE_TIMEOUT_MS) {
+        // 타임아웃 → 오프라인 상태로 전환
+        droneActiveRef.current = false
+        setDroneActive(false)
+        setDroneOffline(true)
+        // 마지막 데이터는 유지 (화면에 마지막 값 + 경고 표시용)
+      }
+    }, 2000) // 2초마다 체크
+    return () => {
+      if (offlineTimerRef.current) clearInterval(offlineTimerRef.current)
+    }
+  }, [])
+
+  // RAF 스무딩
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
@@ -360,6 +398,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     return () => cancelAnimationFrame(rafId)
   }, [])
 
+  // UI 스냅샷 (20Hz)
   useEffect(() => {
     const id = window.setInterval(
       () => {
@@ -384,12 +423,14 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     return () => window.clearInterval(id)
   }, [])
 
+  // 마운트 시 연결
   useEffect(() => {
     mountedRef.current = true
     connect()
     return () => {
       mountedRef.current = false
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      if (offlineTimerRef.current) clearInterval(offlineTimerRef.current)
       wsRef.current?.close()
       wsRef.current = null
     }
@@ -402,6 +443,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     connected: droneActive,
     data,
     flightStatus,
+    droneOffline,
   }
 }
 
@@ -413,11 +455,12 @@ interface DroneSimulationProps {
   onConnectionChange?: (connected: boolean) => void
   onAllDroneStates?: (states: DroneWsState[]) => void
   onMissionWaypoints?: (waypoints: MissionWaypoint[] | undefined) => void
-  // ★ 추가: 선택된 기체 정보를 UavDashboard로 전달
   onSelectedDrone?: (drone: {
     idx: number | null
     lteIp: string | null
   }) => void
+  // ★ 추가: 기체 오프라인 상태 변경 콜백
+  onDroneOffline?: (offline: boolean) => void
 }
 
 /* =========================
@@ -429,6 +472,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   onAllDroneStates,
   onMissionWaypoints,
   onSelectedDrone,
+  onDroneOffline,
 }) => {
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
@@ -459,7 +503,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     }
   }, [selectedState?.data?.missionWaypoints, onMissionWaypoints]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ★ 기체 선택 핸들러 — 선택 변경 시 UavDashboard에 알림
+  // ★ 선택된 기체의 오프라인 상태를 UavDashboard로 전달
+  useEffect(() => {
+    if (onDroneOffline) {
+      onDroneOffline(selectedState?.droneOffline ?? false)
+    }
+  }, [selectedState?.droneOffline, onDroneOffline])
+
   const handleSelectDrone = (idx: number, isSelected: boolean) => {
     const newIdx = isSelected ? null : idx
     setSelectedIdx(newIdx)
@@ -485,17 +535,29 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           {DRONE_TARGETS.map((drone, idx) => {
             const state = allStates[idx]
             const isSelected = selectedIdx === idx
-            const { wsConnected, droneActive, flightStatus } = state
+            const { wsConnected, droneActive, flightStatus, droneOffline } =
+              state
 
-            const cardClass = droneActive
+            // ★ 오프라인 시 카드 스타일 별도 처리
+            const cardClass = droneOffline
               ? isSelected
-                ? "border-emerald-400 bg-emerald-50"
-                : "border-emerald-300 bg-emerald-50/50 hover:border-emerald-400"
-              : isSelected
-                ? "border-slate-500 bg-slate-50"
-                : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
+                ? "border-red-400 bg-red-50"
+                : "border-red-300 bg-red-50/50 hover:border-red-400"
+              : droneActive
+                ? isSelected
+                  ? "border-emerald-400 bg-emerald-50"
+                  : "border-emerald-300 bg-emerald-50/50 hover:border-emerald-400"
+                : isSelected
+                  ? "border-slate-500 bg-slate-50"
+                  : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
 
-            const dotEl = droneActive ? (
+            // ★ 오프라인 시 붉은 점 깜빡임
+            const dotEl = droneOffline ? (
+              <span className="absolute right-3 top-3 flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+            ) : droneActive ? (
               <span className="absolute right-3 top-3 flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
@@ -506,11 +568,20 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               </span>
             ) : null
 
-            const statusText = droneActive
-              ? "기체 수신 중"
-              : wsConnected
-                ? "서버 연결됨 (기체 없음)"
-                : "연결 중..."
+            // ★ 상태 텍스트
+            const statusText = droneOffline
+              ? "⚠ 기체 신호 끊김"
+              : droneActive
+                ? "기체 수신 중"
+                : wsConnected
+                  ? "서버 연결됨 (기체 없음)"
+                  : "연결 중..."
+
+            const statusColor = droneOffline
+              ? "text-red-500 font-semibold"
+              : droneActive
+                ? "text-emerald-600"
+                : "text-slate-400"
 
             const wpCount = state.data?.missionWaypoints?.length ?? 0
 
@@ -518,7 +589,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               <button
                 key={drone.lteIp}
                 type="button"
-                // ★ handleSelectDrone 으로 교체
                 onClick={() => handleSelectDrone(idx, isSelected)}
                 className={[
                   "relative flex flex-col items-start rounded-xl border px-4 py-3 text-left transition-all",
@@ -532,12 +602,18 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 <span className="mt-1 font-mono text-xs text-slate-500">
                   :{drone.port}
                 </span>
-                <span
-                  className={`mt-0.5 text-xs ${droneActive ? "text-emerald-600" : "text-slate-400"}`}
-                >
+                <span className={`mt-0.5 text-xs ${statusColor}`}>
                   {statusText}
                 </span>
-                {droneActive && state.data && (
+
+                {/* ★ 오프라인 경고 배지 */}
+                {droneOffline && (
+                  <span className="mt-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">
+                    연결 끊김
+                  </span>
+                )}
+
+                {(droneActive || droneOffline) && state.data && (
                   <div className="mt-1.5 flex gap-2 text-xs text-slate-500">
                     {state.data.battery != null && (
                       <span className="font-mono">
@@ -556,11 +632,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                     )}
                   </div>
                 )}
+
                 <div className="mt-2">
                   <FlightStatusBadge
                     status={droneActive ? flightStatus : "unknown"}
                   />
                 </div>
+
                 {isSelected && (
                   <span className="absolute bottom-2 right-3 text-xs font-semibold text-indigo-500">
                     선택됨
@@ -579,9 +657,17 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 {DRONE_TARGETS[selectedIdx].label}
               </span>{" "}
               — 아래 텔레메트리 카드에 표시됩니다
-              {!allStates[selectedIdx].droneActive && (
-                <span className="ml-2 text-amber-500">⚠ 기체 데이터 없음</span>
+              {allStates[selectedIdx].droneOffline && (
+                <span className="ml-2 font-semibold text-red-500">
+                  ⚠ 기체 신호 끊김 — 재연결 대기 중
+                </span>
               )}
+              {!allStates[selectedIdx].droneActive &&
+                !allStates[selectedIdx].droneOffline && (
+                  <span className="ml-2 text-amber-500">
+                    ⚠ 기체 데이터 없음
+                  </span>
+                )}
             </span>
           ) : (
             <span>
