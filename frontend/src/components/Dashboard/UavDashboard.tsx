@@ -2366,7 +2366,56 @@ export function UavDashboard() {
     prevAlertLevelRef.current = alertLevel
   }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { logs } = useFlightLog(droneConnected, droneData, alertLevel)
+  const { logs, addLog } = useFlightLog(droneConnected, droneData, alertLevel)
+
+  useEffect(() => {
+    const onQgcEvents = (e: Event) => {
+      const { events } = (e as CustomEvent).detail as {
+        events: Array<{
+          type: string
+          level: string
+          message: string
+          time: string
+        }>
+      }
+      if (!events?.length) return
+
+      const levelMap: Record<string, FlightLogEntry["level"]> = {
+        danger: "danger",
+        caution: "warn",
+        success: "success",
+        info: "info",
+        debug: "info",
+      }
+
+      const categoryMap: Record<string, FlightLogEntry["category"]> = {
+        battery_critical: "battery",
+        battery_low: "battery",
+        mode_change: "flight",
+        waypoint_reached: "flight",
+        mission_current: "flight",
+        mission_uploaded: "flight",
+        mission_ack: "flight",
+        home_set: "flight",
+        gps_status: "gps",
+        statustext: "system",
+        connected: "connection",
+      }
+
+      for (const ev of events) {
+        addLog(
+          levelMap[ev.level] ?? "info",
+          `[QGC] ${ev.message}`,
+          undefined,
+          categoryMap[ev.type] ?? "system",
+          `QGC/MAVLink 수신 이벤트 (${ev.time})`,
+        )
+      }
+    }
+
+    window.addEventListener("qgcFlightEvents", onQgcEvents)
+    return () => window.removeEventListener("qgcFlightEvents", onQgcEvents)
+  }, [addLog])
 
   const alertTone =
     alertLevel === "danger"

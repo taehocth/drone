@@ -1,70 +1,3 @@
-// ★ DroneSimulation.tsx 수정 사항 — 전체 파일 중 변경된 부분만 표시
-//
-// 1. DroneData 인터페이스에 missionWaypoints 추가
-// 2. useDroneWs 훅의 ws.onmessage 에서 missionWaypoints 파싱
-// 3. DroneSimulationProps / onMissionWaypoints 콜백 추가
-// 4. UavDashboard 에서 flightPath 로 NaverMap 에 전달
-//
-// ──────────────────────────────────────────────────────────────
-// [1] DroneData 인터페이스 수정
-// ──────────────────────────────────────────────────────────────
-//
-// export interface DroneData {
-//   ...기존 필드...
-//
-//   // ★ 추가
-//   missionWaypoints?: Array<{
-//     index:   number
-//     command: number
-//     lat:     number
-//     lng:     number
-//     alt:     number
-//   }>
-// }
-//
-// ──────────────────────────────────────────────────────────────
-// [2] useDroneWs 의 ws.onmessage 수정
-//     targetRef.current 설정 부분 끝에 아래 코드 추가
-// ──────────────────────────────────────────────────────────────
-//
-//   targetRef.current = {
-//     ...기존 필드...
-//     timestamp: msg.server_ts,
-//
-//     // ★ 추가: 미션 웨이포인트 (없으면 이전 값 유지)
-//     missionWaypoints:
-//       Array.isArray(msg.mission_waypoints) && msg.mission_waypoints.length > 0
-//         ? msg.mission_waypoints
-//         : targetRef.current?.missionWaypoints,
-//   }
-//
-// ──────────────────────────────────────────────────────────────
-// [3] DroneSimulationProps 수정
-// ──────────────────────────────────────────────────────────────
-//
-// interface DroneSimulationProps {
-//   onData?: (data: DroneData | null) => void
-//   onConnectionChange?: (connected: boolean) => void
-//   onAllDroneStates?: (states: DroneWsState[]) => void
-//   // ★ 추가
-//   onMissionWaypoints?: (waypoints: DroneData["missionWaypoints"]) => void
-// }
-//
-// ──────────────────────────────────────────────────────────────
-// [4] DroneSimulation 컴포넌트 내부 수정
-//     selectedState 의 데이터가 바뀔 때 미션도 콜백으로 전달
-// ──────────────────────────────────────────────────────────────
-//
-//   useEffect(() => {
-//     if (onMissionWaypoints) {
-//       onMissionWaypoints(selectedState?.data?.missionWaypoints)
-//     }
-//   }, [selectedState?.data?.missionWaypoints, onMissionWaypoints])
-//
-// ──────────────────────────────────────────────────────────────
-// 아래는 실제 수정된 전체 파일입니다.
-// ──────────────────────────────────────────────────────────────
-
 import React, { useState, useRef, useEffect, useCallback } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
 
@@ -72,13 +5,23 @@ import { DroneSimulationCard } from "./DroneSimulationCard"
  * Types
  * ========================= */
 
-// ★ missionWaypoints 추가
 export interface MissionWaypoint {
   index: number
   command: number
   lat: number
   lng: number
   alt: number
+}
+
+// ★ QGC에서 오는 비행 이벤트 타입
+export interface QgcFlightEvent {
+  type: string
+  level: "danger" | "caution" | "success" | "info" | "debug"
+  message: string
+  time: string
+  detail?: string
+  index?: number
+  severity?: number
 }
 
 export interface DroneData {
@@ -105,7 +48,7 @@ export interface DroneData {
   lteIp?: string
   online?: boolean
 
-  // ★ 추가: 미션 웨이포인트
+  // 미션 웨이포인트
   missionWaypoints?: MissionWaypoint[]
 }
 
@@ -322,8 +265,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
             ? Math.sqrt(vx * vx + vy * vy)
             : undefined
 
-      // ★ 미션 웨이포인트 파싱
-      //    값이 있을 때만 갱신 (없으면 이전 값 유지 — 매 프레임 지우지 않도록)
+      // 미션 웨이포인트 파싱
       const incomingWps =
         Array.isArray(msg.mission_waypoints) && msg.mission_waypoints.length > 0
           ? (msg.mission_waypoints as MissionWaypoint[])
@@ -349,8 +291,21 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         yaw: radToDeg(msg.attitude?.yaw),
         speed,
         timestamp: msg.server_ts,
-        // ★ 미션 웨이포인트: 새 데이터가 있으면 갱신, 없으면 이전 값 유지
         missionWaypoints: incomingWps ?? targetRef.current?.missionWaypoints,
+      }
+
+      // ★ QGC 비행 이벤트 — 있을 때만 커스텀 이벤트로 발송
+      //    선택된 드론의 이벤트만 UavDashboard 로 전달
+      if (Array.isArray(msg.flight_events) && msg.flight_events.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent("qgcFlightEvents", {
+            detail: {
+              events: msg.flight_events as QgcFlightEvent[],
+              droneId: msg.drone_id,
+              lteIp: msg.lte_ip,
+            },
+          }),
+        )
       }
     }
 
@@ -367,7 +322,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [drone.lteIp, clearDroneData])
 
-  // RAF 스무딩 (미션 웨이포인트는 스무딩 없이 그대로 전달)
+  // RAF 스무딩
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
@@ -407,7 +362,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
           prev?.yaw != null && target.yaw != null
             ? smoothYaw(prev.yaw, target.yaw, dt, 120)
             : target.yaw,
-        // ★ 미션 웨이포인트는 스무딩 없이 그대로
+        // 미션 웨이포인트는 스무딩 없이 그대로
         missionWaypoints: target.missionWaypoints,
       }
 
@@ -471,7 +426,6 @@ interface DroneSimulationProps {
   onData?: (data: DroneData | null) => void
   onConnectionChange?: (connected: boolean) => void
   onAllDroneStates?: (states: DroneWsState[]) => void
-  // ★ 추가: 미션 웨이포인트 변경 콜백
   onMissionWaypoints?: (waypoints: MissionWaypoint[] | undefined) => void
 }
 
@@ -482,7 +436,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   onData,
   onConnectionChange,
   onAllDroneStates,
-  onMissionWaypoints, // ★ 추가
+  onMissionWaypoints,
 }) => {
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
@@ -507,7 +461,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       onData(selectedState?.droneActive ? (selectedState?.data ?? null) : null)
   }, [selectedState?.data, selectedState?.droneActive, onData])
 
-  // ★ 미션 웨이포인트 변경 시 콜백
+  // 미션 웨이포인트 변경 시 콜백
   useEffect(() => {
     if (onMissionWaypoints) {
       onMissionWaypoints(selectedState?.data?.missionWaypoints)
@@ -557,7 +511,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 ? "서버 연결됨 (기체 없음)"
                 : "연결 중..."
 
-            // ★ 미션 웨이포인트 수 표시
             const wpCount = state.data?.missionWaypoints?.length ?? 0
 
             return (
@@ -597,7 +550,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                         ↑ {state.data.altitude.toFixed(0)}m
                       </span>
                     )}
-                    {/* ★ 미션 웨이포인트 수 표시 */}
                     {wpCount > 0 && (
                       <span className="font-mono text-blue-500">
                         📍 WP {wpCount}
