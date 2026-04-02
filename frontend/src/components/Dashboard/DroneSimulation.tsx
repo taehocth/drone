@@ -13,7 +13,6 @@ export interface MissionWaypoint {
   alt: number
 }
 
-// ★ QGC에서 오는 비행 이벤트 타입
 export interface QgcFlightEvent {
   type: string
   level: "danger" | "caution" | "success" | "info" | "debug"
@@ -48,7 +47,6 @@ export interface DroneData {
   lteIp?: string
   online?: boolean
 
-  // 미션 웨이포인트
   missionWaypoints?: MissionWaypoint[]
 }
 
@@ -212,7 +210,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 
   const connect = useCallback(() => {
     if (wsRef.current) return
-
     const TELEMETRY_WS_BASE = getTelemetryEnvBase()
     if (!TELEMETRY_WS_BASE) return
 
@@ -244,9 +241,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       }
 
       if (msg?.ok === false) {
-        if (msg?.error === "no_data") {
-          clearDroneData()
-        }
+        if (msg?.error === "no_data") clearDroneData()
         return
       }
 
@@ -265,7 +260,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
             ? Math.sqrt(vx * vx + vy * vy)
             : undefined
 
-      // 미션 웨이포인트 파싱
       const incomingWps =
         Array.isArray(msg.mission_waypoints) && msg.mission_waypoints.length > 0
           ? (msg.mission_waypoints as MissionWaypoint[])
@@ -294,8 +288,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         missionWaypoints: incomingWps ?? targetRef.current?.missionWaypoints,
       }
 
-      // ★ QGC 비행 이벤트 — 있을 때만 커스텀 이벤트로 발송
-      //    선택된 드론의 이벤트만 UavDashboard 로 전달
       if (Array.isArray(msg.flight_events) && msg.flight_events.length > 0) {
         window.dispatchEvent(
           new CustomEvent("qgcFlightEvents", {
@@ -322,7 +314,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [drone.lteIp, clearDroneData])
 
-  // RAF 스무딩
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
@@ -335,7 +326,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         rafId = requestAnimationFrame(rafLoop)
         return
       }
-
       const target = targetRef.current
       const now = performance.now()
       const dt = Math.min((now - lastTsRef.current) / 1000, 0.1)
@@ -362,17 +352,14 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
           prev?.yaw != null && target.yaw != null
             ? smoothYaw(prev.yaw, target.yaw, dt, 120)
             : target.yaw,
-        // 미션 웨이포인트는 스무딩 없이 그대로
         missionWaypoints: target.missionWaypoints,
       }
-
       rafId = requestAnimationFrame(rafLoop)
     }
     rafId = requestAnimationFrame(rafLoop)
     return () => cancelAnimationFrame(rafId)
   }, [])
 
-  // UI 스냅샷 (20Hz)
   useEffect(() => {
     const id = window.setInterval(
       () => {
@@ -397,7 +384,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     return () => window.clearInterval(id)
   }, [])
 
-  // 마운트 시 연결
   useEffect(() => {
     mountedRef.current = true
     connect()
@@ -427,6 +413,11 @@ interface DroneSimulationProps {
   onConnectionChange?: (connected: boolean) => void
   onAllDroneStates?: (states: DroneWsState[]) => void
   onMissionWaypoints?: (waypoints: MissionWaypoint[] | undefined) => void
+  // ★ 추가: 선택된 기체 정보를 UavDashboard로 전달
+  onSelectedDrone?: (drone: {
+    idx: number | null
+    lteIp: string | null
+  }) => void
 }
 
 /* =========================
@@ -437,6 +428,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   onConnectionChange,
   onAllDroneStates,
   onMissionWaypoints,
+  onSelectedDrone,
 }) => {
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
@@ -461,12 +453,21 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
       onData(selectedState?.droneActive ? (selectedState?.data ?? null) : null)
   }, [selectedState?.data, selectedState?.droneActive, onData])
 
-  // 미션 웨이포인트 변경 시 콜백
   useEffect(() => {
     if (onMissionWaypoints) {
       onMissionWaypoints(selectedState?.data?.missionWaypoints)
     }
   }, [selectedState?.data?.missionWaypoints, onMissionWaypoints]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ★ 기체 선택 핸들러 — 선택 변경 시 UavDashboard에 알림
+  const handleSelectDrone = (idx: number, isSelected: boolean) => {
+    const newIdx = isSelected ? null : idx
+    setSelectedIdx(newIdx)
+    onSelectedDrone?.({
+      idx: newIdx,
+      lteIp: newIdx !== null ? DRONE_TARGETS[newIdx].lteIp : null,
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -517,27 +518,25 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               <button
                 key={drone.lteIp}
                 type="button"
-                onClick={() => setSelectedIdx(isSelected ? null : idx)}
+                // ★ handleSelectDrone 으로 교체
+                onClick={() => handleSelectDrone(idx, isSelected)}
                 className={[
                   "relative flex flex-col items-start rounded-xl border px-4 py-3 text-left transition-all",
                   cardClass,
                 ].join(" ")}
               >
                 {dotEl}
-
                 <span className="text-sm font-semibold text-slate-900">
                   {drone.label}
                 </span>
                 <span className="mt-1 font-mono text-xs text-slate-500">
                   :{drone.port}
                 </span>
-
                 <span
                   className={`mt-0.5 text-xs ${droneActive ? "text-emerald-600" : "text-slate-400"}`}
                 >
                   {statusText}
                 </span>
-
                 {droneActive && state.data && (
                   <div className="mt-1.5 flex gap-2 text-xs text-slate-500">
                     {state.data.battery != null && (
@@ -557,13 +556,11 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                     )}
                   </div>
                 )}
-
                 <div className="mt-2">
                   <FlightStatusBadge
                     status={droneActive ? flightStatus : "unknown"}
                   />
                 </div>
-
                 {isSelected && (
                   <span className="absolute bottom-2 right-3 text-xs font-semibold text-indigo-500">
                     선택됨

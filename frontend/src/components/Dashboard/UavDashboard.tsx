@@ -326,7 +326,6 @@ function buildActionGuides(
   }>,
 ): ActionGuide[] {
   const guides: ActionGuide[] = []
-
   if (!droneConnected) {
     guides.push({
       priority: "standby",
@@ -341,10 +340,8 @@ function buildActionGuides(
     })
     return guides
   }
-
   const battery = droneData?.battery ?? null
   const altitude = droneData?.altitude ?? null
-
   if (battery !== null && battery <= 20) {
     guides.push({
       priority: "immediate",
@@ -371,7 +368,6 @@ function buildActionGuides(
       icon: <Battery className="h-5 w-5" />,
     })
   }
-
   if (altitude !== null && altitude > 150) {
     guides.push({
       priority: "immediate",
@@ -385,7 +381,6 @@ function buildActionGuides(
       icon: <Navigation className="h-5 w-5" />,
     })
   }
-
   if (droneData?.timestamp) {
     const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
     if (!isNaN(ageMs) && ageMs > 15000) {
@@ -402,7 +397,6 @@ function buildActionGuides(
       })
     }
   }
-
   if (guides.length === 0 && droneData) {
     guides.push({
       priority: "monitor",
@@ -417,7 +411,6 @@ function buildActionGuides(
       icon: <Target className="h-5 w-5" />,
     })
   }
-
   return guides
 }
 
@@ -481,7 +474,6 @@ function ActionGuideWidget({
   const topGuide = guides[0]
   if (!topGuide) return null
   const cfg = PRIORITY_CONFIG[topGuide.priority]
-
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
       <div
@@ -570,10 +562,7 @@ function ActionGuideWidget({
 }
 
 // ==========================
-// 비행 이벤트 로그 (개선판)
-// ─ 연결·배터리·고도·속도·GPS·통신지연·비행상태 전부 추적
-// ─ 연결 시점 스냅샷 + 복구 감지 + 1분 주기 요약
-// ─ 레벨·카테고리 필터, 최대 200건 유지
+// 비행 이벤트 로그
 // ==========================
 interface FlightLogEntry {
   id: string
@@ -581,7 +570,7 @@ interface FlightLogEntry {
   level: "info" | "warn" | "danger" | "success"
   message: string
   value?: string
-  tooltip?: string // 호버 시 표시할 상세 이유
+  tooltip?: string
   category?:
     | "battery"
     | "altitude"
@@ -601,7 +590,6 @@ function useFlightLog(
   alertLevel: "safe" | "caution" | "danger",
 ) {
   const [logs, setLogs] = useState<FlightLogEntry[]>([])
-
   const prevRef = useRef({
     connected: false,
     alertLevel: "safe" as "safe" | "caution" | "danger",
@@ -637,7 +625,6 @@ function useFlightLog(
     [],
   )
 
-  // 1. 연결/해제
   useEffect(() => {
     if (droneConnected && !prevRef.current.connected) {
       addLog(
@@ -653,7 +640,7 @@ function useFlightLog(
         "기체 연결 끊김",
         undefined,
         "connection",
-        "WebSocket 연결이 끊겼습니다. 네트워크 상태와 기체 전원을 확인하세요. 5초 후 재연결을 시도합니다.",
+        "WebSocket 연결이 끊겼습니다. 네트워크 상태와 기체 전원을 확인하세요.",
       )
       prevRef.current.battery = null
       prevRef.current.altitude = null
@@ -665,7 +652,6 @@ function useFlightLog(
     prevRef.current.connected = droneConnected
   }, [droneConnected, addLog])
 
-  // 2. 연결 직후 초기 스냅샷 (중간 연결 시 현재 상태 즉시 기록)
   const snapshotDoneRef = useRef(false)
   useEffect(() => {
     if (!droneConnected || !droneData) {
@@ -674,18 +660,16 @@ function useFlightLog(
     }
     if (snapshotDoneRef.current) return
     snapshotDoneRef.current = true
-
-    const b = droneData.battery
-    const a = droneData.altitude
-    const s = droneData.speed
-    const sat = droneData.gpsSatellites
-
+    const b = droneData.battery,
+      a = droneData.altitude,
+      s = droneData.speed,
+      sat = droneData.gpsSatellites
     addLog(
       "info",
       "── 연결 시점 상태 스냅샷 ──",
       undefined,
       "system",
-      "드론 연결 직후 측정된 초기 상태값입니다. 이후 로그의 기준점으로 사용됩니다.",
+      "드론 연결 직후 측정된 초기 상태값입니다.",
     )
     if (b != null)
       addLog(
@@ -693,11 +677,7 @@ function useFlightLog(
         "초기 배터리",
         `${b.toFixed(0)}%`,
         "battery",
-        b <= 20
-          ? `배터리 ${b.toFixed(0)}% — 위험 수준입니다. 연결 즉시 RTL 실행을 권장합니다.`
-          : b <= 35
-            ? `배터리 ${b.toFixed(0)}% — 주의 수준입니다. 비행 시간이 제한됩니다.`
-            : `배터리 ${b.toFixed(0)}% — 정상 수준입니다.`,
+        `배터리 ${b.toFixed(0)}%`,
       )
     if (a != null)
       addLog(
@@ -705,11 +685,7 @@ function useFlightLog(
         "초기 고도",
         `${a.toFixed(0)}m`,
         "altitude",
-        a > 150
-          ? `고도 ${a.toFixed(0)}m — 항공법 허용 한도(150m)를 초과한 상태로 연결되었습니다. 즉시 하강하세요.`
-          : a > 120
-            ? `고도 ${a.toFixed(0)}m — 법적 한계(150m)에 근접한 주의 고도입니다.`
-            : `고도 ${a.toFixed(0)}m — 안전 고도 범위입니다.`,
+        `고도 ${a.toFixed(0)}m`,
       )
     if (s != null)
       addLog(
@@ -717,13 +693,7 @@ function useFlightLog(
         "초기 속도",
         `${s.toFixed(1)}m/s`,
         "speed",
-        s > 35
-          ? `속도 ${s.toFixed(1)}m/s — 과속 위험 상태로 연결되었습니다.`
-          : s > 25
-            ? `속도 ${s.toFixed(1)}m/s — 주의 속도 구간입니다.`
-            : s > 1
-              ? `속도 ${s.toFixed(1)}m/s — 비행 중 상태로 연결되었습니다.`
-              : `속도 ${s.toFixed(1)}m/s — 정지 상태입니다.`,
+        `속도 ${s.toFixed(1)}m/s`,
       )
     if (sat != null)
       addLog(
@@ -731,20 +701,14 @@ function useFlightLog(
         "초기 GPS",
         `${sat}위성`,
         "gps",
-        sat < 6
-          ? `위성 ${sat}개 — 신호 불량입니다. 위치 정확도가 크게 떨어지며 비행이 위험합니다.`
-          : sat < 10
-            ? `위성 ${sat}개 — 신호 보통입니다. 정밀 비행은 자제하세요.`
-            : `위성 ${sat}개 — GPS 신호 양호합니다.`,
+        `위성 ${sat}개`,
       )
-
     prevRef.current.battery = b ?? null
     prevRef.current.altitude = a ?? null
     prevRef.current.speed = s ?? null
     prevRef.current.satellites = sat ?? null
   }, [droneConnected, droneData, addLog])
 
-  // 3. alertLevel 전환
   useEffect(() => {
     if (!droneConnected) return
     const prev = prevRef.current.alertLevel
@@ -754,78 +718,64 @@ function useFlightLog(
         "⚠ 위험 경고 발생",
         undefined,
         "system",
-        "배터리, 고도, 속도, GPS, 통신 지연 중 하나 이상이 위험 임계값을 넘었습니다. 즉시 원인을 파악하고 조치하세요.",
+        "임계값 초과 항목 발생",
       )
     else if (alertLevel === "caution" && prev === "safe")
-      addLog(
-        "warn",
-        "주의 항목 감지",
-        undefined,
-        "system",
-        "배터리, 고도, 속도, GPS, 통신 지연 중 하나 이상이 주의 임계값에 도달했습니다. 빠른 확인이 필요합니다.",
-      )
+      addLog("warn", "주의 항목 감지", undefined, "system", "주의 임계값 도달")
     else if (alertLevel === "safe" && prev !== "safe")
       addLog(
         "success",
         "전체 상태 정상 회복",
         undefined,
         "system",
-        "모든 모니터링 항목(배터리·고도·속도·GPS·통신)이 정상 범위로 복귀했습니다.",
+        "모든 항목 정상 복귀",
       )
     prevRef.current.alertLevel = alertLevel
   }, [alertLevel, droneConnected, addLog])
 
-  // 4. 배터리 임계값 교차 (5단계)
   useEffect(() => {
     if (!droneConnected) return
-    const b = droneData?.battery ?? null
-    const prev = prevRef.current.battery
+    const b = droneData?.battery ?? null,
+      prev = prevRef.current.battery
     if (b === null || prev === null) {
       prevRef.current.battery = b
       return
     }
-
     const bands = [
       {
         value: 20,
         downLevel: "danger" as const,
         downMsg: "배터리 위험 — 즉시 귀환 (≤20%)",
-        downTip:
-          "잔량 20% 이하입니다. RTL 비행(귀환 거리·고도 포함) 중 방전 시 추락 위험이 있습니다. 즉시 RTL 모드를 실행하세요.",
-        upTip:
-          "배터리가 20% 이상으로 회복되었습니다. 충전기 또는 교체 배터리를 확인하세요.",
+        downTip: "RTL 즉시 실행",
+        upTip: "20% 이상 회복",
       },
       {
         value: 30,
         downLevel: "danger" as const,
         downMsg: "배터리 위험 임박 (≤30%)",
-        downTip:
-          "잔량 30% 이하입니다. RTL 예비 구간(약 20%)까지 여유가 10% 미만입니다. 귀환을 즉시 시작하세요.",
-        upTip: "배터리가 30% 이상으로 회복되었습니다.",
+        downTip: "즉시 귀환 시작",
+        upTip: "30% 이상 회복",
       },
       {
         value: 35,
         downLevel: "warn" as const,
         downMsg: "배터리 주의 — 귀환 준비 (≤35%)",
-        downTip:
-          "잔량 35% 이하입니다. 현재 임무를 마무리하고 5분 이내 귀환 비행을 시작하세요. 자동 RTL 임계값(보통 25%)에 주의하세요.",
-        upTip: "배터리가 35% 이상으로 회복되었습니다.",
+        downTip: "5분 내 귀환 준비",
+        upTip: "35% 이상 회복",
       },
       {
         value: 50,
         downLevel: "info" as const,
         downMsg: "배터리 50% 이하",
-        downTip:
-          "잔량이 절반 이하로 내려갔습니다. 귀환 시간과 거리를 고려해 비행 계획을 재검토하세요.",
-        upTip: "배터리가 50% 이상으로 충전되었습니다.",
+        downTip: "귀환 계획 재검토",
+        upTip: "50% 이상 충전",
       },
       {
         value: 70,
         downLevel: "info" as const,
         downMsg: "배터리 70% 이하",
-        downTip:
-          "잔량 70% 이하입니다. 장거리 임무 시 복귀 가능 여부를 점검하세요.",
-        upTip: "배터리가 70% 이상으로 충전되었습니다.",
+        downTip: "장거리 임무 점검",
+        upTip: "70% 이상 충전",
       },
     ]
     for (const band of bands) {
@@ -849,58 +799,50 @@ function useFlightLog(
     prevRef.current.battery = b
   }, [droneData?.battery, droneConnected, addLog])
 
-  // 5. 고도 임계값 교차 (이륙 감지 포함)
   useEffect(() => {
     if (!droneConnected) return
-    const a = droneData?.altitude ?? null
-    const prev = prevRef.current.altitude
+    const a = droneData?.altitude ?? null,
+      prev = prevRef.current.altitude
     if (a === null || prev === null) {
       prevRef.current.altitude = a
       return
     }
-
     const bands = [
       {
         threshold: 150,
         upLevel: "danger" as const,
         upMsg: "고도 법정 한계 초과 (>150m)",
-        upTip:
-          "항공안전법상 비가시권 무인기 비행 허용 고도(150m)를 초과했습니다. 즉시 하강하고 필요 시 인근 관제탑에 보고하세요.",
+        upTip: "즉시 하강 필요",
         downLevel: "info" as const,
         downMsg: "고도 150m 이하 복귀",
-        downTip: "고도가 법적 허용 한도(150m) 이하로 복귀했습니다.",
+        downTip: "법적 한도 이하 복귀",
       },
       {
         threshold: 120,
         upLevel: "warn" as const,
         upMsg: "고도 주의 구간 진입 (>120m)",
-        upTip:
-          "법적 한계(150m)까지 30m 미만 여유입니다. 상승을 멈추고 현재 고도를 유지하거나 하강하세요.",
+        upTip: "상승 중단 권고",
         downLevel: "info" as const,
         downMsg: "고도 안전 구간 복귀 (≤120m)",
-        downTip: "안전 고도(120m 이하)로 복귀했습니다.",
+        downTip: "안전 고도 복귀",
       },
       {
         threshold: 50,
         upLevel: "info" as const,
         upMsg: "고도 50m 돌파",
-        upTip:
-          "고도 50m를 넘었습니다. 주변 장애물(전선, 나무, 건물 등)에 주의하세요.",
+        upTip: "장애물 주의",
         downLevel: "info" as const,
         downMsg: "고도 50m 이하",
-        downTip:
-          "고도가 50m 이하로 내려왔습니다. 착륙 접근 시 저고도 장애물에 유의하세요.",
+        downTip: "저고도 장애물 유의",
       },
       {
         threshold: 5,
         upLevel: "info" as const,
         upMsg: "이륙 감지",
-        upTip:
-          "기체가 지상을 이탈했습니다. 이륙 후 GPS 신호 안정화까지 수 초가 걸릴 수 있습니다.",
+        upTip: "이륙 후 GPS 안정화 대기",
         downLevel: "success" as const,
         downMsg: "착지 감지",
-        downTip:
-          "기체가 지면에 착지했습니다. 프로펠러 완전 정지 후 접근하세요.",
+        downTip: "프로펠러 정지 후 접근",
       },
     ]
     for (const band of bands) {
@@ -924,45 +866,41 @@ function useFlightLog(
     prevRef.current.altitude = a
   }, [droneData?.altitude, droneConnected, addLog])
 
-  // 6. 속도 임계값 교차 + 비행 시작/정지 감지
   useEffect(() => {
     if (!droneConnected) return
-    const s = droneData?.speed ?? null
-    const prev = prevRef.current.speed
+    const s = droneData?.speed ?? null,
+      prev = prevRef.current.speed
     if (s === null || prev === null) {
       prevRef.current.speed = s
       return
     }
-
     const bands = [
       {
         threshold: 35,
         upLevel: "danger" as const,
         upMsg: "과속 위험 (>35m/s)",
-        upTip:
-          "속도 35m/s 초과는 대부분 기체의 최대 허용 속도를 넘기는 수준입니다. 즉시 스로틀을 줄이고 속도를 낮추세요.",
+        upTip: "즉시 감속",
         downLevel: "info" as const,
         downMsg: "과속 해제 (≤35m/s)",
-        downTip: "속도가 35m/s 이하로 감속되었습니다.",
+        downTip: "감속 완료",
       },
       {
         threshold: 25,
         upLevel: "warn" as const,
         upMsg: "속도 주의 (>25m/s)",
-        upTip:
-          "속도 25m/s 초과입니다. 강풍·돌풍 환경에서 자세 제어가 어려워질 수 있습니다. 감속을 권장합니다.",
+        upTip: "감속 권장",
         downLevel: "info" as const,
         downMsg: "속도 정상 복귀 (≤25m/s)",
-        downTip: "속도가 안전 범위(25m/s 이하)로 돌아왔습니다.",
+        downTip: "안전 속도 복귀",
       },
       {
         threshold: 1,
         upLevel: "info" as const,
         upMsg: "기체 이동 시작",
-        upTip: "기체가 지상 또는 호버링에서 이동을 시작했습니다.",
+        upTip: "이동 감지",
         downLevel: "info" as const,
         downMsg: "기체 정지",
-        downTip: "기체가 이동을 멈추고 호버링 또는 착지 상태입니다.",
+        downTip: "정지 또는 착지",
       },
     ]
     for (const band of bands) {
@@ -983,16 +921,15 @@ function useFlightLog(
           band.downTip,
         )
     }
-
-    const isFlying = s > 1
-    const wasFlying = prevRef.current.isFlying
+    const isFlying = s > 1,
+      wasFlying = prevRef.current.isFlying
     if (isFlying && !wasFlying)
       addLog(
         "success",
         "비행 시작 감지",
         `${s.toFixed(1)}m/s`,
         "flight",
-        "속도가 1m/s를 넘어 비행 상태로 전환됐습니다. 이륙 후 주변 공역과 장애물을 확인하세요.",
+        "비행 상태 전환",
       )
     if (!isFlying && wasFlying)
       addLog(
@@ -1000,52 +937,47 @@ function useFlightLog(
         "착지/정지 감지",
         undefined,
         "flight",
-        "속도가 1m/s 이하로 내려가 정지 또는 착지 상태로 판단됩니다. 프로펠러 완전 정지 전 접근 금지.",
+        "정지 또는 착지 상태",
       )
     prevRef.current.isFlying = isFlying
     prevRef.current.speed = s
   }, [droneData?.speed, droneConnected, addLog])
 
-  // 7. GPS 위성 수 변화
   useEffect(() => {
     if (!droneConnected) return
-    const sat = droneData?.gpsSatellites ?? null
-    const prev = prevRef.current.satellites
+    const sat = droneData?.gpsSatellites ?? null,
+      prev = prevRef.current.satellites
     if (sat === null || prev === null) {
       prevRef.current.satellites = sat
       return
     }
-
     const bands = [
       {
         threshold: 6,
         upLevel: "success" as const,
         upMsg: "GPS 신호 정상 회복 (≥6위성)",
-        upTip: "위성 6개 이상 확보로 기본적인 위치 추적이 가능합니다.",
+        upTip: "위치 추적 가능",
         downLevel: "danger" as const,
         downMsg: "GPS 위성 위험 수준 (<6위성)",
-        downTip:
-          "위성이 6개 미만으로 떨어졌습니다. 위치 데이터 신뢰도가 매우 낮아 자율 비행 및 RTL이 불안정해질 수 있습니다. 수동 조종으로 전환하고 착륙을 검토하세요.",
+        downTip: "착륙 검토 필요",
       },
       {
         threshold: 10,
         upLevel: "info" as const,
         upMsg: "GPS 위성 증가 (≥10위성)",
-        upTip: "위성 10개 이상으로 위치 정확도가 향상되었습니다.",
+        upTip: "정확도 향상",
         downLevel: "warn" as const,
         downMsg: "GPS 위성 감소 (<10위성)",
-        downTip:
-          "위성 수가 10개 미만으로 줄었습니다. 위치 정확도가 다소 저하됩니다. 정밀 미션 비행 시 주의하세요.",
+        downTip: "정밀 비행 주의",
       },
       {
         threshold: 20,
         upLevel: "info" as const,
         upMsg: "GPS 신호 양호 (≥20위성)",
-        upTip: "위성 20개 이상 — 매우 좋은 GPS 환경입니다.",
+        upTip: "최적 GPS 환경",
         downLevel: "info" as const,
         downMsg: "GPS 위성 20개 이하",
-        downTip:
-          "위성 수가 20개 이하로 내려갔습니다. 여전히 안정적이지만 변화를 모니터링하세요.",
+        downTip: "모니터링 유지",
       },
     ]
     for (const band of bands) {
@@ -1057,7 +989,6 @@ function useFlightLog(
     prevRef.current.satellites = sat
   }, [droneData?.gpsSatellites, droneConnected, addLog])
 
-  // 8. 통신 지연 — 1초 폴링
   useEffect(() => {
     if (!droneConnected || !droneData?.timestamp) return
     const id = setInterval(() => {
@@ -1065,25 +996,24 @@ function useFlightLog(
       const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
       if (isNaN(ageMs)) return
       const prev = prevRef.current.latencyMs
-
       const latencyBands = [
         {
           threshold: 15000,
           level: "danger" as const,
           msg: "통신 두절 15초 — 페일세이프 위험",
-          tip: "15초 이상 데이터가 수신되지 않고 있습니다. 기체가 페일세이프 모드(자동 호버링 또는 RTL)로 진입했을 가능성이 높습니다. 즉시 육안으로 기체 상태를 확인하고 GCS에서 수동 개입을 시도하세요.",
+          tip: "즉시 육안 확인 필요",
         },
         {
           threshold: 8000,
           level: "warn" as const,
           msg: "통신 지연 8초 이상",
-          tip: "8초 이상 패킷 지연이 발생하고 있습니다. 네트워크 혼잡이나 LTE 신호 약화가 원인일 수 있습니다. 15초 미응답 시 페일세이프가 작동합니다.",
+          tip: "LTE 신호 확인",
         },
         {
           threshold: 3000,
           level: "info" as const,
           msg: "통신 지연 3초 이상",
-          tip: "3초 이상 응답 지연이 감지됐습니다. 현재는 경미한 수준이지만 지연이 더 늘어나면 제어 품질이 저하될 수 있습니다.",
+          tip: "경미한 지연 감지",
         },
       ]
       for (const band of latencyBands) {
@@ -1101,7 +1031,7 @@ function useFlightLog(
             `통신 지연 해소 (<${band.threshold / 1000}초)`,
             `${(ageMs / 1000).toFixed(1)}초`,
             "signal",
-            `통신 지연이 ${band.threshold / 1000}초 미만으로 해소되었습니다. 정상 데이터 수신이 재개됩니다.`,
+            "정상 수신 재개",
           )
       }
       prevRef.current.latencyMs = ageMs
@@ -1109,7 +1039,6 @@ function useFlightLog(
     return () => clearInterval(id)
   }, [droneConnected, droneData?.timestamp, addLog])
 
-  // 9. 1분 주기 요약
   useEffect(() => {
     if (!droneConnected) return
     const id = setInterval(() => {
@@ -1129,7 +1058,6 @@ function useFlightLog(
   return { logs, addLog }
 }
 
-// ── 로그 스타일 ─────────────────────────────────────────────
 const LOG_STYLE: Record<
   FlightLogEntry["level"],
   { dot: string; text: string; bg: string; border: string }
@@ -1188,11 +1116,6 @@ const CATEGORY_COLOR: Record<
   system: "bg-slate-100 text-slate-500",
 }
 
-// ── 툴팁이 달린 로그 아이템 컴포넌트 ──────────────────────────
-// ── 툴팁이 달린 로그 아이템 컴포넌트 ──────────────────────────
-// ★ Portal 방식: document.body에 툴팁을 렌더링해서
-//    overflow-y-auto 컨테이너에 의한 clipping 문제를 완전히 해결합니다.
-//    getBoundingClientRect()로 화면 좌표를 계산해 position:fixed로 배치합니다.
 function LogItem({
   log,
   s,
@@ -1209,32 +1132,23 @@ function LogItem({
 
   const handleMouseEnter = () => {
     if (!log.tooltip || !itemRef.current) return
-
     const rect = itemRef.current.getBoundingClientRect()
-    const TIP_W = 288 // w-72 ≈ 288px
-    const TIP_H_EST = 160 // 툴팁 예상 높이
-    const GAP = 8 // 아이템-툴팁 간격
-    const MARGIN = 12 // 화면 끝 여백
-
-    // ── 가로 위치: 아이템 왼쪽 정렬, 화면 우측 초과 시 우측 정렬
+    const TIP_W = 288,
+      TIP_H_EST = 160,
+      GAP = 8,
+      MARGIN = 12
     let left = rect.left
-    if (left + TIP_W + MARGIN > window.innerWidth) {
+    if (left + TIP_W + MARGIN > window.innerWidth)
       left = Math.max(MARGIN, rect.right - TIP_W)
-    }
-
-    // ── 세로 위치: 위 공간 충분하면 위에, 아니면 아래에
     const spaceAbove = rect.top
-    let top: number
-    let side: "top" | "bottom"
-
+    let top: number, side: "top" | "bottom"
     if (spaceAbove >= TIP_H_EST + GAP) {
-      top = rect.top - GAP - TIP_H_EST // 위에 배치
-      side = "bottom" // 화살표는 툴팁 하단
+      top = rect.top - GAP - TIP_H_EST
+      side = "bottom"
     } else {
-      top = rect.bottom + GAP // 아래에 배치
-      side = "top" // 화살표는 툴팁 상단
+      top = rect.bottom + GAP
+      side = "top"
     }
-
     setTipStyle({ position: "fixed", top, left, width: TIP_W, zIndex: 9999 })
     setArrowSide(side)
     setShowTip(true)
@@ -1243,21 +1157,18 @@ function LogItem({
   const levelIcon = { danger: "⚠", warn: "!", info: "i", success: "✓" }[
     log.level
   ]
-
   const tipBg = {
     danger: "bg-red-950 border-red-700/50 text-red-100",
     warn: "bg-amber-950 border-amber-700/50 text-amber-100",
     info: "bg-slate-800 border-slate-600/50 text-slate-100",
     success: "bg-emerald-950 border-emerald-700/50 text-emerald-100",
   }[log.level]
-
   const tipAccent = {
     danger: "text-red-400",
     warn: "text-amber-400",
     info: "text-sky-400",
     success: "text-emerald-400",
   }[log.level]
-
   const arrowColorClass = {
     danger: "border-red-700/50 bg-red-950",
     warn: "border-amber-700/50 bg-amber-950",
@@ -1265,7 +1176,6 @@ function LogItem({
     success: "border-emerald-700/50 bg-emerald-950",
   }[log.level]
 
-  // Portal로 body에 렌더링 — overflow 컨테이너 clipping 완전 우회
   const tooltipPortal =
     showTip && log.tooltip
       ? createPortal(
@@ -1273,31 +1183,16 @@ function LogItem({
             className={`pointer-events-none rounded-2xl border shadow-2xl ${tipBg} px-4 py-3`}
             style={tipStyle}
           >
-            {/* 화살표 */}
             <div
               className={`absolute left-4 ${arrowSide === "bottom" ? "top-full" : "bottom-full"}`}
             >
               <div
-                className={`h-2 w-2 rotate-45 border ${
-                  arrowSide === "bottom"
-                    ? "-translate-y-1 border-l-0 border-t-0"
-                    : "translate-y-1 border-b-0 border-r-0"
-                } ${arrowColorClass}`}
+                className={`h-2 w-2 rotate-45 border ${arrowSide === "bottom" ? "-translate-y-1 border-l-0 border-t-0" : "translate-y-1 border-b-0 border-r-0"} ${arrowColorClass}`}
               />
             </div>
-
-            {/* 헤더 */}
             <div className="mb-2 flex items-center gap-2">
               <span
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
-                  log.level === "danger"
-                    ? "border-red-500/60 text-red-400"
-                    : log.level === "warn"
-                      ? "border-amber-500/60 text-amber-400"
-                      : log.level === "success"
-                        ? "border-emerald-500/60 text-emerald-400"
-                        : "border-sky-500/60 text-sky-400"
-                }`}
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${log.level === "danger" ? "border-red-500/60 text-red-400" : log.level === "warn" ? "border-amber-500/60 text-amber-400" : log.level === "success" ? "border-emerald-500/60 text-emerald-400" : "border-sky-500/60 text-sky-400"}`}
               >
                 {levelIcon}
               </span>
@@ -1310,16 +1205,10 @@ function LogItem({
                 </span>
               )}
             </div>
-
-            {/* 구분선 */}
             <div className="mb-2 h-px bg-white/10" />
-
-            {/* 본문 */}
             <p className="text-[11px] leading-relaxed opacity-90">
               {log.tooltip}
             </p>
-
-            {/* 시각 */}
             <p className="mt-2 text-[10px] tabular-nums opacity-40">
               {fmt(log.ts)}
             </p>
@@ -1336,15 +1225,10 @@ function LogItem({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={() => setShowTip(false)}
       >
-        {/* 레벨 도트 */}
         <span className={`h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
-
-        {/* 시각 */}
         <span className="w-[4.5rem] shrink-0 text-[11px] tabular-nums text-slate-400">
           {fmt(log.ts)}
         </span>
-
-        {/* 카테고리 뱃지 */}
         {log.category && (
           <span
             className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${CATEGORY_COLOR[log.category]}`}
@@ -1352,38 +1236,22 @@ function LogItem({
             {CATEGORY_LABEL[log.category]}
           </span>
         )}
-
-        {/* 메시지 */}
         <span className={`flex-1 text-xs font-medium ${s.text}`}>
           {log.message}
         </span>
-
-        {/* 값 */}
         {log.value && (
           <span className="shrink-0 rounded-lg bg-white/80 px-2 py-0.5 text-xs font-semibold text-slate-600">
             {log.value}
           </span>
         )}
-
-        {/* ? 힌트 아이콘 */}
         {log.tooltip && (
           <span
-            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold opacity-40 transition-opacity group-hover:opacity-100 ${
-              log.level === "danger"
-                ? "border-red-400 text-red-500"
-                : log.level === "warn"
-                  ? "border-amber-400 text-amber-500"
-                  : log.level === "success"
-                    ? "border-emerald-400 text-emerald-600"
-                    : "border-slate-300 text-slate-400"
-            }`}
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold opacity-40 transition-opacity group-hover:opacity-100 ${log.level === "danger" ? "border-red-400 text-red-500" : log.level === "warn" ? "border-amber-400 text-amber-500" : log.level === "success" ? "border-emerald-400 text-emerald-600" : "border-slate-300 text-slate-400"}`}
           >
             ?
           </span>
         )}
       </div>
-
-      {/* Portal 툴팁 — overflow:hidden / overflow-y-auto 밖, body에 직접 마운트 */}
       {tooltipPortal}
     </>
   )
@@ -1404,14 +1272,12 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
       minute: "2-digit",
       second: "2-digit",
     })
-
   const filtered = logs.filter((log) => {
     if (filterLevel !== "all" && log.level !== filterLevel) return false
     if (filterCategory !== "all" && log.category !== filterCategory)
       return false
     return true
   })
-
   const dangerCount = logs.filter((l) => l.level === "danger").length
   const warnCount = logs.filter((l) => l.level === "warn").length
 
@@ -1455,7 +1321,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
 
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-      {/* 헤더 */}
       <div
         className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
         onClick={() => setCollapsed((v) => !v)}
@@ -1494,10 +1359,8 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
           )}
         </div>
       </div>
-
       {!collapsed && (
         <div className="flex flex-col">
-          {/* 필터 바 */}
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
             <span className="text-xs text-slate-400">레벨:</span>
             {levelButtons.map((btn) => (
@@ -1526,8 +1389,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
               ))}
             </select>
           </div>
-
-          {/* 로그 목록 */}
           <div className="p-4">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-8 text-center">
@@ -1554,7 +1415,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
                 })}
               </div>
             )}
-
             {logs.length > 0 && (
               <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-400">
                 <span>
@@ -1583,18 +1443,17 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
 }
 
 // ==========================
-// 배터리 RTL 예측 (슬라이딩 윈도우 + IQR)
+// 배터리 RTL 예측
 // ==========================
-const RTL_RESERVE_PCT = 20
-const WINDOW_SIZE = 10
-const MIN_SAMPLES = 3
-const MIN_INTERVAL_MS = 2000
+const RTL_RESERVE_PCT = 20,
+  WINDOW_SIZE = 10,
+  MIN_SAMPLES = 3,
+  MIN_INTERVAL_MS = 2000
 
 interface BatterySample {
   battery: number
   time: number
 }
-
 interface RtlPrediction {
   drainRatePerMin: number | null
   remainingSec: number | null
@@ -1606,9 +1465,9 @@ interface RtlPrediction {
 function filterOutliers(rates: number[]): number[] {
   if (rates.length < 4) return rates
   const sorted = [...rates].sort((a, b) => a - b)
-  const q1 = sorted[Math.floor(sorted.length * 0.25)]
-  const q3 = sorted[Math.floor(sorted.length * 0.75)]
-  const iqr = q3 - q1
+  const q1 = sorted[Math.floor(sorted.length * 0.25)],
+    q3 = sorted[Math.floor(sorted.length * 0.75)],
+    iqr = q3 - q1
   return rates.filter((r) => r >= q1 - 1.5 * iqr && r <= q3 + 1.5 * iqr)
 }
 
@@ -1643,8 +1502,8 @@ function useRtlPrediction(
 
   useEffect(() => {
     if (!droneActive || battery == null) return
-    const now = Date.now()
-    const last = samplesRef.current.at(-1)
+    const now = Date.now(),
+      last = samplesRef.current.at(-1)
     if (last && now - last.time < MIN_INTERVAL_MS) return
     samplesRef.current = [
       ...samplesRef.current.slice(-(WINDOW_SIZE - 1)),
@@ -1665,11 +1524,10 @@ function useRtlPrediction(
 
   const rates: number[] = []
   for (let i = 1; i < samples.length; i++) {
-    const dt = (samples[i].time - samples[i - 1].time) / 60000
-    const dB = samples[i - 1].battery - samples[i].battery
+    const dt = (samples[i].time - samples[i - 1].time) / 60000,
+      dB = samples[i - 1].battery - samples[i].battery
     if (dt > 0 && dB >= 0) rates.push(dB / dt)
   }
-
   const filtered = filterOutliers(rates)
   if (filtered.length === 0)
     return {
@@ -1695,7 +1553,6 @@ function useRtlPrediction(
           : remainingSec <= 360
             ? "caution"
             : "safe"
-
   return {
     drainRatePerMin,
     remainingSec,
@@ -1713,7 +1570,6 @@ function RtlPredictionWidget({
   battery: number | undefined | null
 }) {
   const rtl = useRtlPrediction(droneActive, battery)
-
   const formatTime = (sec: number) => {
     if (sec <= 0) return "0분 0초"
     const m = Math.floor(sec / 60),
@@ -1725,7 +1581,6 @@ function RtlPredictionWidget({
       s = sec % 60
     return m > 0 ? `${m}분 ${s}초` : `${s}초`
   }
-
   const levelStyle = {
     safe: {
       border: "border-emerald-200/60",
@@ -1756,17 +1611,15 @@ function RtlPredictionWidget({
       bar: "bg-slate-300",
     },
   }[rtl.level]
-
-  const batteryPct = battery ?? 0
-  const usablePct = Math.max(0, batteryPct - RTL_RESERVE_PCT)
-  const reservePct = Math.min(batteryPct, RTL_RESERVE_PCT)
+  const batteryPct = battery ?? 0,
+    usablePct = Math.max(0, batteryPct - RTL_RESERVE_PCT),
+    reservePct = Math.min(batteryPct, RTL_RESERVE_PCT)
   const reliabilityLabel =
     rtl.sampleCount >= WINDOW_SIZE
       ? "높음"
       : rtl.sampleCount >= MIN_SAMPLES
         ? "보통"
         : `${rtl.sampleCount}/${MIN_SAMPLES}`
-
   const mainLabel = !droneActive
     ? "기체 연결 후 예측 시작"
     : rtl.remainingSec === null
@@ -1774,7 +1627,6 @@ function RtlPredictionWidget({
       : rtl.remainingSec <= 0
         ? "즉시 귀환 필요"
         : `약 ${formatTime(rtl.remainingSec)} 더 비행 가능`
-
   const sublabel = !droneActive
     ? "드론이 활성화되면 소모율을 추적합니다"
     : rtl.remainingSec === null
@@ -1883,7 +1735,9 @@ interface FlightFeasibilityWidgetProps {
     level: "safe" | "caution" | "danger"
     label: string
   }>
-  allDroneStates: DroneWsState[]
+  // ★ 선택된 기체 1개 (또는 빈 배열)
+  selectedDroneState: DroneWsState | null
+  selectedDroneLabel: string | null
 }
 type FeasibilityResult = "go" | "caution" | "no-go" | "unknown"
 interface CheckItem {
@@ -1898,17 +1752,16 @@ function FlightFeasibilityWidget({
   droneData,
   alertLevel,
   alerts,
-  allDroneStates,
+  selectedDroneState,
+  selectedDroneLabel,
 }: FlightFeasibilityWidgetProps) {
   const checks: CheckItem[] = []
-
   checks.push({
     id: "connection",
     label: "드론 연결",
     result: droneConnected ? "pass" : "fail",
     detail: droneConnected ? "연결됨" : "연결 안 됨 — 기체를 선택하세요",
   })
-
   const battery = droneData?.battery
   checks.push({
     id: "battery",
@@ -1930,7 +1783,6 @@ function FlightFeasibilityWidget({
             ? `${battery.toFixed(0)}% — 짧은 비행만 가능`
             : `${battery.toFixed(0)}% — 충전 필요`,
   })
-
   const hasgps =
     typeof droneData?.latitude === "number" &&
     typeof droneData?.longitude === "number"
@@ -1951,7 +1803,6 @@ function FlightFeasibilityWidget({
         ? `위성 ${satellites ?? "?"}개 — 위치 확인됨`
         : "GPS 신호 없음 — 비행 불가",
   })
-
   const timestampAge = droneData?.timestamp
     ? Date.now() - new Date(droneData.timestamp).getTime()
     : null
@@ -1975,9 +1826,8 @@ function FlightFeasibilityWidget({
             ? `${(timestampAge / 1000).toFixed(0)}초 지연 — 주의`
             : `${(timestampAge / 1000).toFixed(0)}초 지연 — 통신 점검 필요`,
   })
-
-  const dangerAlerts = alerts.filter((a) => a.level === "danger")
-  const cautionAlerts = alerts.filter((a) => a.level === "caution")
+  const dangerAlerts = alerts.filter((a) => a.level === "danger"),
+    cautionAlerts = alerts.filter((a) => a.level === "caution")
   checks.push({
     id: "alerts",
     label: "위험 알림",
@@ -2004,7 +1854,6 @@ function FlightFeasibilityWidget({
       : checks.some((c) => c.result === "warn")
         ? "caution"
         : "go"
-
   const feasibilityConfig = {
     go: {
       label: "비행 가능",
@@ -2043,7 +1892,6 @@ function FlightFeasibilityWidget({
       text: "text-slate-500",
     },
   }[feasibility]
-
   const resultIcon = {
     pass: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
     warn: <AlertTriangle className="h-4 w-4 text-amber-500" />,
@@ -2071,18 +1919,23 @@ function FlightFeasibilityWidget({
             {feasibilityConfig.sublabel}
           </p>
         </div>
-        <div className="hidden shrink-0 flex-col gap-1.5 sm:flex">
-          {allDroneStates.map((state, idx) => (
-            <div key={idx} className="flex items-center gap-2">
+        {/* ★ 선택된 기체 1개만 표시 */}
+        {selectedDroneState && selectedDroneLabel && (
+          <div className="flex shrink-0 flex-col gap-1.5">
+            <div className="flex items-center gap-2">
               <span className="w-20 truncate text-xs text-slate-500">
-                {["DM4_1", "DM4_2", "DM3"][idx]}
+                {selectedDroneLabel}
               </span>
               <FlightStatusBadge
-                status={state.connected ? state.flightStatus : "unknown"}
+                status={
+                  selectedDroneState.connected
+                    ? selectedDroneState.flightStatus
+                    : "unknown"
+                }
               />
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
       <div className="border-t border-slate-200/50 px-6 py-4">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -2139,6 +1992,9 @@ const getSpeedLevel = (
 ): "safe" | "caution" | "danger" | "off" =>
   v == null ? "off" : v > 35 ? "danger" : v > 25 ? "caution" : "safe"
 
+// 드론 라벨 목록 (DroneSimulation과 순서 맞춤)
+const DRONE_LABELS = ["DM4_1", "DM4_2", "DM3"]
+
 // ==========================
 // UAV Dashboard Component
 // ==========================
@@ -2149,11 +2005,13 @@ export function UavDashboard() {
   } | null>(null)
   const [droneConnected, setDroneConnected] = useState(false)
   const [droneData, setDroneData] = useState<DroneData | null>(null)
-
-  // ★ 미션 웨이포인트 — DroneSimulation → NaverMap flightPath 로 전달
   const [missionWaypoints, setMissionWaypoints] = useState<MissionWaypoint[]>(
     [],
   )
+
+  // ★ 선택된 기체 정보 (DroneSimulation에서 올라옴)
+  const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
+  const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
 
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
@@ -2195,9 +2053,7 @@ export function UavDashboard() {
 
   const [collapseMap, setCollapseMap] = useState(false)
   const [collapseMonitor, setCollapseMonitor] = useState(false)
-  const [collapseWeather, setCollapseWeather] = useState(false)
   const [collapseCBM, setCollapseCBM] = useState(false)
-  // 상단 2열 — 각 카드 독립 아코디언
   const [collapseAction, setCollapseAction] = useState(false)
   const [collapseTopPanel, setCollapseTopPanel] = useState(false)
 
@@ -2205,14 +2061,12 @@ export function UavDashboard() {
     useWebNotification()
   const [notifyEnabled, setNotifyEnabled] = useState(true)
   const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
-
-  // ==========================
-  // 위험 경고 모달 상태
-  // ==========================
   const [modalDismissed, setModalDismissed] = useState(false)
   const prevModalKeyRef = useRef<string>("")
 
   const alerts = (() => {
+    // ★ 기체 미선택 시 빈 배열 — 아무 경고도 표시 안 함
+    if (selectedDroneIdx === null) return []
     if (!droneConnected) return []
     if (!droneData)
       return [
@@ -2228,7 +2082,6 @@ export function UavDashboard() {
       level: "safe" | "caution" | "danger"
       label: string
     }> = []
-
     if (typeof droneData.battery === "number") {
       if (droneData.battery <= 20)
         next.push({
@@ -2271,7 +2124,6 @@ export function UavDashboard() {
           label: `과속 주의 (${droneData.speed.toFixed(0)}m/s)`,
         })
     }
-
     const hasGps =
       typeof droneData.latitude === "number" &&
       typeof droneData.longitude === "number"
@@ -2281,7 +2133,6 @@ export function UavDashboard() {
         level: "caution",
         label: "GPS 신호 약함 — 위치 정확도 저하",
       })
-
     if (droneData.timestamp) {
       const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
       if (!Number.isNaN(ageMs)) {
@@ -2308,10 +2159,6 @@ export function UavDashboard() {
       ? "caution"
       : "safe"
 
-  // ==========================
-  // 위험 경고 모달 계산
-  // (배터리 ≤20% 또는 속도 >12m/s 시 팝업)
-  // ==========================
   interface DangerModalItem {
     id: string
     type: "battery" | "speed"
@@ -2319,9 +2166,7 @@ export function UavDashboard() {
     detail: string
     action: string
   }
-
   const dangerModalItems: DangerModalItem[] = []
-
   if (droneData?.battery != null && droneData.battery <= 20)
     dangerModalItems.push({
       id: "battery",
@@ -2330,7 +2175,6 @@ export function UavDashboard() {
       detail: `현재 ${droneData.battery.toFixed(0)}% — RTL 비행 중 방전 시 추락합니다`,
       action: "즉시 RTL 모드로 전환 후 귀환하세요",
     })
-
   if (droneData?.speed != null && droneData.speed > 12)
     dangerModalItems.push({
       id: "speed",
@@ -2340,13 +2184,11 @@ export function UavDashboard() {
       action: "즉시 스로틀을 줄여 속도를 낮추세요",
     })
 
-  // 위험 조합 키 — 달라지면 모달 재등장
   const modalKey = dangerModalItems.map((a) => a.id).join(",")
   if (modalKey !== prevModalKeyRef.current) {
     prevModalKeyRef.current = modalKey
     if (modalKey) setModalDismissed(false)
   }
-
   const showDangerModal =
     droneConnected && dangerModalItems.length > 0 && !modalDismissed
 
@@ -2370,16 +2212,19 @@ export function UavDashboard() {
 
   useEffect(() => {
     const onQgcEvents = (e: Event) => {
-      const { events } = (e as CustomEvent).detail as {
+      const detail = (e as CustomEvent).detail as {
         events: Array<{
           type: string
           level: string
           message: string
           time: string
         }>
+        lteIp?: string
       }
-      if (!events?.length) return
-
+      // ★ 선택된 기체의 이벤트만 처리
+      if (selectedLteIp && detail.lteIp && detail.lteIp !== selectedLteIp)
+        return
+      if (!detail.events?.length) return
       const levelMap: Record<string, FlightLogEntry["level"]> = {
         danger: "danger",
         caution: "warn",
@@ -2387,7 +2232,6 @@ export function UavDashboard() {
         info: "info",
         debug: "info",
       }
-
       const categoryMap: Record<string, FlightLogEntry["category"]> = {
         battery_critical: "battery",
         battery_low: "battery",
@@ -2401,8 +2245,7 @@ export function UavDashboard() {
         statustext: "system",
         connected: "connection",
       }
-
-      for (const ev of events) {
+      for (const ev of detail.events) {
         addLog(
           levelMap[ev.level] ?? "info",
           `[QGC] ${ev.message}`,
@@ -2412,10 +2255,9 @@ export function UavDashboard() {
         )
       }
     }
-
     window.addEventListener("qgcFlightEvents", onQgcEvents)
     return () => window.removeEventListener("qgcFlightEvents", onQgcEvents)
-  }, [addLog])
+  }, [addLog, selectedLteIp])
 
   const alertTone =
     alertLevel === "danger"
@@ -2442,7 +2284,7 @@ export function UavDashboard() {
   const renderNotificationButton = () => {
     if (typeof window === "undefined" || !("Notification" in window))
       return null
-    if (permission === "denied") {
+    if (permission === "denied")
       return (
         <span
           className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400"
@@ -2452,8 +2294,7 @@ export function UavDashboard() {
           알림 차단됨
         </span>
       )
-    }
-    if (permission === "default") {
+    if (permission === "default")
       return (
         <button
           type="button"
@@ -2464,7 +2305,6 @@ export function UavDashboard() {
           알림 허용
         </button>
       )
-    }
     return (
       <button
         type="button"
@@ -2483,16 +2323,11 @@ export function UavDashboard() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900">
-      {/* ── 위험 경고 모달 (배터리 ≤20% 또는 속도 >12m/s) ── */}
       {createPortal(
         showDangerModal ? (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-            {/* 배경 딤 */}
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-
-            {/* 모달 카드 */}
             <div className="relative w-[min(480px,calc(100vw-2rem))] overflow-hidden rounded-3xl border-2 border-red-600/60 bg-red-950 shadow-2xl shadow-red-950/80">
-              {/* 헤더 */}
               <div className="flex items-center gap-3 border-b border-red-800/60 bg-red-900/60 px-6 py-4">
                 <span className="flex h-10 w-10 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-500/20">
                   <AlertOctagon className="h-6 w-6 text-red-400" />
@@ -2509,8 +2344,6 @@ export function UavDashboard() {
                   {dangerModalItems.length}건
                 </span>
               </div>
-
-              {/* 위험 항목 목록 */}
               <div className="space-y-3 px-6 py-5">
                 {dangerModalItems.map((item) => {
                   const iconMap = {
@@ -2545,8 +2378,6 @@ export function UavDashboard() {
                   )
                 })}
               </div>
-
-              {/* 확인 버튼 */}
               <div className="border-t border-red-800/60 px-6 py-4">
                 <button
                   type="button"
@@ -2566,7 +2397,6 @@ export function UavDashboard() {
       )}
 
       <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
-        {/* 헤더 */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-sm">
@@ -2606,9 +2436,7 @@ export function UavDashboard() {
           droneData={droneData}
         />
 
-        {/* 상단 2열: [지금 뭘 해야?] + [기상 정보] — 각자 독립 아코디언 */}
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-          {/* 지금 뭘 해야? — 독립 상태 */}
           <ActionGuideWidget
             droneConnected={droneConnected}
             droneData={droneData}
@@ -2616,7 +2444,6 @@ export function UavDashboard() {
             collapsed={collapseAction}
             onToggle={() => setCollapseAction((v) => !v)}
           />
-          {/* 기상 정보 — 독립 상태 */}
           <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
               className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3 transition-colors hover:bg-slate-100/60"
@@ -2650,7 +2477,7 @@ export function UavDashboard() {
             )}
           </div>
         </div>
-        {/* 핵심 수치 */}
+
         {droneConnected && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
@@ -2687,7 +2514,6 @@ export function UavDashboard() {
           </div>
         )}
 
-        {/* 지도 */}
         <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
           <div
             className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
@@ -2756,10 +2582,8 @@ export function UavDashboard() {
           )}
         </div>
 
-        {/* 2단 그리드 */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <div className="space-y-5">
-            {/* 기체 실시간 정보 */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -2778,8 +2602,6 @@ export function UavDashboard() {
                 />
               </div>
               <div className={collapseMonitor ? "" : "p-4"}>
-                {/* ★ hidden 대신 CSS로만 숨김 — DroneSimulation은 항상 마운트 유지
-                    hidden을 쓰면 컴포넌트가 언마운트되어 WebSocket 연결이 끊김 */}
                 <div
                   style={
                     collapseMonitor
@@ -2798,15 +2620,18 @@ export function UavDashboard() {
                     onData={setDroneData}
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
+                    // ★ 선택된 기체 정보를 UavDashboard로 전달
+                    onSelectedDrone={({ idx, lteIp }) => {
+                      setSelectedDroneIdx(idx)
+                      setSelectedLteIp(lteIp)
+                    }}
                   />
                 </div>
               </div>
             </div>
 
-            {/* ★ 개선된 비행 이벤트 로그 */}
             <FlightLogWidget logs={logs} />
 
-            {/* 임계값 알림 */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -2859,16 +2684,24 @@ export function UavDashboard() {
           </div>
 
           <div className="space-y-5">
-            {/* ★ 판단불가 카드가 이 자리로 이동 (원래 기상 정보 위치) */}
+            {/* ★ 선택된 기체 1개만 FlightFeasibilityWidget에 전달 */}
             <FlightFeasibilityWidget
               droneConnected={droneConnected}
               droneData={droneData}
               alertLevel={alertLevel}
               alerts={alerts}
-              allDroneStates={allDroneStates}
+              selectedDroneState={
+                selectedDroneIdx !== null
+                  ? allDroneStates[selectedDroneIdx]
+                  : null
+              }
+              selectedDroneLabel={
+                selectedDroneIdx !== null
+                  ? DRONE_LABELS[selectedDroneIdx]
+                  : null
+              }
             />
 
-            {/* CBM */}
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -2912,7 +2745,6 @@ export function UavDashboard() {
               )}
             </div>
 
-            {/* 연결 안내 */}
             {!droneConnected && (
               <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
                 <div className="flex items-start gap-3">
@@ -2946,7 +2778,6 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* RTL 예측 */}
         {droneConnected && (
           <RtlPredictionWidget
             droneActive={droneData !== null}
@@ -2955,7 +2786,6 @@ export function UavDashboard() {
         )}
       </div>
 
-      {/* 우하단 고정 버튼 */}
       {createPortal(
         <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3">
           {chatOpen && (
