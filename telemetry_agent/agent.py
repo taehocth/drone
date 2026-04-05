@@ -23,8 +23,8 @@ VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 LTE_HEARTBEAT_TIMEOUT_SEC  = 8.0
 LTE_RETRY_SEC              = 5.0
 
-MISSION_DOWNLOAD_TIMEOUT_SEC = 3.0
-MISSION_RETRY_INTERVAL_SEC   = 30.0
+MISSION_DOWNLOAD_TIMEOUT_SEC = 5.0   # 넉넉하게 5초
+MISSION_DOWNLOAD_DELAY_SEC   = 3.0   # QGC ACK 후 대기 시간
 
 # =====================================================
 # 기체 목록
@@ -129,19 +129,19 @@ class DroneAgent:
         }
 
         # ── 미션 캐시 ──────────────────────────────────────
-        self._mission_waypoints: List[Dict[str, Any]] = []
-        self._mission_lock      = threading.Lock()
-        self._last_mission_try  = 0.0
+        self._mission_waypoints:  List[Dict[str, Any]] = []
+        self._mission_lock        = threading.Lock()
+        self._mission_downloading = False  # 중복 다운로드 방지
 
         # ── 비행 이벤트 ────────────────────────────────────
-        self._flight_events:   List[Dict[str, Any]] = []
-        self._events_lock      = threading.Lock()
-        self._last_mode:       Optional[str] = None
-        self._last_gps_fix:    Optional[int] = None
-        self._battery_warned:  set           = set()
+        self._flight_events:  List[Dict[str, Any]] = []
+        self._events_lock     = threading.Lock()
+        self._last_mode:      Optional[str] = None
+        self._last_gps_fix:   Optional[int] = None
+        self._battery_warned: set           = set()
 
         # ★ RC RSSI 추적 (10% 이상 변화 시만 기록)
-        self._last_rssi_pct:   Optional[int] = None
+        self._last_rssi_pct: Optional[int] = None
 
         self._lock         = threading.Lock()
         self._last_push_at = 0.0
@@ -199,8 +199,7 @@ class DroneAgent:
                 "message": f"드론 연결됨 — sysid={self.sysid}",
             })
 
-            # 연결 직후 미션 다운로드
-            self._try_download_mission()
+            # ✅ 연결 직후 미션 다운로드 없음 — QGC 업로드 완료(MISSION_ACK) 후에만 실행
             return True
 
         except Exception as e:
@@ -210,17 +209,27 @@ class DroneAgent:
             return False
 
     # -------------------------------------------------
-    # 미션 다운로드
+    # 미션 다운로드 (QGC 업로드 완료 후 딜레이를 두고 호출)
     # -------------------------------------------------
+    def _delayed_mission_download(self, delay_sec: float = MISSION_DOWNLOAD_DELAY_SEC) -> None:
+        """QGC가 미션 업로드 완료 후 딜레이를 두고 드론에서 미션을 읽어옴"""
+        time.sleep(delay_sec)
+        self._try_download_mission()
+
     def _try_download_mission(self) -> None:
         if self.mav is None:
             return
 
-        self._last_mission_try = now_ts()
+        # 중복 다운로드 방지
+        if self._mission_downloading:
+            print(f"[{self.drone_id}] Mission download already in progress, skip")
+            return
+        self._mission_downloading = True
 
         try:
             mav = self.mav
 
+            print(f"[{self.drone_id}] Mission: requesting list...")
             mav.mav.mission_request_list_send(
                 mav.target_system,
                 mav.target_component,
@@ -277,19 +286,13 @@ class DroneAgent:
                     "alt":     alt,
                 })
 
-            mav.mav.mission_ack_send(
-                mav.target_system,
-                mav.target_component,
-                0,  # MAV_MISSION_ACCEPTED
-            )
+            # ✅ mission_ack_send 제거 — QGC가 이미 ACK 처리 완료 상태
+            #    이걸 보내면 드론이 혼란스러워서 QGC와 충돌남
 
             with self._mission_lock:
                 self._mission_waypoints = waypoints
 
-            print(
-                f"[{self.drone_id}] Mission downloaded: "
-                f"{len(waypoints)} valid waypoints"
-            )
+            print(f"[{self.drone_id}] Mission downloaded: {len(waypoints)} valid waypoints")
             for wp in waypoints:
                 print(
                     f"  [{wp['index']}] {cmd_label(wp['command'])} "
@@ -300,6 +303,8 @@ class DroneAgent:
 
         except Exception as e:
             print(f"[{self.drone_id}] Mission download error: {e}")
+        finally:
+            self._mission_downloading = False
 
     def _push_mission(self) -> None:
         with self._mission_lock:
@@ -321,11 +326,10 @@ class DroneAgent:
         except Exception as e:
             print(f"[{self.drone_id}] Mission push failed: {e}")
 
-        # 미션 동기화 완료 이벤트
         self._add_event({
-            "type":    "mission_uploaded",
+            "type":    "mission_synced",
             "level":   "success",
-            "message": f"미션 플랜 동기화 완료 — {len(waypoints)}개 웨이포인트",
+            "message": f"미션 경로 동기화 완료 — {len(waypoints)}개 웨이포인트",
         })
 
     # -------------------------------------------------
@@ -378,7 +382,6 @@ class DroneAgent:
                 }
                 self._last_update["battery"] = ts
 
-                # ── 배터리 경고 이벤트 ──────────────────────
                 if remaining is not None:
                     if remaining <= 20 and 20 not in self._battery_warned:
                         self._battery_warned.add(20)
@@ -406,7 +409,6 @@ class DroneAgent:
                 }
                 self._last_update["gps"] = ts
 
-                # ── GPS fix 변경 이벤트 ─────────────────────
                 if fix_type != self._last_gps_fix:
                     self._last_gps_fix = fix_type
                     fix_map = {
@@ -466,8 +468,6 @@ class DroneAgent:
 
         # ── lock 바깥: 이벤트 처리 ───────────────────────────
 
-        # ── STATUSTEXT ────────────────────────────────────────
-        # QGC 로그창과 동일한 소스 + 캘리브레이션/PreArm 키워드 감지
         if t == "STATUSTEXT":
             severity_map = {
                 0: "danger", 1: "danger", 2: "danger", 3: "danger",
@@ -476,7 +476,6 @@ class DroneAgent:
             text  = (msg.text or "").rstrip('\x00')
             level = severity_map.get(int(msg.severity), "info")
 
-            # ★ 캘리브레이션 / PreArm 키워드 → 레벨 강제 조정
             text_lower = text.lower()
             for kw in CALIB_KEYWORDS:
                 if kw.lower() in text_lower:
@@ -493,7 +492,6 @@ class DroneAgent:
                 "severity": int(msg.severity),
             })
 
-        # ── 비행 모드 변경 ────────────────────────────────────
         elif t == "HEARTBEAT":
             try:
                 mode = mavutil.mode_string_v10(msg)
@@ -508,7 +506,6 @@ class DroneAgent:
             except Exception:
                 pass
 
-        # ── 웨이포인트 도달 ───────────────────────────────────
         elif t == "MISSION_ITEM_REACHED":
             self._add_event({
                 "type":    "waypoint_reached",
@@ -517,23 +514,15 @@ class DroneAgent:
                 "index":   int(msg.seq),
             })
 
-        # ── 현재 목표 웨이포인트 ──────────────────────────────
         elif t == "MISSION_CURRENT":
+            # ✅ 이벤트 기록만 — 재다운로드 트리거 없음 (QGC 충돌 방지)
             self._add_event({
                 "type":    "mission_current",
                 "level":   "info",
                 "message": f"현재 목표 → WP {int(msg.seq) + 1}",
                 "index":   int(msg.seq),
             })
-            # QGC 미션 업로드 감지 → 재다운로드
-            elapsed = now_ts() - self._last_mission_try
-            if elapsed > MISSION_RETRY_INTERVAL_SEC:
-                print(f"[{self.drone_id}] MISSION_CURRENT → re-download")
-                threading.Thread(
-                    target=self._try_download_mission, daemon=True
-                ).start()
 
-        # ── 홈 위치 설정 ──────────────────────────────────────
         elif t == "HOME_POSITION":
             lat = float(msg.latitude)  / 1e7
             lng = float(msg.longitude) / 1e7
@@ -543,24 +532,23 @@ class DroneAgent:
                 "message": f"홈 위치 설정 — {lat:.6f}, {lng:.6f}",
             })
 
-        # ── 미션 업로드 ACK ───────────────────────────────────
         elif t == "MISSION_ACK":
             if int(msg.type) == 0:  # MAV_MISSION_ACCEPTED
                 self._add_event({
                     "type":    "mission_ack",
                     "level":   "success",
-                    "message": "QGC 미션 업로드 확인 — 경로 재동기화 중",
+                    "message": "QGC 미션 업로드 완료 — 경로 동기화 중",
                 })
-                # 즉시 재다운로드
-                self._last_mission_try = 0.0
+                # ✅ QGC ACK 완료 후 3초 뒤에 미션 다운로드
+                #    _mission_downloading 플래그로 중복 실행 방지
                 threading.Thread(
-                    target=self._try_download_mission, daemon=True
+                    target=self._delayed_mission_download,
+                    args=(MISSION_DOWNLOAD_DELAY_SEC,),
+                    daemon=True,
                 ).start()
 
-        # ── ★ RC 신호 강도 (RSSI) ─────────────────────────────
         elif t == "RC_CHANNELS":
             rssi = getattr(msg, "rssi", None)
-            # 255 = unknown, 0 = 신호 없음
             if rssi is not None and rssi != 255:
                 rssi_pct = round((rssi / 254) * 100)
                 level = (
@@ -568,7 +556,6 @@ class DroneAgent:
                     "caution" if rssi_pct < 60 else
                     "info"
                 )
-                # 이전 값과 10% 이상 차이날 때만 기록 (노이즈 방지)
                 last = self._last_rssi_pct
                 if last is None or abs(rssi_pct - last) >= 10:
                     self._last_rssi_pct = rssi_pct
@@ -578,7 +565,6 @@ class DroneAgent:
                         "message": f"RC 신호 강도 {rssi_pct}% (raw={rssi})",
                     })
 
-        # ── ★ 카메라 / 페이로드 이벤트 ───────────────────────
         elif t == "CAMERA_FEEDBACK":
             self._add_event({
                 "type":    "camera_shot",
@@ -596,14 +582,12 @@ class DroneAgent:
         elif t == "COMMAND_ACK":
             cmd    = getattr(msg, "command", None)
             result = getattr(msg, "result", -1)
-            # MAV_CMD_DO_SET_CAM_TRIGG_DIST (206) = 카메라 트리거
             if cmd == 206:
                 self._add_event({
                     "type":    "camera_trigger",
                     "level":   "info" if result == 0 else "caution",
                     "message": f"카메라 트리거 {'성공' if result == 0 else f'실패 (result={result})'}",
                 })
-            # MAV_CMD_DO_CHANGE_SPEED (178) = 속도 변경 커맨드 ACK
             elif cmd == 178:
                 self._add_event({
                     "type":    "command_ack",
@@ -611,7 +595,6 @@ class DroneAgent:
                     "message": f"속도 변경 명령 {'수락' if result == 0 else f'거부 (result={result})'}",
                 })
 
-        # ── ★ 파라미터 변경 (중요 파라미터만) ────────────────
         elif t == "PARAM_VALUE":
             param_id = (getattr(msg, "param_id", "") or "").rstrip('\x00')
             if param_id in IMPORTANT_PARAMS:
@@ -657,7 +640,7 @@ class DroneAgent:
                 for k, v in self._last_update.items()
             }
 
-        # 미션 웨이포인트
+        # 미션 웨이포인트 (캐시에서 읽기)
         with self._mission_lock:
             snap["mission_waypoints"] = list(self._mission_waypoints)
 
@@ -718,10 +701,11 @@ class DroneAgent:
                 self._mission_waypoints = []
             with self._events_lock:
                 self._flight_events = []
-            self._last_mode      = None
-            self._last_gps_fix   = None
-            self._battery_warned = set()
-            self._last_rssi_pct  = None  # ★ RSSI 초기화
+            self._last_mode           = None
+            self._last_gps_fix        = None
+            self._battery_warned      = set()
+            self._last_rssi_pct       = None
+            self._mission_downloading = False
 
             time.sleep(LTE_RETRY_SEC)
 
