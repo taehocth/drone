@@ -1075,7 +1075,7 @@ function useFlightLog(
     return () => clearInterval(id)
   }, [droneConnected, droneData, addLog])
 
-  return { logs, addLog }
+  return { logs, addLog, clearLogs: () => setLogs([]) }
 }
 
 const LOG_STYLE: Record<
@@ -2238,7 +2238,11 @@ export function UavDashboard() {
     prevAlertLevelRef.current = alertLevel
   }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { logs, addLog } = useFlightLog(droneConnected, droneData, alertLevel)
+  const { logs, addLog, clearLogs } = useFlightLog(
+    droneConnected,
+    droneData,
+    alertLevel,
+  )
 
   useEffect(() => {
     const onQgcEvents = (e: Event) => {
@@ -2252,8 +2256,8 @@ export function UavDashboard() {
         lteIp?: string
       }
       // ★ 선택된 기체의 이벤트만 처리
-      if (selectedLteIp && detail.lteIp && detail.lteIp !== selectedLteIp)
-        return
+      if (!selectedLteIp) return
+      if (detail.lteIp && detail.lteIp !== selectedLteIp) return
       if (!detail.events?.length) return
       const levelMap: Record<string, FlightLogEntry["level"]> = {
         danger: "danger",
@@ -2669,13 +2673,12 @@ export function UavDashboard() {
                     onSelectedDrone={({ idx, lteIp }) => {
                       setSelectedDroneIdx(idx)
                       setSelectedLteIp(lteIp)
+                      clearLogs()
                     }}
                     onDroneOffline={(offline) => {
                       setIsDroneOffline(offline)
                       if (offline) {
-                        // offline이 되어도 connected는 true 유지
-                        // → GuideBanner가 "신호 끊김" 배너를 표시
-                        setDroneConnected(true)
+                        setDroneConnected(false) // ← 실제로 끊긴 상태 반영
                       }
                     }}
                   />
