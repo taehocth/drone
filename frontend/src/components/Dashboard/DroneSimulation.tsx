@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
+import { Search, X, Wifi, WifiOff, Radio } from "lucide-react"
 
 /* =========================
  * Types
@@ -70,12 +71,29 @@ interface DroneTarget {
   label: string
   port: number
   lteIp: string
+  // ★ 검색 키워드 (지역명, 기체명 등)
+  keywords: string[]
 }
 
 const DRONE_TARGETS: DroneTarget[] = [
-  { label: "DM4_1(중왕항)", port: 51067, lteIp: "3.36.81.238:51067" },
-  { label: "DM4_2(기은리)", port: 51568, lteIp: "3.36.81.238:51568" },
-  { label: "DM3(삼길포항)", port: 52066, lteIp: "3.36.81.238:52066" },
+  {
+    label: "DM4_1",
+    port: 51067,
+    lteIp: "3.36.81.238:51067",
+    keywords: ["DM4_1", "dm4_1", "중왕항", "중왕", "1번"],
+  },
+  {
+    label: "DM4_2",
+    port: 51568,
+    lteIp: "3.36.81.238:51568",
+    keywords: ["DM4_2", "dm4_2", "기은리", "기은", "2번"],
+  },
+  {
+    label: "DM3",
+    port: 52066,
+    lteIp: "3.36.81.238:52066",
+    keywords: ["DM3", "dm3", "삼길포항", "삼길포", "3번"],
+  },
 ]
 
 // ★ 기체 데이터가 이 시간(ms) 이상 오지 않으면 연결 끊김으로 판단
@@ -90,7 +108,6 @@ export interface DroneWsState {
   connected: boolean
   data: DroneData | null
   flightStatus: FlightStatus
-  // ★ 추가: 기체 연결 끊김 여부 (타임아웃 감지)
   droneOffline: boolean
 }
 
@@ -190,7 +207,6 @@ export function FlightStatusBadge({ status }: { status: FlightStatus }) {
 function useDroneWs(drone: DroneTarget): DroneWsState {
   const [wsConnected, setWsConnected] = useState(false)
   const [droneActive, setDroneActive] = useState(false)
-  // ★ 기체 데이터 타임아웃으로 인한 오프라인 상태
   const [droneOffline, setDroneOffline] = useState(false)
   const [data, setData] = useState<DroneData | null>(null)
 
@@ -199,7 +215,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const smoothRef = useRef<DroneData | null>(null)
   const lastTsRef = useRef<number>(performance.now())
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // ★ 마지막 데이터 수신 시각 (타임아웃 감지용)
   const lastDataReceivedRef = useRef<number | null>(null)
   const offlineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
@@ -260,7 +275,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       if (typeof msg.sysid !== "number") return
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
-      // ★ 데이터 수신 시각 갱신 → 오프라인 해제
       lastDataReceivedRef.current = Date.now()
       if (droneOffline) setDroneOffline(false)
 
@@ -331,7 +345,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [drone.lteIp, clearDroneData, droneOffline])
 
-  // ★ 타임아웃 감지 폴링 — 마지막 수신으로부터 DRONE_OFFLINE_TIMEOUT_MS 초과 시 오프라인 처리
   useEffect(() => {
     offlineTimerRef.current = setInterval(() => {
       if (!droneActiveRef.current) return
@@ -339,19 +352,16 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       if (last === null) return
       const age = Date.now() - last
       if (age > DRONE_OFFLINE_TIMEOUT_MS) {
-        // 타임아웃 → 오프라인 상태로 전환
         droneActiveRef.current = false
         setDroneActive(false)
         setDroneOffline(true)
-        // 마지막 데이터는 유지 (화면에 마지막 값 + 경고 표시용)
       }
-    }, 2000) // 2초마다 체크
+    }, 2000)
     return () => {
       if (offlineTimerRef.current) clearInterval(offlineTimerRef.current)
     }
   }, [])
 
-  // RAF 스무딩
   useEffect(() => {
     let rafId: number
     const rafLoop = () => {
@@ -398,7 +408,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     return () => cancelAnimationFrame(rafId)
   }, [])
 
-  // UI 스냅샷 (20Hz)
   useEffect(() => {
     const id = window.setInterval(
       () => {
@@ -423,7 +432,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     return () => window.clearInterval(id)
   }, [])
 
-  // 마운트 시 연결
   useEffect(() => {
     mountedRef.current = true
     connect()
@@ -448,6 +456,18 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 }
 
 /* =========================
+ * 검색으로 기체 찾기 헬퍼
+ * ========================= */
+function searchDrone(query: string): number | null {
+  const q = query.trim().toLowerCase()
+  if (!q) return null
+  const idx = DRONE_TARGETS.findIndex((d) =>
+    d.keywords.some((kw) => kw.toLowerCase().includes(q)),
+  )
+  return idx >= 0 ? idx : null
+}
+
+/* =========================
  * Props
  * ========================= */
 interface DroneSimulationProps {
@@ -459,7 +479,6 @@ interface DroneSimulationProps {
     idx: number | null
     lteIp: string | null
   }) => void
-  // ★ 추가: 기체 오프라인 상태 변경 콜백
   onDroneOffline?: (offline: boolean) => void
 }
 
@@ -483,6 +502,48 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   const selectedState = selectedIdx !== null ? allStates[selectedIdx] : null
 
+  // ★ 검색 관련 상태
+  const [searchQuery, setSearchQuery] = useState("")
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // ★ 기체 선택 처리
+  const handleSelectDrone = useCallback(
+    (idx: number | null) => {
+      setSelectedIdx(idx)
+      onSelectedDrone?.({
+        idx,
+        lteIp: idx !== null ? DRONE_TARGETS[idx].lteIp : null,
+      })
+    },
+    [onSelectedDrone],
+  )
+
+  // ★ 검색 실행
+  const handleSearch = useCallback(() => {
+    const q = searchQuery.trim()
+    if (!q) {
+      setSearchError("검색어를 입력해주세요")
+      return
+    }
+    const found = searchDrone(q)
+    if (found === null) {
+      setSearchError(`"${q}"에 해당하는 기체를 찾을 수 없습니다`)
+      return
+    }
+    setSearchError(null)
+    setSearchQuery("")
+    handleSelectDrone(found)
+  }, [searchQuery, handleSelectDrone])
+
+  // ★ 연결 해제
+  const handleDisconnect = useCallback(() => {
+    handleSelectDrone(null)
+    setSearchQuery("")
+    setSearchError(null)
+  }, [handleSelectDrone])
+
+  // 부모 콜백
   useEffect(() => {
     if (onAllDroneStates) onAllDroneStates(allStates)
   }, [drone0, drone1, drone2]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -503,181 +564,237 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     }
   }, [selectedState?.data?.missionWaypoints, onMissionWaypoints]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ★ 선택된 기체의 오프라인 상태를 UavDashboard로 전달
   useEffect(() => {
     if (onDroneOffline) {
       onDroneOffline(selectedState?.droneOffline ?? false)
     }
   }, [selectedState?.droneOffline, onDroneOffline])
 
-  const handleSelectDrone = (idx: number, isSelected: boolean) => {
-    const newIdx = isSelected ? null : idx
-    setSelectedIdx(newIdx)
-    onSelectedDrone?.({
-      idx: newIdx,
-      lteIp: newIdx !== null ? DRONE_TARGETS[newIdx].lteIp : null,
-    })
-  }
+  const selectedDrone = selectedIdx !== null ? DRONE_TARGETS[selectedIdx] : null
+  const selectedWsState = selectedIdx !== null ? allStates[selectedIdx] : null
 
   return (
-    <div className="space-y-6">
-      {/* 기체 선택 패널 */}
+    <div className="space-y-4">
+      {/* ★ 검색 패널 */}
       <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
         <div className="mb-3">
-          <h3 className="text-sm font-semibold text-slate-900">기체 선택</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            연결할 기체를 선택한 뒤 조회 시작을 누르세요. 연결 중에 다른 기체를
-            선택하면 자동으로 전환됩니다.
+          <h3 className="text-sm font-semibold text-slate-900">기체 연결</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            지역명 또는 기체명으로 검색하세요 —{" "}
+            <span className="text-slate-400">
+              중왕항, 기은리, 삼길포항 / DM4_1, DM4_2, DM3
+            </span>
           </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          {DRONE_TARGETS.map((drone, idx) => {
-            const state = allStates[idx]
-            const isSelected = selectedIdx === idx
-            const { wsConnected, droneActive, flightStatus, droneOffline } =
-              state
-
-            // ★ 오프라인 시 카드 스타일 별도 처리
-            const cardClass = droneOffline
-              ? isSelected
-                ? "border-red-400 bg-red-50"
-                : "border-red-300 bg-red-50/50 hover:border-red-400"
-              : droneActive
-                ? isSelected
-                  ? "border-emerald-400 bg-emerald-50"
-                  : "border-emerald-300 bg-emerald-50/50 hover:border-emerald-400"
-                : isSelected
-                  ? "border-slate-500 bg-slate-50"
-                  : "border-slate-200 bg-white hover:border-slate-400 hover:bg-slate-50"
-
-            // ★ 오프라인 시 붉은 점 깜빡임
-            const dotEl = droneOffline ? (
-              <span className="absolute right-3 top-3 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
-              </span>
-            ) : droneActive ? (
-              <span className="absolute right-3 top-3 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-              </span>
-            ) : wsConnected ? (
-              <span className="absolute right-3 top-3 flex h-2 w-2">
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-slate-300" />
-              </span>
-            ) : null
-
-            // ★ 상태 텍스트
-            const statusText = droneOffline
-              ? "⚠ 기체 신호 끊김"
-              : droneActive
-                ? "기체 수신 중"
-                : wsConnected
-                  ? "서버 연결됨 (기체 없음)"
-                  : "연결 중..."
-
-            const statusColor = droneOffline
-              ? "text-red-500 font-semibold"
-              : droneActive
-                ? "text-emerald-600"
-                : "text-slate-400"
-
-            const wpCount = state.data?.missionWaypoints?.length ?? 0
-
-            return (
+        {/* 검색창 */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setSearchError(null)
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="기체명 또는 지역명 입력 후 Enter"
+              className={[
+                "w-full rounded-xl border py-2.5 pl-9 pr-4 text-sm outline-none transition",
+                searchError
+                  ? "border-red-300 bg-red-50 focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                  : "border-slate-200 bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100",
+              ].join(" ")}
+            />
+            {searchQuery && (
               <button
-                key={drone.lteIp}
                 type="button"
-                onClick={() => handleSelectDrone(idx, isSelected)}
-                className={[
-                  "relative flex flex-col items-start rounded-xl border px-4 py-3 text-left transition-all",
-                  cardClass,
-                ].join(" ")}
+                onClick={() => {
+                  setSearchQuery("")
+                  setSearchError(null)
+                  inputRef.current?.focus()
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500"
               >
-                {dotEl}
-                <span className="text-sm font-semibold text-slate-900">
-                  {drone.label}
-                </span>
-                <span className="mt-1 font-mono text-xs text-slate-500">
-                  :{drone.port}
-                </span>
-                <span className={`mt-0.5 text-xs ${statusColor}`}>
-                  {statusText}
-                </span>
-
-                {/* ★ 오프라인 경고 배지 */}
-                {droneOffline && (
-                  <span className="mt-1.5 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600">
-                    연결 끊김
-                  </span>
-                )}
-
-                {(droneActive || droneOffline) && state.data && (
-                  <div className="mt-1.5 flex gap-2 text-xs text-slate-500">
-                    {state.data.battery != null && (
-                      <span className="font-mono">
-                        🔋 {state.data.battery.toFixed(0)}%
-                      </span>
-                    )}
-                    {state.data.altitude != null && (
-                      <span className="font-mono">
-                        ↑ {state.data.altitude.toFixed(0)}m
-                      </span>
-                    )}
-                    {wpCount > 0 && (
-                      <span className="font-mono text-blue-500">
-                        📍 WP {wpCount}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-2">
-                  <FlightStatusBadge
-                    status={droneActive ? flightStatus : "unknown"}
-                  />
-                </div>
-
-                {isSelected && (
-                  <span className="absolute bottom-2 right-3 text-xs font-semibold text-indigo-500">
-                    선택됨
-                  </span>
-                )}
+                <X className="h-3.5 w-3.5" />
               </button>
-            )
-          })}
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleSearch}
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-95"
+          >
+            검색
+          </button>
         </div>
 
-        <div className="mt-3 text-xs text-slate-400">
-          {selectedIdx !== null ? (
-            <span>
-              선택된 기체:{" "}
-              <span className="font-semibold text-slate-700">
-                {DRONE_TARGETS[selectedIdx].label}
-              </span>{" "}
-              — 아래 텔레메트리 카드에 표시됩니다
-              {allStates[selectedIdx].droneOffline && (
-                <span className="ml-2 font-semibold text-red-500">
-                  ⚠ 기체 신호 끊김 — 재연결 대기 중
-                </span>
-              )}
-              {!allStates[selectedIdx].droneActive &&
-                !allStates[selectedIdx].droneOffline && (
-                  <span className="ml-2 text-amber-500">
-                    ⚠ 기체 데이터 없음
-                  </span>
-                )}
-            </span>
-          ) : (
-            <span>
-              기체 카드를 클릭하면 아래에 상세 텔레메트리가 표시됩니다
-            </span>
-          )}
-        </div>
+        {/* 에러 메시지 */}
+        {searchError && (
+          <p className="mt-2 text-xs text-red-500">{searchError}</p>
+        )}
+
+        {/* 검색 힌트 — 기체 미선택 시 */}
+        {!selectedDrone && !searchError && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {DRONE_TARGETS.map((d, idx) => (
+              <button
+                key={d.lteIp}
+                type="button"
+                onClick={() => handleSelectDrone(idx)}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600"
+              >
+                {d.label} · {d.keywords[2]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* 드론 상태 카드 */}
+      {/* ★ 연결된 기체 상태 카드 */}
+      {selectedDrone && selectedWsState ? (
+        <div
+          className={[
+            "rounded-2xl border p-4 transition-all",
+            selectedWsState.droneOffline
+              ? "border-red-300 bg-red-50/60"
+              : selectedWsState.droneActive
+                ? "border-emerald-300 bg-emerald-50/60"
+                : "border-slate-200 bg-slate-50/60",
+          ].join(" ")}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* 상태 아이콘 */}
+              <div
+                className={[
+                  "flex h-10 w-10 items-center justify-center rounded-xl",
+                  selectedWsState.droneOffline
+                    ? "bg-red-100"
+                    : selectedWsState.droneActive
+                      ? "bg-emerald-100"
+                      : "bg-slate-100",
+                ].join(" ")}
+              >
+                {selectedWsState.droneOffline ? (
+                  <WifiOff className="h-5 w-5 text-red-500" />
+                ) : selectedWsState.droneActive ? (
+                  <Radio className="h-5 w-5 text-emerald-600" />
+                ) : (
+                  <Wifi className="h-5 w-5 text-slate-400" />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-900">
+                    {selectedDrone.label}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {selectedDrone.keywords[2]}
+                  </span>
+                  {/* 깜빡이는 상태 점 */}
+                  {selectedWsState.droneOffline ? (
+                    <span className="flex h-2 w-2">
+                      <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                    </span>
+                  ) : selectedWsState.droneActive ? (
+                    <span className="flex h-2 w-2">
+                      <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                    </span>
+                  ) : null}
+                </div>
+
+                {/* 상태 텍스트 */}
+                <p
+                  className={[
+                    "text-xs font-medium",
+                    selectedWsState.droneOffline
+                      ? "text-red-500"
+                      : selectedWsState.droneActive
+                        ? "text-emerald-600"
+                        : "text-slate-400",
+                  ].join(" ")}
+                >
+                  {selectedWsState.droneOffline
+                    ? "⚠ 기체 신호 끊김 — 재연결 대기 중"
+                    : selectedWsState.droneActive
+                      ? "텔레메트리 수신 중"
+                      : selectedWsState.wsConnected
+                        ? "서버 연결됨 — 기체 응답 대기"
+                        : "서버 연결 중..."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* 마지막 수신 데이터 요약 */}
+              {selectedWsState.data && (
+                <div className="hidden items-center gap-3 text-xs text-slate-500 sm:flex">
+                  {selectedWsState.data.battery != null && (
+                    <span className="font-mono">
+                      🔋 {selectedWsState.data.battery.toFixed(0)}%
+                    </span>
+                  )}
+                  {selectedWsState.data.altitude != null && (
+                    <span className="font-mono">
+                      ↑ {selectedWsState.data.altitude.toFixed(0)}m
+                    </span>
+                  )}
+                  {(selectedWsState.data.missionWaypoints?.length ?? 0) > 0 && (
+                    <span className="font-mono text-blue-500">
+                      📍 WP {selectedWsState.data.missionWaypoints!.length}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <FlightStatusBadge
+                status={
+                  selectedWsState.droneActive
+                    ? selectedWsState.flightStatus
+                    : "unknown"
+                }
+              />
+
+              {/* 연결 해제 버튼 */}
+              <button
+                type="button"
+                onClick={handleDisconnect}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+              >
+                <X className="h-3.5 w-3.5" />
+                해제
+              </button>
+            </div>
+          </div>
+
+          {/* offline 배지 */}
+          {selectedWsState.droneOffline && (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-100/60 px-3 py-2 text-xs text-red-700">
+              마지막 수신 데이터를 표시하고 있습니다. 기체 전원과 LTE 연결을
+              확인하세요.
+            </div>
+          )}
+        </div>
+      ) : (
+        // 기체 미선택 안내
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
+          <Radio className="mx-auto mb-2 h-8 w-8 text-slate-200" />
+          <p className="text-sm font-medium text-slate-400">
+            관제할 기체를 검색해서 연결하세요
+          </p>
+          <p className="mt-1 text-xs text-slate-300">
+            한 번에 하나의 기체만 관제합니다
+          </p>
+        </div>
+      )}
+
+      {/* 드론 텔레메트리 카드 */}
       <DroneSimulationCard
         data={selectedState?.droneActive ? (selectedState?.data ?? {}) : {}}
         connected={selectedState?.droneActive ?? false}
