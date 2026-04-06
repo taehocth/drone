@@ -23,9 +23,6 @@ VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 LTE_HEARTBEAT_TIMEOUT_SEC  = 8.0
 LTE_RETRY_SEC              = 5.0
 
-MISSION_DOWNLOAD_TIMEOUT_SEC = 5.0   # 넉넉하게 5초
-MISSION_DOWNLOAD_DELAY_SEC   = 3.0   # QGC ACK 후 대기 시간
-
 # =====================================================
 # 기체 목록
 # =====================================================
@@ -129,9 +126,13 @@ class DroneAgent:
         }
 
         # ── 미션 캐시 ──────────────────────────────────────
-        self._mission_waypoints:  List[Dict[str, Any]] = []
-        self._mission_lock        = threading.Lock()
-        self._mission_downloading = False  # 중복 다운로드 방지
+        # ✅ passive 수신 전용: QGC ↔ 드론 간 MISSION_ITEM_INT를 엿들어 누적
+        #    Agent는 절대 MISSION_REQUEST_LIST / MISSION_REQUEST_INT를 보내지 않음
+        self._mission_waypoints: List[Dict[str, Any]] = []
+        self._mission_lock       = threading.Lock()
+        # 업로드 중 수집 버퍼 (MISSION_COUNT 수신 시 초기화)
+        self._mission_buf: Dict[int, Dict[str, Any]] = {}
+        self._mission_expected_count: int = 0
 
         # ── 비행 이벤트 ────────────────────────────────────
         self._flight_events:  List[Dict[str, Any]] = []
@@ -199,7 +200,6 @@ class DroneAgent:
                 "message": f"드론 연결됨 — sysid={self.sysid}",
             })
 
-            # ✅ 연결 직후 미션 다운로드 없음 — QGC 업로드 완료(MISSION_ACK) 후에만 실행
             return True
 
         except Exception as e:
@@ -209,103 +209,8 @@ class DroneAgent:
             return False
 
     # -------------------------------------------------
-    # 미션 다운로드 (QGC 업로드 완료 후 딜레이를 두고 호출)
+    # 미션 push (캐시 → 서버)
     # -------------------------------------------------
-    def _delayed_mission_download(self, delay_sec: float = MISSION_DOWNLOAD_DELAY_SEC) -> None:
-        """QGC가 미션 업로드 완료 후 딜레이를 두고 드론에서 미션을 읽어옴"""
-        time.sleep(delay_sec)
-        self._try_download_mission()
-
-    def _try_download_mission(self) -> None:
-        if self.mav is None:
-            return
-
-        # 중복 다운로드 방지
-        if self._mission_downloading:
-            print(f"[{self.drone_id}] Mission download already in progress, skip")
-            return
-        self._mission_downloading = True
-
-        try:
-            mav = self.mav
-
-            print(f"[{self.drone_id}] Mission: requesting list...")
-            mav.mav.mission_request_list_send(
-                mav.target_system,
-                mav.target_component,
-            )
-
-            count_msg = mav.recv_match(
-                type="MISSION_COUNT",
-                blocking=True,
-                timeout=MISSION_DOWNLOAD_TIMEOUT_SEC,
-            )
-            if count_msg is None:
-                print(f"[{self.drone_id}] Mission: no MISSION_COUNT response")
-                return
-
-            count = int(count_msg.count)
-            if count == 0:
-                print(f"[{self.drone_id}] Mission: empty (count=0)")
-                with self._mission_lock:
-                    self._mission_waypoints = []
-                self._push_mission()
-                return
-
-            print(f"[{self.drone_id}] Mission: downloading {count} items...")
-            waypoints: List[Dict[str, Any]] = []
-
-            for i in range(count):
-                mav.mav.mission_request_int_send(
-                    mav.target_system,
-                    mav.target_component,
-                    i,
-                )
-                item = mav.recv_match(
-                    type="MISSION_ITEM_INT",
-                    blocking=True,
-                    timeout=MISSION_DOWNLOAD_TIMEOUT_SEC,
-                )
-                if item is None:
-                    print(f"[{self.drone_id}] Mission: timeout at item {i}")
-                    return
-
-                lat = float(item.x) / 1e7
-                lng = float(item.y) / 1e7
-                alt = float(item.z)
-                cmd = int(item.command)
-
-                if abs(lat) < 0.0001 and abs(lng) < 0.0001:
-                    continue
-
-                waypoints.append({
-                    "index":   int(item.seq),
-                    "command": cmd,
-                    "lat":     lat,
-                    "lng":     lng,
-                    "alt":     alt,
-                })
-
-            # ✅ mission_ack_send 제거 — QGC가 이미 ACK 처리 완료 상태
-            #    이걸 보내면 드론이 혼란스러워서 QGC와 충돌남
-
-            with self._mission_lock:
-                self._mission_waypoints = waypoints
-
-            print(f"[{self.drone_id}] Mission downloaded: {len(waypoints)} valid waypoints")
-            for wp in waypoints:
-                print(
-                    f"  [{wp['index']}] {cmd_label(wp['command'])} "
-                    f"lat={wp['lat']:.6f} lng={wp['lng']:.6f} alt={wp['alt']:.1f}m"
-                )
-
-            self._push_mission()
-
-        except Exception as e:
-            print(f"[{self.drone_id}] Mission download error: {e}")
-        finally:
-            self._mission_downloading = False
-
     def _push_mission(self) -> None:
         with self._mission_lock:
             waypoints = list(self._mission_waypoints)
@@ -506,6 +411,80 @@ class DroneAgent:
             except Exception:
                 pass
 
+        elif t == "MISSION_COUNT":
+            # ✅ QGC가 드론에 업로드 시작할 때 방출 — 버퍼 초기화
+            count = int(msg.count)
+            self._mission_buf = {}
+            self._mission_expected_count = count
+            print(f"[{self.drone_id}] Mission upload started: expecting {count} items (passive observe)")
+
+        elif t == "MISSION_ITEM_INT":
+            # ✅ Agent는 아무 요청도 보내지 않고 이 메시지를 엿들어 버퍼에 누적
+            lat = float(msg.x) / 1e7
+            lng = float(msg.y) / 1e7
+            alt = float(msg.z)
+            cmd = int(msg.command)
+            seq = int(msg.seq)
+
+            if abs(lat) < 0.0001 and abs(lng) < 0.0001:
+                return  # 홈/더미 좌표 제외
+
+            self._mission_buf[seq] = {
+                "index":   seq,
+                "command": cmd,
+                "lat":     lat,
+                "lng":     lng,
+                "alt":     alt,
+            }
+            print(
+                f"[{self.drone_id}] Mission item snooped: "
+                f"[{seq}] {cmd_label(cmd)} lat={lat:.6f} lng={lng:.6f} alt={alt:.1f}m "
+                f"({len(self._mission_buf)}/{self._mission_expected_count})"
+            )
+
+        elif t == "MISSION_ITEM":
+            # ✅ MISSION_ITEM_INT 대신 MISSION_ITEM을 쓰는 구형 QGC 대응
+            lat = float(getattr(msg, "x", 0))
+            lng = float(getattr(msg, "y", 0))
+            alt = float(getattr(msg, "z", 0))
+            cmd = int(msg.command)
+            seq = int(msg.seq)
+
+            if abs(lat) < 0.0001 and abs(lng) < 0.0001:
+                return
+
+            self._mission_buf[seq] = {
+                "index":   seq,
+                "command": cmd,
+                "lat":     lat,
+                "lng":     lng,
+                "alt":     alt,
+            }
+
+        elif t == "MISSION_ACK":
+            if int(msg.type) == 0:  # MAV_MISSION_ACCEPTED
+                # ✅ QGC 업로드 완료 — 버퍼를 캐시에 반영하고 push
+                waypoints = sorted(self._mission_buf.values(), key=lambda w: w["index"])
+                with self._mission_lock:
+                    self._mission_waypoints = waypoints
+                self._mission_buf = {}
+                self._mission_expected_count = 0
+
+                print(f"[{self.drone_id}] Mission ACK received: {len(waypoints)} waypoints committed")
+                for wp in waypoints:
+                    print(
+                        f"  [{wp['index']}] {cmd_label(wp['command'])} "
+                        f"lat={wp['lat']:.6f} lng={wp['lng']:.6f} alt={wp['alt']:.1f}m"
+                    )
+
+                self._add_event({
+                    "type":    "mission_ack",
+                    "level":   "success",
+                    "message": f"QGC 미션 업로드 완료 — {len(waypoints)}개 웨이포인트 동기화",
+                })
+                # ✅ 별도 스레드 없이 즉시 push (능동 다운로드 없음)
+                threading.Thread(target=self._push_mission, daemon=True).start()
+
         elif t == "MISSION_ITEM_REACHED":
             self._add_event({
                 "type":    "waypoint_reached",
@@ -515,7 +494,6 @@ class DroneAgent:
             })
 
         elif t == "MISSION_CURRENT":
-            # ✅ 이벤트 기록만 — 재다운로드 트리거 없음 (QGC 충돌 방지)
             self._add_event({
                 "type":    "mission_current",
                 "level":   "info",
@@ -531,21 +509,6 @@ class DroneAgent:
                 "level":   "info",
                 "message": f"홈 위치 설정 — {lat:.6f}, {lng:.6f}",
             })
-
-        elif t == "MISSION_ACK":
-            if int(msg.type) == 0:  # MAV_MISSION_ACCEPTED
-                self._add_event({
-                    "type":    "mission_ack",
-                    "level":   "success",
-                    "message": "QGC 미션 업로드 완료 — 경로 동기화 중",
-                })
-                # ✅ QGC ACK 완료 후 3초 뒤에 미션 다운로드
-                #    _mission_downloading 플래그로 중복 실행 방지
-                threading.Thread(
-                    target=self._delayed_mission_download,
-                    args=(MISSION_DOWNLOAD_DELAY_SEC,),
-                    daemon=True,
-                ).start()
 
         elif t == "RC_CHANNELS":
             rssi = getattr(msg, "rssi", None)
@@ -701,11 +664,12 @@ class DroneAgent:
                 self._mission_waypoints = []
             with self._events_lock:
                 self._flight_events = []
-            self._last_mode           = None
-            self._last_gps_fix        = None
-            self._battery_warned      = set()
-            self._last_rssi_pct       = None
-            self._mission_downloading = False
+            self._mission_buf             = {}
+            self._mission_expected_count  = 0
+            self._last_mode               = None
+            self._last_gps_fix            = None
+            self._battery_warned          = set()
+            self._last_rssi_pct           = None
 
             time.sleep(LTE_RETRY_SEC)
 
