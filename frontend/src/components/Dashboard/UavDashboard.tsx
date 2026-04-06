@@ -2034,6 +2034,11 @@ export function UavDashboard() {
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
   // ★ 기체 신호 끊김 상태
   const [isDroneOffline, setIsDroneOffline] = useState(false)
+  useEffect(() => {
+    if (!isDroneOffline) {
+      if (selectedDroneIdx === null) setDroneConnected(false)
+    }
+  }, [isDroneOffline, selectedDroneIdx])
 
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
@@ -2648,15 +2653,31 @@ export function UavDashboard() {
                   }
                 >
                   <DroneSimulation
-                    onConnectionChange={setDroneConnected}
-                    onData={setDroneData}
+                    onConnectionChange={(connected) => {
+                      if (!isDroneOffline) setDroneConnected(connected)
+                    }}
+                    onData={(data) => {
+                      if (data !== null) {
+                        setDroneData(data)
+                      } else if (!isDroneOffline) {
+                        // offline 상태일 때 null이 와도 마지막 데이터 유지
+                        setDroneData(null)
+                      }
+                    }}
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
                     onSelectedDrone={({ idx, lteIp }) => {
                       setSelectedDroneIdx(idx)
                       setSelectedLteIp(lteIp)
                     }}
-                    onDroneOffline={setIsDroneOffline}
+                    onDroneOffline={(offline) => {
+                      setIsDroneOffline(offline)
+                      if (offline) {
+                        // offline이 되어도 connected는 true 유지
+                        // → GuideBanner가 "신호 끊김" 배너를 표시
+                        setDroneConnected(true)
+                      }
+                    }}
                   />
                 </div>
               </div>
