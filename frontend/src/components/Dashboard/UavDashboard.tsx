@@ -29,10 +29,7 @@ import {
   CheckCircle2,
   XCircle,
   Wind,
-  Timer,
   BatteryLow,
-  TrendingDown,
-  PlaneLanding,
   Bell,
   BellOff,
   Lightbulb,
@@ -1463,287 +1460,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
 }
 
 // ==========================
-// 배터리 RTL 예측
-// ==========================
-const RTL_RESERVE_PCT = 20,
-  WINDOW_SIZE = 10,
-  MIN_SAMPLES = 3,
-  MIN_INTERVAL_MS = 2000
-
-interface BatterySample {
-  battery: number
-  time: number
-}
-interface RtlPrediction {
-  drainRatePerMin: number | null
-  remainingSec: number | null
-  elapsedSec: number
-  level: "safe" | "caution" | "danger" | "off"
-  sampleCount: number
-}
-
-function filterOutliers(rates: number[]): number[] {
-  if (rates.length < 4) return rates
-  const sorted = [...rates].sort((a, b) => a - b)
-  const q1 = sorted[Math.floor(sorted.length * 0.25)],
-    q3 = sorted[Math.floor(sorted.length * 0.75)],
-    iqr = q3 - q1
-  return rates.filter((r) => r >= q1 - 1.5 * iqr && r <= q3 + 1.5 * iqr)
-}
-
-function useRtlPrediction(
-  droneActive: boolean,
-  battery: number | undefined | null,
-): RtlPrediction {
-  const samplesRef = useRef<BatterySample[]>([])
-  const [tick, setTick] = useState(0)
-  const [elapsedSec, setElapsedSec] = useState(0)
-  const startTimeRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (droneActive) {
-      if (!startTimeRef.current) startTimeRef.current = Date.now()
-    } else {
-      samplesRef.current = []
-      startTimeRef.current = null
-      setElapsedSec(0)
-      setTick(0)
-    }
-  }, [droneActive])
-
-  useEffect(() => {
-    if (!droneActive) return
-    const id = setInterval(() => {
-      if (startTimeRef.current)
-        setElapsedSec(Math.floor((Date.now() - startTimeRef.current) / 1000))
-    }, 1000)
-    return () => clearInterval(id)
-  }, [droneActive])
-
-  useEffect(() => {
-    if (!droneActive || battery == null) return
-    const now = Date.now(),
-      last = samplesRef.current.at(-1)
-    if (last && now - last.time < MIN_INTERVAL_MS) return
-    samplesRef.current = [
-      ...samplesRef.current.slice(-(WINDOW_SIZE - 1)),
-      { battery, time: now },
-    ]
-    setTick((t) => t + 1)
-  }, [droneActive, battery])
-
-  const samples = samplesRef.current
-  if (!droneActive || battery == null || samples.length < MIN_SAMPLES)
-    return {
-      drainRatePerMin: null,
-      remainingSec: null,
-      elapsedSec,
-      level: "off",
-      sampleCount: samples.length,
-    }
-
-  const rates: number[] = []
-  for (let i = 1; i < samples.length; i++) {
-    const dt = (samples[i].time - samples[i - 1].time) / 60000,
-      dB = samples[i - 1].battery - samples[i].battery
-    if (dt > 0 && dB >= 0) rates.push(dB / dt)
-  }
-  const filtered = filterOutliers(rates)
-  if (filtered.length === 0)
-    return {
-      drainRatePerMin: null,
-      remainingSec: null,
-      elapsedSec,
-      level: "off",
-      sampleCount: samples.length,
-    }
-
-  const drainRatePerMin =
-    filtered.reduce((sum, r) => sum + r, 0) / filtered.length
-  const usable = Math.max(0, battery - RTL_RESERVE_PCT)
-  const remainingSec =
-    drainRatePerMin > 0 ? Math.floor((usable / drainRatePerMin) * 60) : null
-  const level: RtlPrediction["level"] =
-    remainingSec == null
-      ? "off"
-      : remainingSec <= 0
-        ? "danger"
-        : remainingSec <= 180
-          ? "danger"
-          : remainingSec <= 360
-            ? "caution"
-            : "safe"
-  return {
-    drainRatePerMin,
-    remainingSec,
-    elapsedSec,
-    level,
-    sampleCount: samples.length,
-  }
-}
-
-function RtlPredictionWidget({
-  droneActive,
-  battery,
-}: {
-  droneActive: boolean
-  battery: number | undefined | null
-}) {
-  const rtl = useRtlPrediction(droneActive, battery)
-  const formatTime = (sec: number) => {
-    if (sec <= 0) return "0분 0초"
-    const m = Math.floor(sec / 60),
-      s = sec % 60
-    return m > 0 ? `${m}분 ${s}초` : `${s}초`
-  }
-  const formatElapsed = (sec: number) => {
-    const m = Math.floor(sec / 60),
-      s = sec % 60
-    return m > 0 ? `${m}분 ${s}초` : `${s}초`
-  }
-  const levelStyle = {
-    safe: {
-      border: "border-emerald-200/60",
-      bg: "bg-emerald-50/80",
-      iconBg: "from-emerald-500 to-teal-500",
-      text: "text-emerald-700",
-      bar: "bg-emerald-500",
-    },
-    caution: {
-      border: "border-amber-200/60",
-      bg: "bg-amber-50/80",
-      iconBg: "from-amber-500 to-yellow-400",
-      text: "text-amber-700",
-      bar: "bg-amber-500",
-    },
-    danger: {
-      border: "border-red-200/60",
-      bg: "bg-red-50/80",
-      iconBg: "from-red-500 to-rose-500",
-      text: "text-red-700",
-      bar: "bg-red-500",
-    },
-    off: {
-      border: "border-slate-200/60",
-      bg: "bg-slate-50/80",
-      iconBg: "from-slate-400 to-slate-500",
-      text: "text-slate-500",
-      bar: "bg-slate-300",
-    },
-  }[rtl.level]
-  const batteryPct = battery ?? 0,
-    usablePct = Math.max(0, batteryPct - RTL_RESERVE_PCT),
-    reservePct = Math.min(batteryPct, RTL_RESERVE_PCT)
-  const reliabilityLabel =
-    rtl.sampleCount >= WINDOW_SIZE
-      ? "높음"
-      : rtl.sampleCount >= MIN_SAMPLES
-        ? "보통"
-        : `${rtl.sampleCount}/${MIN_SAMPLES}`
-  const mainLabel = !droneActive
-    ? "기체 연결 후 예측 시작"
-    : rtl.remainingSec === null
-      ? `데이터 수집 중... (${rtl.sampleCount}/${MIN_SAMPLES}샘플)`
-      : rtl.remainingSec <= 0
-        ? "즉시 귀환 필요"
-        : `약 ${formatTime(rtl.remainingSec)} 더 비행 가능`
-  const sublabel = !droneActive
-    ? "드론이 활성화되면 소모율을 추적합니다"
-    : rtl.remainingSec === null
-      ? `비행 시작 후 ${formatElapsed(rtl.elapsedSec)} 경과`
-      : rtl.level === "danger"
-        ? "지금 바로 귀환하세요"
-        : rtl.level === "caution"
-          ? "귀환을 준비하세요"
-          : "여유 있습니다"
-
-  return (
-    <div
-      className={`rounded-3xl border ${levelStyle.border} ${levelStyle.bg} overflow-hidden`}
-    >
-      <div className="flex items-center gap-4 px-6 py-5">
-        <div
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${levelStyle.iconBg} text-white shadow-lg`}
-        >
-          <PlaneLanding className="h-7 w-7" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600">
-            배터리 RTL 예측
-          </h3>
-          <p className={`mt-0.5 text-lg font-bold ${levelStyle.text}`}>
-            {mainLabel}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500">{sublabel}</p>
-        </div>
-        {droneActive && rtl.elapsedSec > 0 && (
-          <div className="shrink-0 text-right">
-            <p className="text-xs text-slate-400">비행 경과</p>
-            <p className="text-base font-semibold tabular-nums text-slate-700">
-              {formatElapsed(rtl.elapsedSec)}
-            </p>
-          </div>
-        )}
-      </div>
-      <div className="space-y-4 border-t border-slate-200/50 px-6 py-4">
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1 text-slate-500">
-              <BatteryLow className="h-3.5 w-3.5" />
-              배터리 잔량
-            </span>
-            <span className={`font-semibold ${levelStyle.text}`}>
-              {battery != null ? `${battery.toFixed(0)}%` : "—"}
-            </span>
-          </div>
-          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-200/60">
-            <div
-              className={`h-full transition-all duration-500 ${levelStyle.bar}`}
-              style={{ width: `${usablePct}%` }}
-            />
-            <div
-              className="h-full bg-red-300/70 transition-all duration-500"
-              style={{ width: `${reservePct}%` }}
-            />
-          </div>
-          <div className="mt-1 flex justify-between text-xs text-slate-400">
-            <span>예비 {RTL_RESERVE_PCT}% 제외</span>
-            <span>현재 배터리 기준</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
-            <TrendingDown className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500">분당 소모</p>
-            <p className="text-sm font-semibold tabular-nums text-slate-700">
-              {rtl.drainRatePerMin != null
-                ? `${rtl.drainRatePerMin.toFixed(2)}%`
-                : "—"}
-            </p>
-          </div>
-          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
-            <Timer className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500">남은 시간</p>
-            <p
-              className={`text-sm font-semibold tabular-nums ${rtl.remainingSec != null ? levelStyle.text : "text-slate-400"}`}
-            >
-              {rtl.remainingSec != null ? formatTime(rtl.remainingSec) : "—"}
-            </p>
-          </div>
-          <div className="rounded-xl bg-white/70 px-3 py-2.5 text-center">
-            <PlaneLanding className="mx-auto mb-1 h-4 w-4 text-slate-400" />
-            <p className="text-xs text-slate-500">신뢰도</p>
-            <p className="text-sm font-semibold text-slate-700">
-              {reliabilityLabel}
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ==========================
 // 비행 가능 여부 종합 위젯
 // ==========================
 interface FlightFeasibilityWidgetProps {
@@ -1755,7 +1471,6 @@ interface FlightFeasibilityWidgetProps {
     level: "safe" | "caution" | "danger"
     label: string
   }>
-  // ★ 선택된 기체 1개 (또는 빈 배열)
   selectedDroneState: DroneWsState | null
   selectedDroneLabel: string | null
 }
@@ -1939,7 +1654,6 @@ function FlightFeasibilityWidget({
             {feasibilityConfig.sublabel}
           </p>
         </div>
-        {/* ★ 선택된 기체 1개만 표시 */}
         {selectedDroneState && selectedDroneLabel && (
           <div className="flex shrink-0 flex-col gap-1.5">
             <div className="flex items-center gap-2">
@@ -2012,7 +1726,6 @@ const getSpeedLevel = (
 ): "safe" | "caution" | "danger" | "off" =>
   v == null ? "off" : v > 35 ? "danger" : v > 25 ? "caution" : "safe"
 
-// 드론 라벨 목록 (DroneSimulation과 순서 맞춤)
 const DRONE_LABELS = ["DM4_1", "DM4_2", "DM3"]
 
 // ==========================
@@ -2029,10 +1742,8 @@ export function UavDashboard() {
     [],
   )
 
-  // ★ 선택된 기체 정보 (DroneSimulation에서 올라옴)
   const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
-  // ★ 기체 신호 끊김 상태
   const [isDroneOffline, setIsDroneOffline] = useState(false)
   useEffect(() => {
     if (!isDroneOffline) {
@@ -2095,7 +1806,6 @@ export function UavDashboard() {
   const prevModalKeyRef = useRef<string>("")
 
   const alerts = (() => {
-    // ★ 기체 미선택 시 빈 배열 — 아무 경고도 표시 안 함
     if (selectedDroneIdx === null) return []
     if (!droneConnected) return []
     if (!droneData)
@@ -2255,7 +1965,6 @@ export function UavDashboard() {
         }>
         lteIp?: string
       }
-      // ★ 선택된 기체의 이벤트만 처리
       if (!selectedLteIp) return
       if (detail.lteIp && detail.lteIp !== selectedLteIp) return
       if (!detail.events?.length) return
@@ -2664,7 +2373,6 @@ export function UavDashboard() {
                       if (data !== null) {
                         setDroneData(data)
                       } else if (!isDroneOffline) {
-                        // offline 상태일 때 null이 와도 마지막 데이터 유지
                         setDroneData(null)
                       }
                     }}
@@ -2678,7 +2386,7 @@ export function UavDashboard() {
                     onDroneOffline={(offline) => {
                       setIsDroneOffline(offline)
                       if (offline) {
-                        setDroneConnected(false) // ← 실제로 끊긴 상태 반영
+                        setDroneConnected(false)
                       }
                     }}
                   />
@@ -2740,7 +2448,6 @@ export function UavDashboard() {
           </div>
 
           <div className="space-y-5">
-            {/* ★ 선택된 기체 1개만 FlightFeasibilityWidget에 전달 */}
             <FlightFeasibilityWidget
               droneConnected={droneConnected}
               droneData={droneData}
@@ -2833,13 +2540,6 @@ export function UavDashboard() {
             )}
           </div>
         </div>
-
-        {droneConnected && (
-          <RtlPredictionWidget
-            droneActive={droneData !== null}
-            battery={droneData?.battery}
-          />
-        )}
       </div>
 
       {createPortal(
