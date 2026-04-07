@@ -43,7 +43,9 @@ interface NaverMapProps {
     battery?: number
     altitude?: number
     speed?: number
+    armed?: boolean // ★ Arming 상태 추가
   }
+  droneId?: string // ★ 미션 폴링용 드론 ID
 }
 
 const DEFAULT_LAT = 36.5941
@@ -58,7 +60,12 @@ interface SafetyItem {
 }
 
 function calcSafety(
-  droneStats?: { battery?: number; altitude?: number; speed?: number },
+  droneStats?: {
+    battery?: number
+    altitude?: number
+    speed?: number
+    armed?: boolean
+  },
   satellites?: number | null,
   windSpeed?: number,
 ): { overall: SafetyLevel; items: SafetyItem[] } {
@@ -271,9 +278,6 @@ function SafetyBanner({
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// 좌하단: 추적 버튼 + 배터리 + RTL 가이드 카드 (세로 묶음)
-// ─────────────────────────────────────────────────────────────
 function BatteryGuideCard({
   battery,
   altitude,
@@ -441,9 +445,6 @@ function BatteryGuideCard({
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// 우하단: 비행 체크리스트 + 기상 요약 카드
-// ─────────────────────────────────────────────────────────────
 interface ChecklistCardProps {
   battery?: number
   altitude?: number
@@ -498,21 +499,19 @@ function ChecklistCard({
         {!collapsed && (
           <div className="space-y-2 px-3 py-3">
             {[
-              "1. 배터리 셀 체크 확인",
-              "2. 조종기 / 기체 전원 확인",
-              "3. QGC LTE 연결/ P900 연결 확인",
-              "4. GPS 신호 확인 (25위성+)",
-              "5. 미션 플랜 경로 일치 확인",
-              "6. 수평캘리브레이션 확인",
-              "7. 식별장치 확인",
+              "배터리 셀 체크 확인",
+              "조종기 / 기체 전원 확인",
+              "QGC LTE 연결/ P900 연결 확인",
+              "GPS 신호 확인 (25위성+)",
+              "미션 플랜 경로 일치 확인",
+              "수평캘리브레이션 확인",
+              "식별장치 확인",
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-2">
                 <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[9px] text-slate-500">
                   {i + 1}
                 </span>
-                <p className="text-[10px] text-slate-400">
-                  {item.replace(/^\d+\.\s/, "")}
-                </p>
+                <p className="text-[10px] text-slate-400">{item}</p>
               </div>
             ))}
             <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-slate-500">
@@ -756,6 +755,16 @@ function ChecklistCard({
                         <span className="text-[9px] font-normal">m/s</span>
                       </p>
                       <p className="text-[9px] text-white/30">풍속</p>
+                      {windSpeed >= 14 && (
+                        <span className="mt-0.5 inline-block rounded-full bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold text-red-400">
+                          비행 위험
+                        </span>
+                      )}
+                      {windSpeed >= 7 && windSpeed < 14 && (
+                        <span className="mt-0.5 inline-block rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">
+                          주의
+                        </span>
+                      )}
                     </div>
                   )}
                   {precipitation != null && (
@@ -777,9 +786,6 @@ function ChecklistCard({
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// 우하단 상단: 비행 시간 + 속도 미니 카드
-// ─────────────────────────────────────────────────────────────
 function FlightStatusMiniCard({
   speed,
   altitude,
@@ -848,9 +854,6 @@ function FlightStatusMiniCard({
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// 미션 오버레이 타입 및 유틸
-// ─────────────────────────────────────────────────────────────
 interface MissionWaypoint {
   index: number
   lat: number
@@ -889,9 +892,6 @@ function haversineM(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-// ─────────────────────────────────────────────────────────────
-// 미션 정보 카드
-// ─────────────────────────────────────────────────────────────
 function MissionInfoCard({
   plan,
   onClear,
@@ -1012,6 +1012,7 @@ export function NaverMap({
   flightPath,
   dronePosition,
   droneStats,
+  droneId,
 }: NaverMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
@@ -1039,12 +1040,16 @@ export function NaverMap({
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // ── 미션 플랜 상태 (QGC에서 자동 수신) ──────────────────────
+  // ── 미션 플랜 상태 ─────────────────────────────────────────
   const [missionPlan, setMissionPlan] = useState<MissionPlan | null>(null)
   const [currentWpIndex, setCurrentWpIndex] = useState(-1)
   const missionPolylineRef = useRef<any>(null)
   const missionDoneLineRef = useRef<any>(null)
   const missionMarkersRef = useRef<any[]>([])
+
+  // ★ Arming 상태 추적 (armed → 미션 자동 fetch)
+  const wasArmedRef = useRef(false)
+  const missionFetchedThisArm = useRef(false)
 
   const { overall: safetyOverall, items: safetyItems } = calcSafety(
     droneStats,
@@ -1052,7 +1057,53 @@ export function NaverMap({
     weatherData?.windSpeed,
   )
 
-  // ── QGC 미션 자동 수신 ────────────────────────────────────────
+  // ── ★ Arming 감지 → 서버에서 미션 fetch ──────────────────
+  useEffect(() => {
+    const armed = droneStats?.armed ?? false
+
+    // Disarm 시 초기화
+    if (!armed && wasArmedRef.current) {
+      missionFetchedThisArm.current = false
+      setMissionPlan(null)
+      setCurrentWpIndex(-1)
+    }
+
+    // Armed로 전환되는 순간 미션 fetch (1회만)
+    if (armed && !wasArmedRef.current && !missionFetchedThisArm.current) {
+      missionFetchedThisArm.current = true
+      fetchMissionFromServer()
+    }
+
+    wasArmedRef.current = armed
+  }, [droneStats?.armed, droneId])
+
+  const fetchMissionFromServer = async () => {
+    if (!droneId) return
+    try {
+      const res = await fetch(`${API_BASE_URL}/qgc/mission/${droneId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const waypoints: MissionWaypoint[] = data.waypoints ?? []
+      if (!waypoints.length) return
+
+      let totalDistanceM = 0
+      for (let i = 1; i < waypoints.length; i++) {
+        totalDistanceM += haversineM(
+          waypoints[i - 1].lat,
+          waypoints[i - 1].lng,
+          waypoints[i].lat,
+          waypoints[i].lng,
+        )
+      }
+      setMissionPlan({ waypoints, totalDistanceM })
+      setCurrentWpIndex(-1)
+      console.log(`[NaverMap] Arming 후 미션 로드 완료: ${waypoints.length}개`)
+    } catch (e) {
+      console.error("[NaverMap] 미션 fetch 실패:", e)
+    }
+  }
+
+  // ── QGC passive 수신 (업로드 타이밍 맞춘 경우 유지) ──────
   useEffect(() => {
     const onMissionUpdate = (e: CustomEvent) => {
       const { waypoints } = e.detail
@@ -1484,11 +1535,12 @@ export function NaverMap({
   const clearMission = () => {
     setMissionPlan(null)
     setCurrentWpIndex(-1)
+    missionFetchedThisArm.current = false
   }
 
   return (
     <div ref={mapContainerRef} className="relative flex h-full w-full flex-col">
-      {/* 검색창 — 기체 연결 시 숨김 */}
+      {/* 검색창 */}
       {!isDroneConnected && (
         <div className="absolute left-1/2 top-3 z-50 w-[90%] max-w-md -translate-x-1/2">
           <div className="flex items-center rounded-full border border-gray-200 bg-white/95 px-3 py-1 shadow-md backdrop-blur-sm">
@@ -1573,6 +1625,29 @@ export function NaverMap({
               </span>
             </div>
           )}
+          {/* ★ Arming 상태 표시 */}
+          {droneStats.armed != null && (
+            <div
+              className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md ${
+                droneStats.armed
+                  ? "border-emerald-500/40 bg-emerald-950/80"
+                  : "border-slate-500/40 bg-slate-900/80"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${droneStats.armed ? "animate-pulse bg-emerald-400" : "bg-slate-500"}`}
+              />
+              <span
+                className={
+                  droneStats.armed
+                    ? "font-semibold text-emerald-300"
+                    : "text-slate-400"
+                }
+              >
+                {droneStats.armed ? "ARMED" : "DISARMED"}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1602,7 +1677,7 @@ export function NaverMap({
         </div>
       )}
 
-      {/* 미션 정보 카드 (QGC 자동 수신 시 표시) */}
+      {/* 미션 정보 카드 */}
       {missionPlan && (
         <div
           className="absolute left-3 z-50"
@@ -1616,10 +1691,9 @@ export function NaverMap({
         </div>
       )}
 
-      {/* ★ 좌하단: 추적 버튼 + 배터리 가이드 카드 (세로로 묶어서 겹침 방지) */}
+      {/* 좌하단: 추적 버튼 + 배터리 가이드 */}
       {isDroneConnected && (
         <div className="absolute bottom-4 left-3 z-50 flex flex-col items-start gap-2">
-          {/* 추적 버튼 — 배터리 카드 바로 위 */}
           <button
             onClick={() => setIsTrackingDrone((v) => !v)}
             className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${
@@ -1635,8 +1709,6 @@ export function NaverMap({
             )}
             {isTrackingDrone ? "추적 중" : "추적 해제"}
           </button>
-
-          {/* 배터리 + RTL 가이드 카드 */}
           <BatteryGuideCard
             battery={droneStats?.battery}
             altitude={droneStats?.altitude}
