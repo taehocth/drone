@@ -406,7 +406,7 @@ function buildActionGuides(
         title: "통신 이상 — 즉각 대응",
         steps: [
           "GCS 화면에서 수동 개입이 가능한지 확인하세요",
-          "기체가 페일세이프 동작(자동 호버링/귀환)을 수행하는지 목시 확인하세요",
+          "기체가 페일세이프 동작(자동 호버링/귀환)을 수행하는지 즉시 확인하세요",
           "통신 복구를 기다리되 복구 안 되면 수동 RTL 명령을 시도하세요",
         ],
         why: "15초 이상 데이터가 끊겼습니다. 기체가 페일세이프 모드로 진입했을 수 있습니다.",
@@ -1728,6 +1728,17 @@ const getSpeedLevel = (
 
 const DRONE_LABELS = ["DM4_1", "DM4_2", "DM3"]
 
+// ★ 초기 DroneWsState — lastDataAgeSec 포함
+const INITIAL_DRONE_WS_STATE: DroneWsState = {
+  wsConnected: false,
+  droneActive: false,
+  connected: false,
+  data: null,
+  flightStatus: "unknown",
+  droneOffline: false,
+  lastDataAgeSec: null, // ★ 추가된 필드
+}
+
 // ==========================
 // UAV Dashboard Component
 // ==========================
@@ -1765,31 +1776,11 @@ export function UavDashboard() {
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
 
+  // ★ 초기값에 lastDataAgeSec: null 포함된 상수 사용
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
-    {
-      wsConnected: false,
-      droneActive: false,
-      connected: false,
-      data: null,
-      flightStatus: "unknown",
-      droneOffline: false,
-    },
-    {
-      wsConnected: false,
-      droneActive: false,
-      connected: false,
-      data: null,
-      flightStatus: "unknown",
-      droneOffline: false,
-    },
-    {
-      wsConnected: false,
-      droneActive: false,
-      connected: false,
-      data: null,
-      flightStatus: "unknown",
-      droneOffline: false,
-    },
+    { ...INITIAL_DRONE_WS_STATE },
+    { ...INITIAL_DRONE_WS_STATE },
+    { ...INITIAL_DRONE_WS_STATE },
   ])
 
   const [collapseMap, setCollapseMap] = useState(false)

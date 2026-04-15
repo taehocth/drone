@@ -71,7 +71,6 @@ interface DroneTarget {
   label: string
   port: number
   lteIp: string
-  // ★ 검색 키워드 (지역명, 기체명 등)
   keywords: string[]
 }
 
@@ -96,8 +95,8 @@ const DRONE_TARGETS: DroneTarget[] = [
   },
 ]
 
-// ★ 기체 데이터가 이 시간(ms) 이상 오지 않으면 연결 끊김으로 판단
-const DRONE_OFFLINE_TIMEOUT_MS = 10_000
+// 기체 데이터가 이 시간(ms) 이상 오지 않으면 오프라인으로 판단
+const DRONE_OFFLINE_TIMEOUT_MS = 5_000
 
 /* =========================
  * 개별 드론 WS 상태
@@ -109,6 +108,7 @@ export interface DroneWsState {
   data: DroneData | null
   flightStatus: FlightStatus
   droneOffline: boolean
+  lastDataAgeSec: number | null // ★ 마지막 수신 후 경과 초
 }
 
 /* =========================
@@ -209,6 +209,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const [droneActive, setDroneActive] = useState(false)
   const [droneOffline, setDroneOffline] = useState(false)
   const [data, setData] = useState<DroneData | null>(null)
+  // ★ 마지막 수신 후 경과 초 (1초마다 갱신)
+  const [lastDataAgeSec, setLastDataAgeSec] = useState<number | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   const targetRef = useRef<DroneData | null>(null)
@@ -217,6 +219,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastDataReceivedRef = useRef<number | null>(null)
   const offlineTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const ageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
   const droneActiveRef = useRef(false)
   const clearingRef = useRef(false)
@@ -229,6 +232,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     lastDataReceivedRef.current = null
     setDroneActive(false)
     setDroneOffline(false)
+    setLastDataAgeSec(null)
     setData(null)
     requestAnimationFrame(() => {
       clearingRef.current = false
@@ -275,9 +279,11 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       if (typeof msg.sysid !== "number") return
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
+      // ★ 데이터 수신 시각 갱신 + offline 즉시 해제
       lastDataReceivedRef.current = Date.now()
-      if (droneOffline) setDroneOffline(false)
+      setLastDataAgeSec(0)
 
+      if (droneOffline) setDroneOffline(false)
       droneActiveRef.current = true
       setDroneActive(true)
       setDroneOffline(false)
@@ -345,6 +351,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [drone.lteIp, clearDroneData, droneOffline])
 
+  // ★ 오프라인 감지 타이머 (2초마다 체크, 5초 무응답 시 offline)
   useEffect(() => {
     offlineTimerRef.current = setInterval(() => {
       if (!droneActiveRef.current) return
@@ -359,6 +366,21 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }, 2000)
     return () => {
       if (offlineTimerRef.current) clearInterval(offlineTimerRef.current)
+    }
+  }, [])
+
+  // ★ 경과 시간 표시 타이머 (1초마다 갱신)
+  useEffect(() => {
+    ageTimerRef.current = setInterval(() => {
+      const last = lastDataReceivedRef.current
+      if (last === null) {
+        setLastDataAgeSec(null)
+        return
+      }
+      setLastDataAgeSec(Math.floor((Date.now() - last) / 1000))
+    }, 1000)
+    return () => {
+      if (ageTimerRef.current) clearInterval(ageTimerRef.current)
     }
   }, [])
 
@@ -439,6 +461,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       mountedRef.current = false
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       if (offlineTimerRef.current) clearInterval(offlineTimerRef.current)
+      if (ageTimerRef.current) clearInterval(ageTimerRef.current)
       wsRef.current?.close()
       wsRef.current = null
     }
@@ -452,6 +475,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     data,
     flightStatus,
     droneOffline,
+    lastDataAgeSec,
   }
 }
 
@@ -483,6 +507,20 @@ interface DroneSimulationProps {
 }
 
 /* =========================
+ * 상태 텍스트 헬퍼
+ * ========================= */
+function getStatusText(state: DroneWsState, ageSec: number | null): string {
+  if (state.droneOffline) return "⚠ 기체 신호 끊김 — 재연결 대기 중"
+  if (state.droneActive) {
+    if (ageSec !== null && ageSec >= 3)
+      return `텔레메트리 수신 중 · ${ageSec}초 전`
+    return "텔레메트리 수신 중"
+  }
+  if (state.wsConnected) return "서버 연결됨 — 기체 응답 대기"
+  return "서버 연결 중..."
+}
+
+/* =========================
  * Component
  * ========================= */
 const DroneSimulation: React.FC<DroneSimulationProps> = ({
@@ -502,12 +540,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   const selectedState = selectedIdx !== null ? allStates[selectedIdx] : null
 
-  // ★ 검색 관련 상태
   const [searchQuery, setSearchQuery] = useState("")
   const [searchError, setSearchError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // ★ 기체 선택 처리
   const handleSelectDrone = useCallback(
     (idx: number | null) => {
       setSelectedIdx(idx)
@@ -519,7 +555,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     [onSelectedDrone],
   )
 
-  // ★ 검색 실행
   const handleSearch = useCallback(() => {
     const q = searchQuery.trim()
     if (!q) {
@@ -536,14 +571,12 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
     handleSelectDrone(found)
   }, [searchQuery, handleSelectDrone])
 
-  // ★ 연결 해제
   const handleDisconnect = useCallback(() => {
     handleSelectDrone(null)
     setSearchQuery("")
     setSearchError(null)
   }, [handleSelectDrone])
 
-  // 부모 콜백
   useEffect(() => {
     if (onAllDroneStates) onAllDroneStates(allStates)
   }, [drone0, drone1, drone2]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -573,9 +606,31 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const selectedDrone = selectedIdx !== null ? DRONE_TARGETS[selectedIdx] : null
   const selectedWsState = selectedIdx !== null ? allStates[selectedIdx] : null
 
+  // ★ 상태에 따른 스타일 결정
+  const cardBorderBg = selectedWsState?.droneOffline
+    ? "border-red-300 bg-red-50/60"
+    : selectedWsState?.droneActive
+      ? "border-emerald-300 bg-emerald-50/60"
+      : "border-slate-200 bg-slate-50/60"
+
+  const iconBg = selectedWsState?.droneOffline
+    ? "bg-red-100"
+    : selectedWsState?.droneActive
+      ? "bg-emerald-100"
+      : "bg-slate-100"
+
+  const statusTextColor = selectedWsState?.droneOffline
+    ? "text-red-500"
+    : selectedWsState?.droneActive
+      ? selectedWsState.lastDataAgeSec !== null &&
+        selectedWsState.lastDataAgeSec >= 3
+        ? "text-amber-500" // 데이터가 3초 이상 안 오면 주황색으로 경고
+        : "text-emerald-600"
+      : "text-slate-400"
+
   return (
     <div className="space-y-4">
-      {/* ★ 검색 패널 */}
+      {/* 검색 패널 */}
       <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
         <div className="mb-3">
           <h3 className="text-sm font-semibold text-slate-900">기체 연결</h3>
@@ -587,7 +642,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           </p>
         </div>
 
-        {/* 검색창 */}
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -631,12 +685,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           </button>
         </div>
 
-        {/* 에러 메시지 */}
         {searchError && (
           <p className="mt-2 text-xs text-red-500">{searchError}</p>
         )}
 
-        {/* 검색 힌트 — 기체 미선택 시 */}
         {!selectedDrone && !searchError && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {DRONE_TARGETS.map((d, idx) => (
@@ -653,30 +705,16 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         )}
       </div>
 
-      {/* ★ 연결된 기체 상태 카드 */}
+      {/* 연결된 기체 상태 카드 */}
       {selectedDrone && selectedWsState ? (
         <div
-          className={[
-            "rounded-2xl border p-4 transition-all",
-            selectedWsState.droneOffline
-              ? "border-red-300 bg-red-50/60"
-              : selectedWsState.droneActive
-                ? "border-emerald-300 bg-emerald-50/60"
-                : "border-slate-200 bg-slate-50/60",
-          ].join(" ")}
+          className={`rounded-2xl border p-4 transition-all ${cardBorderBg}`}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* 상태 아이콘 */}
               <div
-                className={[
-                  "flex h-10 w-10 items-center justify-center rounded-xl",
-                  selectedWsState.droneOffline
-                    ? "bg-red-100"
-                    : selectedWsState.droneActive
-                      ? "bg-emerald-100"
-                      : "bg-slate-100",
-                ].join(" ")}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBg}`}
               >
                 {selectedWsState.droneOffline ? (
                   <WifiOff className="h-5 w-5 text-red-500" />
@@ -695,7 +733,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                   <span className="text-xs text-slate-400">
                     {selectedDrone.keywords[2]}
                   </span>
-                  {/* 깜빡이는 상태 점 */}
+                  {/* 상태 점 */}
                   {selectedWsState.droneOffline ? (
                     <span className="flex h-2 w-2">
                       <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-red-400 opacity-75" />
@@ -709,24 +747,12 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                   ) : null}
                 </div>
 
-                {/* 상태 텍스트 */}
-                <p
-                  className={[
-                    "text-xs font-medium",
-                    selectedWsState.droneOffline
-                      ? "text-red-500"
-                      : selectedWsState.droneActive
-                        ? "text-emerald-600"
-                        : "text-slate-400",
-                  ].join(" ")}
-                >
-                  {selectedWsState.droneOffline
-                    ? "⚠ 기체 신호 끊김 — 재연결 대기 중"
-                    : selectedWsState.droneActive
-                      ? "텔레메트리 수신 중"
-                      : selectedWsState.wsConnected
-                        ? "서버 연결됨 — 기체 응답 대기"
-                        : "서버 연결 중..."}
+                {/* ★ 상태 텍스트 — 경과 시간 포함 */}
+                <p className={`text-xs font-medium ${statusTextColor}`}>
+                  {getStatusText(
+                    selectedWsState,
+                    selectedWsState.lastDataAgeSec,
+                  )}
                 </p>
               </div>
             </div>
@@ -761,7 +787,6 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                 }
               />
 
-              {/* 연결 해제 버튼 */}
               <button
                 type="button"
                 onClick={handleDisconnect}
@@ -773,16 +798,32 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             </div>
           </div>
 
-          {/* offline 배지 */}
+          {/* ★ 오프라인 배지 — 끊긴 시각 표시 */}
           {selectedWsState.droneOffline && (
             <div className="mt-3 rounded-xl border border-red-200 bg-red-100/60 px-3 py-2 text-xs text-red-700">
-              마지막 수신 데이터를 표시하고 있습니다. 기체 전원과 LTE 연결을
-              확인하세요.
+              <span className="font-semibold">기체 신호 없음</span> — 마지막
+              수신 후{" "}
+              {selectedWsState.lastDataAgeSec !== null
+                ? `${selectedWsState.lastDataAgeSec}초 경과`
+                : "시간 측정 불가"}
+              . 기체 전원과 LTE 연결을 확인하세요.
             </div>
           )}
+
+          {/* ★ 연결은 됐지만 데이터가 느릴 때 경고 (3~5초 지연) */}
+          {!selectedWsState.droneOffline &&
+            selectedWsState.droneActive &&
+            selectedWsState.lastDataAgeSec !== null &&
+            selectedWsState.lastDataAgeSec >= 3 &&
+            selectedWsState.lastDataAgeSec <
+              DRONE_OFFLINE_TIMEOUT_MS / 1000 && (
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
+                데이터 지연 감지 — 마지막 수신 {selectedWsState.lastDataAgeSec}
+                초 전. LTE 신호를 확인하세요.
+              </div>
+            )}
         </div>
       ) : (
-        // 기체 미선택 안내
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
           <Radio className="mx-auto mb-2 h-8 w-8 text-slate-200" />
           <p className="text-sm font-medium text-slate-400">
