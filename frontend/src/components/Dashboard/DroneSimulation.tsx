@@ -228,6 +228,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const droneActiveRef = useRef(false)
   const clearingRef = useRef(false)
 
+  const droneOfflineRef = useRef(false) // ★ 중복 goOffline 방지용 ref
+
   const clearDroneData = useCallback(() => {
     clearingRef.current = true
     targetRef.current = null
@@ -244,11 +246,13 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
 
   const goOffline = useCallback(
     (reason: string) => {
-      console.warn(`[DroneWs:${drone.lteIp}] offline — ${reason}`)
+      // 이미 offline 상태면 중복 호출 무시 (로그 반복 방지)
+      if (droneOfflineRef.current) return
+      droneOfflineRef.current = true
       setDroneOffline(true)
       clearDroneData()
     },
-    [drone.lteIp, clearDroneData],
+    [clearDroneData],
   )
 
   const connect = useCallback(() => {
@@ -270,8 +274,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     ws.onopen = () => {
       if (!mountedRef.current) return
       setWsConnected(true)
+      droneOfflineRef.current = false // ★ 재연결 시 dedup ref 리셋 (데이터 수신 후 offline 재판정)
       clearDroneData()
-      // droneOffline은 유지 — 신선한 데이터 수신 후 해제
     }
 
     ws.onmessage = (event) => {
@@ -324,6 +328,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       lastDataReceivedRef.current = Date.now()
       setLastDataAgeSec(0)
       droneActiveRef.current = true
+      droneOfflineRef.current = false // ★ online 복귀 시 dedup ref 리셋
       setDroneActive(true)
       setDroneOffline(false)
 
