@@ -113,7 +113,7 @@ const GuideBanner = ({
         </span>
         <div>
           <p className="text-sm font-semibold text-red-900">
-            기체 신호 끊김 — 재연결 대기 중
+            기체 연결 끊김 — 재연결 대기 중
           </p>
           <p className="mt-0.5 text-xs text-red-700/80">
             기체로부터 데이터가 수신되지 않습니다. LTE 통신 상태와 기체 전원을
@@ -1999,7 +1999,7 @@ export function UavDashboard() {
 
   // ★ FIX: offline 상태를 connectionLabel/connectionTone에 명확히 반영
   const connectionLabel = isDroneOffline
-    ? "신호 끊김"
+    ? "연결 끊김"
     : droneConnected
       ? "연결됨"
       : "연결 대기"
@@ -2347,7 +2347,7 @@ export function UavDashboard() {
                       }
                       label={
                         isDroneOffline
-                          ? "신호 끊김"
+                          ? "연결 끊김"
                           : droneConnected
                             ? "수신 중"
                             : "미연결"
@@ -2423,7 +2423,7 @@ export function UavDashboard() {
                       className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
                     >
                       {isDroneOffline
-                        ? "신호 끊김"
+                        ? "연결 끊김"
                         : droneConnected
                           ? alerts.length
                             ? `${alerts.length}건 주의`
@@ -2500,7 +2500,7 @@ export function UavDashboard() {
                       }
                       label={
                         isDroneOffline
-                          ? "신호 끊김"
+                          ? "연결 끊김"
                           : droneConnected
                             ? alertLevel === "safe"
                               ? "정상"

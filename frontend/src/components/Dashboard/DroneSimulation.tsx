@@ -284,8 +284,12 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       }
 
       // ── 1) agent.py offline 신호 (ok=false 또는 online=false) ──
+      // lte_ip가 있으면 내 기체 신호인지 확인, 없으면 무조건 처리
       if (msg?.ok === false || msg?.online === false) {
-        goOffline("agent offline signal")
+        const msgLteIp = msg?.lte_ip
+        if (!msgLteIp || msgLteIp === drone.lteIp) {
+          goOffline("agent offline signal")
+        }
         return
       }
 
