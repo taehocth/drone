@@ -750,10 +750,10 @@ class DroneAgent:
                 "gps":          self._cache.get("gps"),
                 "online":       True,   # ★ 정상 push는 항상 online=True
             }
-snap["_age_sec"] = {
-    k: (now_ts() - v) if v else None
-    for k, v in self._last_update.items()
-}
+            snap["_age_sec"] = {
+                k: (now_ts() - v) if v else None
+                for k, v in self._last_update.items()
+            }
 
         with self._mission_lock:
             snap["mission_waypoints"] = list(self._mission_waypoints)
