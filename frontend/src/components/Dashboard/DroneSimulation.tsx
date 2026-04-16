@@ -98,12 +98,9 @@ const DRONE_TARGETS: DroneTarget[] = [
 // 기체 데이터가 이 시간(ms) 이상 수신 안되면 오프라인으로 판단
 const DRONE_OFFLINE_TIMEOUT_MS = 5_000
 
-// ★ 데이터 freeze 감지 설정
-// 배터리/기체 연결 끊기면 서버가 server_ts를 새로 찍어도
-// 실제 MAVLink 물리값(roll/pitch/yaw/speed/battery/altitude)은 완전히 고정됨
-// 이 값이 연속으로 동일하면 기체 연결 끊김으로 판단
-const FREEZE_COUNT_THRESHOLD = 20 // 연속 20회 동일 → offline (약 2초)
-const FREEZE_CHECK_MIN_COUNT = 10 // 최소 10회 수신 후부터 체크 (초기 안정화 대기)
+// agent.py의 _age_sec 필드 기준 — 이 값 이상이면 MAVLink 데이터가 끊긴 것
+// agent.py가 기체로부터 실제로 받은 마지막 패킷 이후 경과 시간
+const MAVLINK_AGE_OFFLINE_SEC = 8.0
 
 /* =========================
  * 개별 드론 WS 상태
@@ -116,46 +113,6 @@ export interface DroneWsState {
   flightStatus: FlightStatus
   droneOffline: boolean
   lastDataAgeSec: number | null
-}
-
-/* =========================
- * Freeze 감지 헬퍼
- * ========================= */
-interface FrozenSnapshot {
-  roll: number
-  pitch: number
-  yaw: number
-  speed: number
-  battery: number
-  altitude: number
-}
-
-// 소수점 2자리 반올림 (미세 센서 노이즈 무시)
-function r2(v: unknown): number {
-  if (typeof v !== "number" || isNaN(v)) return -9999
-  return Math.round(v * 100) / 100
-}
-
-function buildSnapshot(msg: any): FrozenSnapshot {
-  return {
-    roll: r2(msg.attitude?.roll),
-    pitch: r2(msg.attitude?.pitch),
-    yaw: r2(msg.attitude?.yaw),
-    speed: r2(msg.speed_m_s),
-    battery: r2(msg.battery?.remaining),
-    altitude: r2(msg.position?.alt),
-  }
-}
-
-function isFrozen(a: FrozenSnapshot, b: FrozenSnapshot): boolean {
-  return (
-    a.roll === b.roll &&
-    a.pitch === b.pitch &&
-    a.yaw === b.yaw &&
-    a.speed === b.speed &&
-    a.battery === b.battery &&
-    a.altitude === b.altitude
-  )
 }
 
 /* =========================
@@ -271,21 +228,12 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const droneActiveRef = useRef(false)
   const clearingRef = useRef(false)
 
-  // ★ freeze 감지용
-  const lastSnapRef = useRef<FrozenSnapshot | null>(null)
-  const frozenCountRef = useRef(0)
-  const totalMsgRef = useRef(0)
-
-  // droneOffline은 건드리지 않음 — 호출자가 직접 설정
   const clearDroneData = useCallback(() => {
     clearingRef.current = true
     targetRef.current = null
     smoothRef.current = null
     droneActiveRef.current = false
     lastDataReceivedRef.current = null
-    lastSnapRef.current = null
-    frozenCountRef.current = 0
-    totalMsgRef.current = 0
     setDroneActive(false)
     setLastDataAgeSec(null)
     setData(null)
@@ -323,7 +271,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       if (!mountedRef.current) return
       setWsConnected(true)
       clearDroneData()
-      // offline 상태 유지 — 신선한 데이터 수신 후 해제
+      // droneOffline은 유지 — 신선한 데이터 수신 후 해제
     }
 
     ws.onmessage = (event) => {
@@ -335,53 +283,40 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         return
       }
 
-      // ── 1) agent.py offline 신호 ──────────────────────────
+      // ── 1) agent.py offline 신호 (ok=false 또는 online=false) ──
       if (msg?.ok === false || msg?.online === false) {
-        goOffline("agent offline signal (ok=false / online=false)")
+        goOffline("agent offline signal")
         return
       }
 
-      // ── 2) 기본 유효성 ────────────────────────────────────
+      // ── 2) 기본 유효성 검사 ──────────────────────────────────
       if (typeof msg.sysid !== "number") return
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
-      // ── 3) server_ts 오래된 경우 (서버가 ts를 갱신 안 할 때) ──
-      if (msg.server_ts) {
-        const tsMs = new Date(msg.server_ts).getTime()
-        if (!isNaN(tsMs) && Date.now() - tsMs > 10_000) {
+      // ── 3) ★ agent.py의 _age_sec 필드 활용 ──────────────────
+      // agent.py는 각 MAVLink 메시지 타입별로 마지막 수신 후 경과 시간을 _age_sec에 담아 보냄
+      // battery, position, attitude 등이 모두 MAVLINK_AGE_OFFLINE_SEC 이상이면
+      // agent.py가 기체로부터 실제로 데이터를 못 받고 있는 것
+      if (msg._age_sec && typeof msg._age_sec === "object") {
+        const ages = msg._age_sec as Record<string, number | null>
+        const batteryAge = ages.battery ?? null
+        const positionAge = ages.position ?? null
+        const attitudeAge = ages.attitude ?? null
+
+        // 세 가지 핵심 채널이 모두 오래됐으면 offline
+        const allStale = [batteryAge, positionAge, attitudeAge].every(
+          (age) => age !== null && age > MAVLINK_AGE_OFFLINE_SEC,
+        )
+        if (allStale) {
           goOffline(
-            `stale server_ts (${Math.round((Date.now() - tsMs) / 1000)}s old)`,
+            `MAVLink age stale — battery:${batteryAge?.toFixed(1)}s ` +
+              `position:${positionAge?.toFixed(1)}s attitude:${attitudeAge?.toFixed(1)}s`,
           )
           return
         }
       }
 
-      // ── 4) ★ 핵심: 물리값 freeze 감지 ────────────────────
-      // 서버가 server_ts를 현재 시각으로 새로 찍어도
-      // 실제 MAVLink 값(roll/pitch/yaw/speed/battery/altitude)은
-      // 배터리/기체 연결 끊기면 완전히 고정됨 → 이걸 감지
-      const snap = buildSnapshot(msg)
-      totalMsgRef.current += 1
-
-      if (
-        totalMsgRef.current >= FREEZE_CHECK_MIN_COUNT &&
-        lastSnapRef.current !== null
-      ) {
-        if (isFrozen(lastSnapRef.current, snap)) {
-          frozenCountRef.current += 1
-          if (frozenCountRef.current >= FREEZE_COUNT_THRESHOLD) {
-            goOffline(
-              `data frozen for ${frozenCountRef.current} consecutive messages`,
-            )
-            return
-          }
-        } else {
-          frozenCountRef.current = 0 // 값 변화 → 정상, 카운터 리셋
-        }
-      }
-      lastSnapRef.current = snap
-
-      // ── 정상 데이터 수신 ──────────────────────────────────
+      // ── 정상 데이터 수신 ────────────────────────────────────
       lastDataReceivedRef.current = Date.now()
       setLastDataAgeSec(0)
       droneActiveRef.current = true
@@ -451,7 +386,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [drone.lteIp, clearDroneData, goOffline])
 
-  // 오프라인 감지 타이머 (2초마다 체크, 5초 무응답 → offline)
+  // 오프라인 감지 타이머 (2초마다, 5초 무응답 → offline)
   useEffect(() => {
     offlineTimerRef.current = setInterval(() => {
       if (!droneActiveRef.current) return
@@ -912,7 +847,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         </div>
       )}
 
-      {/* 드론 텔레메트리 카드 — offline이면 빈 데이터 */}
+      {/* 드론 텔레메트리 카드 — offline이면 빈 데이터 전달 */}
       <DroneSimulationCard
         data={isActive && !isOffline ? (selectedState?.data ?? {}) : {}}
         connected={isActive && !isOffline}
