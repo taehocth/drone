@@ -1728,7 +1728,6 @@ const getSpeedLevel = (
 
 const DRONE_LABELS = ["DM4_1", "DM4_2", "DM3"]
 
-// ★ 초기 DroneWsState — lastDataAgeSec 포함
 const INITIAL_DRONE_WS_STATE: DroneWsState = {
   wsConnected: false,
   droneActive: false,
@@ -1736,7 +1735,7 @@ const INITIAL_DRONE_WS_STATE: DroneWsState = {
   data: null,
   flightStatus: "unknown",
   droneOffline: false,
-  lastDataAgeSec: null, // ★ 추가된 필드
+  lastDataAgeSec: null,
 }
 
 // ==========================
@@ -1756,11 +1755,6 @@ export function UavDashboard() {
   const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
   const [isDroneOffline, setIsDroneOffline] = useState(false)
-  useEffect(() => {
-    if (!isDroneOffline) {
-      if (selectedDroneIdx === null) setDroneConnected(false)
-    }
-  }, [isDroneOffline, selectedDroneIdx])
 
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
@@ -1776,7 +1770,6 @@ export function UavDashboard() {
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
 
-  // ★ 초기값에 lastDataAgeSec: null 포함된 상수 사용
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
@@ -1798,7 +1791,8 @@ export function UavDashboard() {
 
   const alerts = (() => {
     if (selectedDroneIdx === null) return []
-    if (!droneConnected) return []
+    // ★ FIX: offline 상태이거나 연결 안 된 경우 alerts 비움
+    if (!droneConnected || isDroneOffline) return []
     if (!droneData)
       return [
         {
@@ -1898,7 +1892,7 @@ export function UavDashboard() {
     action: string
   }
   const dangerModalItems: DangerModalItem[] = []
-  if (droneData?.battery != null && droneData.battery <= 20)
+  if (droneData?.battery != null && droneData.battery <= 20 && !isDroneOffline)
     dangerModalItems.push({
       id: "battery",
       type: "battery",
@@ -1906,7 +1900,7 @@ export function UavDashboard() {
       detail: `현재 ${droneData.battery.toFixed(0)}% — RTL 비행 중 방전 시 추락합니다`,
       action: "즉시 RTL 모드로 전환 후 귀환하세요",
     })
-  if (droneData?.speed != null && droneData.speed > 12)
+  if (droneData?.speed != null && droneData.speed > 12 && !isDroneOffline)
     dangerModalItems.push({
       id: "speed",
       type: "speed",
@@ -1921,7 +1915,10 @@ export function UavDashboard() {
     if (modalKey) setModalDismissed(false)
   }
   const showDangerModal =
-    droneConnected && dangerModalItems.length > 0 && !modalDismissed
+    droneConnected &&
+    !isDroneOffline &&
+    dangerModalItems.length > 0 &&
+    !modalDismissed
 
   useEffect(() => {
     if (
@@ -1999,6 +1996,8 @@ export function UavDashboard() {
       : alertLevel === "caution"
         ? "bg-amber-100 text-amber-700"
         : "bg-emerald-100 text-emerald-700"
+
+  // ★ FIX: offline 상태를 connectionLabel/connectionTone에 명확히 반영
   const connectionLabel = isDroneOffline
     ? "신호 끊김"
     : droneConnected
@@ -2009,6 +2008,7 @@ export function UavDashboard() {
     : droneConnected
       ? "bg-emerald-100 text-emerald-700"
       : "bg-amber-100 text-amber-700"
+
   const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
   const batteryVal =
     droneData?.battery != null ? `${droneData.battery.toFixed(0)}` : null
@@ -2157,7 +2157,7 @@ export function UavDashboard() {
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
             >
               <span className="relative flex h-2 w-2">
-                {droneConnected && (
+                {droneConnected && !isDroneOffline && (
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-40" />
                 )}
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
@@ -2219,7 +2219,8 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {droneConnected && (
+        {/* ★ FIX: offline 상태에선 StatCard 숨김 (연결된 것처럼 보이는 문제 방지) */}
+        {droneConnected && !isDroneOffline && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
               icon={<Battery className="h-4 w-4" />}
@@ -2293,6 +2294,7 @@ export function UavDashboard() {
                 lng={DEFAULT_MAP_OPTIONS.center.lng}
                 dronePosition={
                   droneData &&
+                  !isDroneOffline &&
                   typeof droneData.latitude === "number" &&
                   typeof droneData.longitude === "number"
                     ? {
@@ -2336,8 +2338,20 @@ export function UavDashboard() {
                   onToggle={() => setCollapseMonitor((v) => !v)}
                   badge={
                     <StatusBadge
-                      level={droneConnected ? "safe" : "off"}
-                      label={droneConnected ? "수신 중" : "미연결"}
+                      level={
+                        isDroneOffline
+                          ? "danger"
+                          : droneConnected
+                            ? "safe"
+                            : "off"
+                      }
+                      label={
+                        isDroneOffline
+                          ? "신호 끊김"
+                          : droneConnected
+                            ? "수신 중"
+                            : "미연결"
+                      }
                     />
                   }
                 />
@@ -2358,14 +2372,10 @@ export function UavDashboard() {
                 >
                   <DroneSimulation
                     onConnectionChange={(connected) => {
-                      if (!isDroneOffline) setDroneConnected(connected)
+                      setDroneConnected(connected)
                     }}
                     onData={(data) => {
-                      if (data !== null) {
-                        setDroneData(data)
-                      } else if (!isDroneOffline) {
-                        setDroneData(null)
-                      }
+                      setDroneData(data)
                     }}
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
@@ -2373,11 +2383,19 @@ export function UavDashboard() {
                       setSelectedDroneIdx(idx)
                       setSelectedLteIp(lteIp)
                       clearLogs()
+                      // ★ FIX: 기체 선택 해제 시 상태 초기화
+                      if (idx === null) {
+                        setDroneConnected(false)
+                        setDroneData(null)
+                        setIsDroneOffline(false)
+                      }
                     }}
                     onDroneOffline={(offline) => {
                       setIsDroneOffline(offline)
+                      // ★ FIX: offline=true/false 모두 droneConnected에 반영
                       if (offline) {
                         setDroneConnected(false)
+                        setDroneData(null)
                       }
                     }}
                   />
@@ -2404,17 +2422,23 @@ export function UavDashboard() {
                       }}
                       className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
                     >
-                      {droneConnected
-                        ? alerts.length
-                          ? `${alerts.length}건 주의`
-                          : "정상"
-                        : "미연결"}
+                      {isDroneOffline
+                        ? "신호 끊김"
+                        : droneConnected
+                          ? alerts.length
+                            ? `${alerts.length}건 주의`
+                            : "정상"
+                          : "미연결"}
                     </button>
                   }
                 />
               </div>
               <div className="p-4">
-                {!droneConnected ? (
+                {isDroneOffline ? (
+                  <div className="rounded-2xl border border-red-200/60 bg-red-50/60 px-4 py-3 text-sm font-medium text-red-700">
+                    기체 신호가 끊겼습니다. 재연결 대기 중입니다.
+                  </div>
+                ) : !droneConnected ? (
                   <p className="py-6 text-center text-sm text-slate-400">
                     기체 연결 후 임계값 알림을 확인할 수 있습니다.
                   </p>
@@ -2440,8 +2464,8 @@ export function UavDashboard() {
 
           <div className="space-y-5">
             <FlightFeasibilityWidget
-              droneConnected={droneConnected}
-              droneData={droneData}
+              droneConnected={droneConnected && !isDroneOffline}
+              droneData={isDroneOffline ? null : droneData}
               alertLevel={alertLevel}
               alerts={alerts}
               selectedDroneState={
@@ -2467,13 +2491,21 @@ export function UavDashboard() {
                   onToggle={() => setCollapseCBM((v) => !v)}
                   badge={
                     <StatusBadge
-                      level={droneConnected ? alertLevel : "off"}
+                      level={
+                        isDroneOffline
+                          ? "danger"
+                          : droneConnected
+                            ? alertLevel
+                            : "off"
+                      }
                       label={
-                        droneConnected
-                          ? alertLevel === "safe"
-                            ? "정상"
-                            : "점검 필요"
-                          : "미연결"
+                        isDroneOffline
+                          ? "신호 끊김"
+                          : droneConnected
+                            ? alertLevel === "safe"
+                              ? "정상"
+                              : "점검 필요"
+                            : "미연결"
                       }
                     />
                   }
@@ -2482,9 +2514,9 @@ export function UavDashboard() {
               {!collapseCBM && (
                 <div className="p-4">
                   <RealtimeCBMStatusCard
-                    connected={droneConnected}
+                    connected={droneConnected && !isDroneOffline}
                     droneData={
-                      droneData
+                      droneData && !isDroneOffline
                         ? {
                             battery: droneData.battery,
                             altitude: droneData.altitude,
@@ -2499,7 +2531,7 @@ export function UavDashboard() {
               )}
             </div>
 
-            {!droneConnected && (
+            {!droneConnected && !isDroneOffline && (
               <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
