@@ -216,6 +216,40 @@ class DroneAgent:
             return False
 
     # -------------------------------------------------
+    # ★ 오프라인 신호 전송 — 배터리/기체 연결 끊김 시 서버 캐시 초기화
+    # -------------------------------------------------
+    def _send_offline_signal(self) -> None:
+        """
+        기체 연결이 끊겼을 때 서버에 online=false 신호를 보낸다.
+        서버가 이 신호를 받으면 해당 lte_ip의 캐시를 비우고
+        프론트엔드 WebSocket에 ok=false / no_data 를 내려보낸다.
+        """
+        payload = {
+            "drone_id":     self.drone_id,
+            "vehicle_name": self.vehicle_name,
+            "lte_ip":       self.lte_ip,
+            "sysid":        self.sysid,
+            "ok":           False,
+            "error":        "no_data",
+            "online":       False,
+        }
+        # 3회 재시도 — 네트워크 순간 끊김 대비
+        for attempt in range(3):
+            try:
+                res = self._session.post(
+                    TELEMETRY_PUSH_URL, json=payload, timeout=HTTP_TIMEOUT_SEC
+                )
+                print(
+                    f"[{self.drone_id}] Offline signal sent "
+                    f"(attempt {attempt + 1}) → status={res.status_code}"
+                )
+                return  # 성공하면 바로 리턴
+            except Exception as e:
+                print(f"[{self.drone_id}] Offline signal failed (attempt {attempt + 1}): {e}")
+                if attempt < 2:
+                    time.sleep(1.0)
+
+    # -------------------------------------------------
     # 미션 push (캐시 → 서버)
     # -------------------------------------------------
     def _push_mission(self) -> None:
@@ -246,8 +280,6 @@ class DroneAgent:
 
     # -------------------------------------------------
     # ★ Arming 감지 → 능동 미션 다운로드
-    #   listen_loop와 소켓 충돌을 피하기 위해
-    #   _mission_queue에 넣고 여기서 꺼내 씀
     # -------------------------------------------------
     def _download_mission(self) -> None:
         if self._mission_downloading or self.mav is None:
@@ -256,17 +288,14 @@ class DroneAgent:
         print(f"[{self.drone_id}] Arming 감지 → 능동 미션 다운로드 시작")
 
         try:
-            # 큐 초기화
             with self._mission_queue_lock:
                 self._mission_queue.clear()
 
-            # MISSION_REQUEST_LIST 전송
             self.mav.mav.mission_request_list_send(
                 self.mav.target_system,
                 self.mav.target_component,
             )
 
-            # MISSION_COUNT 대기 (큐에서, 최대 5초)
             count_msg = self._wait_mission_msg("MISSION_COUNT", timeout=5.0)
             if count_msg is None:
                 print(f"[{self.drone_id}] MISSION_COUNT 수신 실패 — 다운로드 중단")
@@ -277,7 +306,6 @@ class DroneAgent:
             buf: Dict[int, Dict[str, Any]] = {}
 
             for seq in range(count):
-                # 아이템 요청
                 self.mav.mav.mission_request_int_send(
                     self.mav.target_system,
                     self.mav.target_component,
@@ -285,7 +313,6 @@ class DroneAgent:
                 )
                 item = self._wait_mission_msg("MISSION_ITEM_INT", timeout=3.0, seq=seq)
                 if item is None:
-                    # 구형 QGC 대응: MISSION_ITEM 시도
                     item = self._wait_mission_msg("MISSION_ITEM", timeout=3.0, seq=seq)
                 if item is None:
                     print(f"[{self.drone_id}] MISSION_ITEM[{seq}] 수신 실패 — 다운로드 중단")
@@ -297,11 +324,10 @@ class DroneAgent:
                 cmd = int(item.command)
 
                 if abs(lat) < 0.0001 and abs(lng) < 0.0001:
-                    continue  # 홈/더미 좌표 제외
+                    continue
 
                 buf[seq] = {"index": seq, "command": cmd, "lat": lat, "lng": lng, "alt": alt}
 
-            # 수신 완료 ACK
             self.mav.mav.mission_ack_send(
                 self.mav.target_system,
                 self.mav.target_component,
@@ -334,10 +360,6 @@ class DroneAgent:
             self._mission_downloading = False
 
     def _wait_mission_msg(self, msg_type: str, timeout: float, seq: int = -1) -> Optional[Any]:
-        """
-        _mission_queue에서 원하는 타입(+seq)의 메시지를 꺼낼 때까지 대기.
-        listen_loop가 ingest 중 미션 관련 메시지를 큐에 넣어 줌.
-        """
         deadline = time.time() + timeout
         while time.time() < deadline:
             with self._mission_queue_lock:
@@ -374,17 +396,13 @@ class DroneAgent:
         t  = msg.get_type()
         ts = now_ts()
 
-        # ── 미션 다운로드 중이면 관련 메시지를 큐에 넣기 ────────
         if self._mission_downloading and t in (
             "MISSION_COUNT", "MISSION_ITEM_INT", "MISSION_ITEM"
         ):
             with self._mission_queue_lock:
                 self._mission_queue.append(msg)
-            # 텔레메트리 캐시 업데이트는 계속 진행
-            # (미션 메시지는 캐시 업데이트 대상이 아니므로 여기서 return 해도 무방)
             return
 
-        # ── lock 안: 텔레메트리 캐시 업데이트 ───────────────
         with self._lock:
             try:
                 self._cache["sysid"] = msg.get_srcSystem()
@@ -520,7 +538,6 @@ class DroneAgent:
             })
 
         elif t == "HEARTBEAT":
-            # ── 모드 변경 감지 ─────────────────────────────────
             try:
                 mode = mavutil.mode_string_v10(msg)
                 if mode and mode != self._last_mode:
@@ -534,17 +551,14 @@ class DroneAgent:
             except Exception:
                 pass
 
-            # ★ Arming 상태 감지 → 미션 능동 다운로드 트리거
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
-            # Disarm 시 다음 비행을 위해 미션 초기화
             if not armed and self._was_armed:
                 self._mission_download_done = False
                 with self._mission_lock:
                     self._mission_waypoints = []
                 print(f"[{self.drone_id}] Disarmed — 미션 캐시 초기화")
 
-            # Armed로 전환되는 순간 미션 요청 (1회만)
             if armed and not self._was_armed and not self._mission_download_done:
                 print(f"[{self.drone_id}] Armed 감지 → 미션 다운로드 스레드 시작")
                 threading.Thread(
@@ -553,7 +567,6 @@ class DroneAgent:
 
             self._was_armed = armed
 
-        # ── passive snoop: QGC 업로드 엿듣기 (다운로드 중 아닐 때만) ──
         elif t == "MISSION_COUNT" and not self._mission_downloading:
             count = int(msg.count)
             self._mission_buf = {}
@@ -602,7 +615,7 @@ class DroneAgent:
             }
 
         elif t == "MISSION_ACK" and not self._mission_downloading:
-            if int(msg.type) == 0:  # MAV_MISSION_ACCEPTED
+            if int(msg.type) == 0:
                 waypoints = sorted(self._mission_buf.values(), key=lambda w: w["index"])
                 with self._mission_lock:
                     self._mission_waypoints = waypoints
@@ -735,17 +748,16 @@ class DroneAgent:
                 "speed_m_s":    speed_m_s,
                 "battery":      self._cache.get("battery"),
                 "gps":          self._cache.get("gps"),
+                "online":       True,   # ★ 정상 push는 항상 online=True
             }
             snap["_age_sec"] = {
                 k: (now_ts() - v) if v else None
                 for k, v in self._last_update.items()
             }
 
-        # 미션 웨이포인트 (캐시에서 읽기)
         with self._mission_lock:
             snap["mission_waypoints"] = list(self._mission_waypoints)
 
-        # 비행 이벤트 (소비 후 초기화)
         snap["flight_events"] = self.pop_events()
 
         return snap
@@ -793,15 +805,39 @@ class DroneAgent:
                 while self.running:
                     time.sleep(1)
 
+                # ★ 연결 끊김 → 서버 캐시 초기화 신호 전송
+                print(f"[{self.drone_id}] 연결 끊김 감지 → 서버에 offline 신호 전송")
+                self._send_offline_signal()
+
                 print(f"[{self.drone_id}] Disconnected. Retry in {LTE_RETRY_SEC:.0f}s...")
             else:
+                # ★ 연결 자체가 안 됐을 때도 혹시 모를 캐시 제거
+                self._send_offline_signal()
                 print(f"[{self.drone_id}] Retry in {LTE_RETRY_SEC:.0f}s...")
 
             # 재연결 시 캐시 초기화
+            with self._lock:
+                self._cache = {
+                    "sysid":    None,
+                    "position": None,
+                    "velocity": None,
+                    "attitude": None,
+                    "battery":  None,
+                    "gps":      None,
+                }
+                self._last_update = {
+                    "position": 0.0,
+                    "velocity": 0.0,
+                    "attitude": 0.0,
+                    "battery":  0.0,
+                    "gps":      0.0,
+                }
+
             with self._mission_lock:
                 self._mission_waypoints = []
             with self._events_lock:
                 self._flight_events = []
+
             self._mission_buf             = {}
             self._mission_expected_count  = 0
             self._was_armed               = False
@@ -848,3 +884,22 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n[Agent] 종료합니다.")
+        # ★ Ctrl+C 종료 시에도 모든 기체에 offline 신호 전송
+        # (daemon 스레드라 바로 종료되므로 메인에서 직접 처리)
+        session = requests.Session()
+        for cfg in DRONE_LIST:
+            try:
+                session.post(
+                    TELEMETRY_PUSH_URL,
+                    json={
+                        "drone_id":  cfg["drone_id"],
+                        "lte_ip":    cfg["lte_ip"],
+                        "ok":        False,
+                        "error":     "no_data",
+                        "online":    False,
+                    },
+                    timeout=3.0,
+                )
+                print(f"[{cfg['drone_id']}] Shutdown offline signal sent")
+            except Exception as e:
+                print(f"[{cfg['drone_id']}] Shutdown offline signal failed: {e}")

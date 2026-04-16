@@ -273,20 +273,38 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         return
       }
 
-      if (msg?.ok === false) {
-        if (msg?.error === "no_data") clearDroneData()
+      // ★ agent.py가 보낸 offline 신호 처리 (ok=false 또는 online=false)
+      if (msg?.ok === false || msg?.online === false) {
+        console.log(`[WS] offline signal received for ${drone.lteIp}`)
+        setDroneOffline(true)
+        clearDroneData()
         return
       }
 
       if (typeof msg.sysid !== "number") return
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
+      // ★ server_ts 기반 오래된 캐시 데이터 감지
+      // 서버가 오래된 데이터를 replay하면 offline으로 처리
+      if (msg.server_ts) {
+        const serverTsMs = new Date(msg.server_ts).getTime()
+        if (!isNaN(serverTsMs) && Date.now() - serverTsMs > 10_000) {
+          // 10초 이상 된 데이터 → 서버 캐시 replay 의심 → offline 처리
+          console.warn(
+            `[WS] stale server_ts detected (${Math.round((Date.now() - serverTsMs) / 1000)}s old) — treating as offline`,
+          )
+          setDroneOffline(true)
+          clearDroneData()
+          return
+        }
+      }
+
       // ★ 데이터 수신 시각 갱신 + offline 즉시 해제
       lastDataReceivedRef.current = Date.now()
       setLastDataAgeSec(0)
       droneActiveRef.current = true
       setDroneActive(true)
-      setDroneOffline(false) // ← 데이터 수신 시에만 offline 해제
+      setDroneOffline(false) // ← 신선한 데이터 수신 시에만 offline 해제
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
