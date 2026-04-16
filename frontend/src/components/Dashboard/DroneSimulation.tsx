@@ -95,8 +95,15 @@ const DRONE_TARGETS: DroneTarget[] = [
   },
 ]
 
-// 기체 데이터가 이 시간(ms) 이상 오지 않으면 오프라인으로 판단
+// 기체 데이터가 이 시간(ms) 이상 수신 안되면 오프라인으로 판단
 const DRONE_OFFLINE_TIMEOUT_MS = 5_000
+
+// ★ 데이터 freeze 감지 설정
+// 배터리/기체 연결 끊기면 서버가 server_ts를 새로 찍어도
+// 실제 MAVLink 물리값(roll/pitch/yaw/speed/battery/altitude)은 완전히 고정됨
+// 이 값이 연속으로 동일하면 기체 연결 끊김으로 판단
+const FREEZE_COUNT_THRESHOLD = 20 // 연속 20회 동일 → offline (약 2초)
+const FREEZE_CHECK_MIN_COUNT = 10 // 최소 10회 수신 후부터 체크 (초기 안정화 대기)
 
 /* =========================
  * 개별 드론 WS 상태
@@ -109,6 +116,46 @@ export interface DroneWsState {
   flightStatus: FlightStatus
   droneOffline: boolean
   lastDataAgeSec: number | null
+}
+
+/* =========================
+ * Freeze 감지 헬퍼
+ * ========================= */
+interface FrozenSnapshot {
+  roll: number
+  pitch: number
+  yaw: number
+  speed: number
+  battery: number
+  altitude: number
+}
+
+// 소수점 2자리 반올림 (미세 센서 노이즈 무시)
+function r2(v: unknown): number {
+  if (typeof v !== "number" || isNaN(v)) return -9999
+  return Math.round(v * 100) / 100
+}
+
+function buildSnapshot(msg: any): FrozenSnapshot {
+  return {
+    roll: r2(msg.attitude?.roll),
+    pitch: r2(msg.attitude?.pitch),
+    yaw: r2(msg.attitude?.yaw),
+    speed: r2(msg.speed_m_s),
+    battery: r2(msg.battery?.remaining),
+    altitude: r2(msg.position?.alt),
+  }
+}
+
+function isFrozen(a: FrozenSnapshot, b: FrozenSnapshot): boolean {
+  return (
+    a.roll === b.roll &&
+    a.pitch === b.pitch &&
+    a.yaw === b.yaw &&
+    a.speed === b.speed &&
+    a.battery === b.battery &&
+    a.altitude === b.altitude
+  )
 }
 
 /* =========================
@@ -156,23 +203,24 @@ function buildTelemetryWsUrl(rawBase: string) {
     u.pathname.endsWith("/qgc/ws/qgc") ||
     u.pathname.endsWith("/ws/qgc")
   const origin = `${wsProtocol}//${u.host}`
-  const finalUrl = new URL(hasWsPath ? u.pathname : WS_PATH, origin)
-  return finalUrl.toString()
+  return new URL(hasWsPath ? u.pathname : WS_PATH, origin).toString()
 }
 
 function getTelemetryEnvBase(): string | null {
   const v = import.meta.env.VITE_TELEMETRY_WS_URL as unknown
-  if (v == null) return null
-  if (typeof v !== "string") return null
+  if (v == null || typeof v !== "string") return null
   const trimmed = v.trim()
-  if (!trimmed) return null
-  if (trimmed.toLowerCase() === "undefined") return null
-  if (trimmed.toLowerCase() === "null") return null
+  if (
+    !trimmed ||
+    trimmed.toLowerCase() === "undefined" ||
+    trimmed.toLowerCase() === "null"
+  )
+    return null
   return trimmed
 }
 
 /* =========================
- * 비행 상태 뱃지 컴포넌트
+ * 비행 상태 뱃지
  * ========================= */
 export function FlightStatusBadge({ status }: { status: FlightStatus }) {
   if (status === "flying") {
@@ -223,16 +271,22 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
   const droneActiveRef = useRef(false)
   const clearingRef = useRef(false)
 
-  // ★ FIX: clearDroneData에서 droneOffline을 false로 리셋하지 않음
-  // WS onclose에서 droneOffline을 명시적으로 관리하도록 분리
+  // ★ freeze 감지용
+  const lastSnapRef = useRef<FrozenSnapshot | null>(null)
+  const frozenCountRef = useRef(0)
+  const totalMsgRef = useRef(0)
+
+  // droneOffline은 건드리지 않음 — 호출자가 직접 설정
   const clearDroneData = useCallback(() => {
     clearingRef.current = true
     targetRef.current = null
     smoothRef.current = null
     droneActiveRef.current = false
     lastDataReceivedRef.current = null
+    lastSnapRef.current = null
+    frozenCountRef.current = 0
+    totalMsgRef.current = 0
     setDroneActive(false)
-    // ★ setDroneOffline(false) 제거 — onclose / onmessage에서 직접 관리
     setLastDataAgeSec(null)
     setData(null)
     requestAnimationFrame(() => {
@@ -240,14 +294,22 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     })
   }, [])
 
+  const goOffline = useCallback(
+    (reason: string) => {
+      console.warn(`[DroneWs:${drone.lteIp}] offline — ${reason}`)
+      setDroneOffline(true)
+      clearDroneData()
+    },
+    [drone.lteIp, clearDroneData],
+  )
+
   const connect = useCallback(() => {
     if (wsRef.current) return
-    const TELEMETRY_WS_BASE = getTelemetryEnvBase()
-    if (!TELEMETRY_WS_BASE) return
-
+    const base = getTelemetryEnvBase()
+    if (!base) return
     let wsUrl: string
     try {
-      wsUrl = buildTelemetryWsUrl(TELEMETRY_WS_BASE)
+      wsUrl = buildTelemetryWsUrl(base)
     } catch {
       return
     }
@@ -260,8 +322,8 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     ws.onopen = () => {
       if (!mountedRef.current) return
       setWsConnected(true)
-      // ★ WS 재연결 성공 시 offline 유지 (데이터 수신 후 해제)
       clearDroneData()
+      // offline 상태 유지 — 신선한 데이터 수신 후 해제
     }
 
     ws.onmessage = (event) => {
@@ -273,38 +335,58 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         return
       }
 
-      // ★ agent.py가 보낸 offline 신호 처리 (ok=false 또는 online=false)
+      // ── 1) agent.py offline 신호 ──────────────────────────
       if (msg?.ok === false || msg?.online === false) {
-        console.log(`[WS] offline signal received for ${drone.lteIp}`)
-        setDroneOffline(true)
-        clearDroneData()
+        goOffline("agent offline signal (ok=false / online=false)")
         return
       }
 
+      // ── 2) 기본 유효성 ────────────────────────────────────
       if (typeof msg.sysid !== "number") return
       if (!msg.lte_ip || msg.lte_ip !== drone.lteIp) return
 
-      // ★ server_ts 기반 오래된 캐시 데이터 감지
-      // 서버가 오래된 데이터를 replay하면 offline으로 처리
+      // ── 3) server_ts 오래된 경우 (서버가 ts를 갱신 안 할 때) ──
       if (msg.server_ts) {
-        const serverTsMs = new Date(msg.server_ts).getTime()
-        if (!isNaN(serverTsMs) && Date.now() - serverTsMs > 10_000) {
-          // 10초 이상 된 데이터 → 서버 캐시 replay 의심 → offline 처리
-          console.warn(
-            `[WS] stale server_ts detected (${Math.round((Date.now() - serverTsMs) / 1000)}s old) — treating as offline`,
+        const tsMs = new Date(msg.server_ts).getTime()
+        if (!isNaN(tsMs) && Date.now() - tsMs > 10_000) {
+          goOffline(
+            `stale server_ts (${Math.round((Date.now() - tsMs) / 1000)}s old)`,
           )
-          setDroneOffline(true)
-          clearDroneData()
           return
         }
       }
 
-      // ★ 데이터 수신 시각 갱신 + offline 즉시 해제
+      // ── 4) ★ 핵심: 물리값 freeze 감지 ────────────────────
+      // 서버가 server_ts를 현재 시각으로 새로 찍어도
+      // 실제 MAVLink 값(roll/pitch/yaw/speed/battery/altitude)은
+      // 배터리/기체 연결 끊기면 완전히 고정됨 → 이걸 감지
+      const snap = buildSnapshot(msg)
+      totalMsgRef.current += 1
+
+      if (
+        totalMsgRef.current >= FREEZE_CHECK_MIN_COUNT &&
+        lastSnapRef.current !== null
+      ) {
+        if (isFrozen(lastSnapRef.current, snap)) {
+          frozenCountRef.current += 1
+          if (frozenCountRef.current >= FREEZE_COUNT_THRESHOLD) {
+            goOffline(
+              `data frozen for ${frozenCountRef.current} consecutive messages`,
+            )
+            return
+          }
+        } else {
+          frozenCountRef.current = 0 // 값 변화 → 정상, 카운터 리셋
+        }
+      }
+      lastSnapRef.current = snap
+
+      // ── 정상 데이터 수신 ──────────────────────────────────
       lastDataReceivedRef.current = Date.now()
       setLastDataAgeSec(0)
       droneActiveRef.current = true
       setDroneActive(true)
-      setDroneOffline(false) // ← 신선한 데이터 수신 시에만 offline 해제
+      setDroneOffline(false)
 
       const vx = msg.velocity?.vx
       const vy = msg.velocity?.vy
@@ -362,24 +444,20 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       wsRef.current = null
       if (!mountedRef.current) return
       setWsConnected(false)
-      // ★ FIX: WS가 끊기면 즉시 offline 처리 후 데이터 초기화
-      // (clearDroneData가 droneOffline을 건드리지 않으므로 순서 무관)
-      setDroneOffline(true)
-      clearDroneData()
+      goOffline("WebSocket closed")
       reconnectTimerRef.current = setTimeout(() => {
         if (mountedRef.current) connect()
       }, 5000)
     }
-  }, [drone.lteIp, clearDroneData])
+  }, [drone.lteIp, clearDroneData, goOffline])
 
-  // 오프라인 감지 타이머 (2초마다 체크, 5초 무응답 시 offline)
+  // 오프라인 감지 타이머 (2초마다 체크, 5초 무응답 → offline)
   useEffect(() => {
     offlineTimerRef.current = setInterval(() => {
       if (!droneActiveRef.current) return
       const last = lastDataReceivedRef.current
       if (last === null) return
-      const age = Date.now() - last
-      if (age > DRONE_OFFLINE_TIMEOUT_MS) {
+      if (Date.now() - last > DRONE_OFFLINE_TIMEOUT_MS) {
         droneActiveRef.current = false
         setDroneActive(false)
         setDroneOffline(true)
@@ -390,31 +468,30 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [])
 
-  // 경과 시간 표시 타이머 (1초마다 갱신)
+  // 경과 시간 표시 (1초마다)
   useEffect(() => {
     ageTimerRef.current = setInterval(() => {
       const last = lastDataReceivedRef.current
-      if (last === null) {
-        setLastDataAgeSec(null)
-        return
-      }
-      setLastDataAgeSec(Math.floor((Date.now() - last) / 1000))
+      setLastDataAgeSec(
+        last === null ? null : Math.floor((Date.now() - last) / 1000),
+      )
     }, 1000)
     return () => {
       if (ageTimerRef.current) clearInterval(ageTimerRef.current)
     }
   }, [])
 
+  // 스무딩 RAF
   useEffect(() => {
     let rafId: number
-    const rafLoop = () => {
+    const loop = () => {
       if (
         clearingRef.current ||
         !droneActiveRef.current ||
         !targetRef.current
       ) {
         smoothRef.current = null
-        rafId = requestAnimationFrame(rafLoop)
+        rafId = requestAnimationFrame(loop)
         return
       }
       const target = targetRef.current
@@ -423,7 +500,6 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
       lastTsRef.current = now
       const alpha = Math.min(dt * 20, 1)
       const prev = smoothRef.current
-
       smoothRef.current = {
         ...target,
         altitude:
@@ -445,12 +521,13 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
             : target.yaw,
         missionWaypoints: target.missionWaypoints,
       }
-      rafId = requestAnimationFrame(rafLoop)
+      rafId = requestAnimationFrame(loop)
     }
-    rafId = requestAnimationFrame(rafLoop)
+    rafId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafId)
   }, [])
 
+  // 20fps state 업데이트
   useEffect(() => {
     const id = window.setInterval(
       () => {
@@ -460,7 +537,7 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
         }
         const next = smoothRef.current
         if (!next) {
-          setData((prev) => (prev === null ? null : null))
+          setData((p) => (p === null ? null : null))
           return
         }
         setData({
@@ -488,20 +565,19 @@ function useDroneWs(drone: DroneTarget): DroneWsState {
     }
   }, [connect])
 
-  const flightStatus = getFlightStatus(data)
   return {
     wsConnected,
     droneActive,
     connected: droneActive,
     data,
-    flightStatus,
+    flightStatus: getFlightStatus(data),
     droneOffline,
     lastDataAgeSec,
   }
 }
 
 /* =========================
- * 검색으로 기체 찾기 헬퍼
+ * 검색 헬퍼
  * ========================= */
 function searchDrone(query: string): number | null {
   const q = query.trim().toLowerCase()
@@ -527,9 +603,6 @@ interface DroneSimulationProps {
   onDroneOffline?: (offline: boolean) => void
 }
 
-/* =========================
- * 상태 텍스트 헬퍼
- * ========================= */
 function getStatusText(state: DroneWsState, ageSec: number | null): string {
   if (state.droneOffline) return "⚠ 기체 신호 끊김 — 재연결 대기 중"
   if (state.droneActive) {
@@ -555,12 +628,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
   const drone2 = useDroneWs(DRONE_TARGETS[2])
-
   const allStates = [drone0, drone1, drone2]
 
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   const selectedState = selectedIdx !== null ? allStates[selectedIdx] : null
-
   const [searchQuery, setSearchQuery] = useState("")
   const [searchError, setSearchError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -601,49 +672,44 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   useEffect(() => {
     if (onAllDroneStates) onAllDroneStates(allStates)
   }, [drone0, drone1, drone2]) // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     if (onConnectionChange)
       onConnectionChange(selectedState?.connected ?? false)
   }, [selectedState?.connected, onConnectionChange])
-
   useEffect(() => {
     if (onData)
       onData(selectedState?.droneActive ? (selectedState?.data ?? null) : null)
   }, [selectedState?.data, selectedState?.droneActive, onData])
-
   useEffect(() => {
-    if (onMissionWaypoints) {
+    if (onMissionWaypoints)
       onMissionWaypoints(selectedState?.data?.missionWaypoints)
-    }
   }, [selectedState?.data?.missionWaypoints, onMissionWaypoints]) // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
-    if (onDroneOffline) {
-      onDroneOffline(selectedState?.droneOffline ?? false)
-    }
+    if (onDroneOffline) onDroneOffline(selectedState?.droneOffline ?? false)
   }, [selectedState?.droneOffline, onDroneOffline])
 
   const selectedDrone = selectedIdx !== null ? DRONE_TARGETS[selectedIdx] : null
   const selectedWsState = selectedIdx !== null ? allStates[selectedIdx] : null
 
-  const cardBorderBg = selectedWsState?.droneOffline
+  const isOffline = selectedWsState?.droneOffline ?? false
+  const isActive = selectedWsState?.droneActive ?? false
+
+  const cardBorderBg = isOffline
     ? "border-red-300 bg-red-50/60"
-    : selectedWsState?.droneActive
+    : isActive
       ? "border-emerald-300 bg-emerald-50/60"
       : "border-slate-200 bg-slate-50/60"
 
-  const iconBg = selectedWsState?.droneOffline
+  const iconBg = isOffline
     ? "bg-red-100"
-    : selectedWsState?.droneActive
+    : isActive
       ? "bg-emerald-100"
       : "bg-slate-100"
 
-  const statusTextColor = selectedWsState?.droneOffline
+  const statusTextColor = isOffline
     ? "text-red-500"
-    : selectedWsState?.droneActive
-      ? selectedWsState.lastDataAgeSec !== null &&
-        selectedWsState.lastDataAgeSec >= 3
+    : isActive
+      ? (selectedWsState?.lastDataAgeSec ?? 0) >= 3
         ? "text-amber-500"
         : "text-emerald-600"
       : "text-slate-400"
@@ -735,15 +801,14 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBg}`}
               >
-                {selectedWsState.droneOffline ? (
+                {isOffline ? (
                   <WifiOff className="h-5 w-5 text-red-500" />
-                ) : selectedWsState.droneActive ? (
+                ) : isActive ? (
                   <Radio className="h-5 w-5 text-emerald-600" />
                 ) : (
                   <Wifi className="h-5 w-5 text-slate-400" />
                 )}
               </div>
-
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-slate-900">
@@ -752,19 +817,18 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                   <span className="text-xs text-slate-400">
                     {selectedDrone.keywords[2]}
                   </span>
-                  {selectedWsState.droneOffline ? (
+                  {isOffline ? (
                     <span className="flex h-2 w-2">
                       <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-red-400 opacity-75" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
                     </span>
-                  ) : selectedWsState.droneActive ? (
+                  ) : isActive ? (
                     <span className="flex h-2 w-2">
                       <span className="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-emerald-400 opacity-75" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                     </span>
                   ) : null}
                 </div>
-
                 <p className={`text-xs font-medium ${statusTextColor}`}>
                   {getStatusText(
                     selectedWsState,
@@ -775,7 +839,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
-              {selectedWsState.data && (
+              {isActive && !isOffline && selectedWsState.data && (
                 <div className="hidden items-center gap-3 text-xs text-slate-500 sm:flex">
                   {selectedWsState.data.battery != null && (
                     <span className="font-mono">
@@ -794,15 +858,13 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
                   )}
                 </div>
               )}
-
               <FlightStatusBadge
                 status={
-                  selectedWsState.droneActive
+                  isActive && !isOffline
                     ? selectedWsState.flightStatus
                     : "unknown"
                 }
               />
-
               <button
                 type="button"
                 onClick={handleDisconnect}
@@ -815,7 +877,7 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
           </div>
 
           {/* 오프라인 배지 */}
-          {selectedWsState.droneOffline && (
+          {isOffline && (
             <div className="mt-3 rounded-xl border border-red-200 bg-red-100/60 px-3 py-2 text-xs text-red-700">
               <span className="font-semibold">기체 신호 없음</span> — 마지막
               수신 후{" "}
@@ -826,12 +888,11 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
             </div>
           )}
 
-          {/* 연결은 됐지만 데이터가 느릴 때 경고 (3~5초 지연) */}
-          {!selectedWsState.droneOffline &&
-            selectedWsState.droneActive &&
-            selectedWsState.lastDataAgeSec !== null &&
-            selectedWsState.lastDataAgeSec >= 3 &&
-            selectedWsState.lastDataAgeSec <
+          {/* 데이터 지연 경고 */}
+          {!isOffline &&
+            isActive &&
+            (selectedWsState.lastDataAgeSec ?? 0) >= 3 &&
+            (selectedWsState.lastDataAgeSec ?? 0) <
               DRONE_OFFLINE_TIMEOUT_MS / 1000 && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-700">
                 데이터 지연 감지 — 마지막 수신 {selectedWsState.lastDataAgeSec}
@@ -851,10 +912,10 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
         </div>
       )}
 
-      {/* 드론 텔레메트리 카드 */}
+      {/* 드론 텔레메트리 카드 — offline이면 빈 데이터 */}
       <DroneSimulationCard
-        data={selectedState?.droneActive ? (selectedState?.data ?? {}) : {}}
-        connected={selectedState?.droneActive ?? false}
+        data={isActive && !isOffline ? (selectedState?.data ?? {}) : {}}
+        connected={isActive && !isOffline}
         onConnect={() => {}}
         onDisconnect={() => {}}
       />
