@@ -23,6 +23,11 @@ VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 LTE_HEARTBEAT_TIMEOUT_SEC  = 8.0
 LTE_RETRY_SEC              = 5.0
 
+# ★ 핵심: HEARTBEAT 감시 타임아웃
+# MAVLink HEARTBEAT는 보통 1Hz로 수신됨
+# 이 시간 동안 HEARTBEAT가 안 오면 TCP hang으로 판단하고 강제 종료
+HEARTBEAT_WATCHDOG_SEC = 10.0
+
 # =====================================================
 # 기체 목록
 # =====================================================
@@ -48,16 +53,12 @@ DRONE_LIST = [
     },
 ]
 
-# =====================================================
-# 중요 파라미터 목록 (변경 시 로그 기록)
-# =====================================================
 IMPORTANT_PARAMS = {
     "ARMING_CHECK", "FS_BATT_ENABLE", "FS_GCS_ENABLE",
     "RTL_ALT", "WPNAV_SPEED", "FENCE_ENABLE",
     "FS_THR_ENABLE", "BATT_LOW_VOLT", "BATT_CRT_VOLT",
 }
 
-# 센서 캘리브레이션 / PreArm 관련 키워드
 CALIB_KEYWORDS = [
     "calibrat", "accel", "compass", "gyro", "baro",
     "PreArm", "EKF", "GPS Glitch", "Arm", "Disarm",
@@ -125,30 +126,27 @@ class DroneAgent:
             "gps":      0.0,
         }
 
-        # ── 미션 캐시 ──────────────────────────────────────
+        # ★ HEARTBEAT 감시용
+        self._last_heartbeat_ts: float = 0.0
+
         self._mission_waypoints: List[Dict[str, Any]] = []
         self._mission_lock       = threading.Lock()
-        # passive snoop 버퍼 (QGC 업로드 엿듣기용)
         self._mission_buf: Dict[int, Dict[str, Any]] = {}
         self._mission_expected_count: int = 0
 
-        # ★ Arming 기반 능동 다운로드 상태
         self._was_armed:             bool = False
         self._mission_download_done: bool = False
         self._mission_downloading:   bool = False
 
-        # ── 미션 메시지 전용 큐 (listen_loop 충돌 방지) ──────
         self._mission_queue: List[Any] = []
         self._mission_queue_lock = threading.Lock()
 
-        # ── 비행 이벤트 ────────────────────────────────────
         self._flight_events:  List[Dict[str, Any]] = []
         self._events_lock     = threading.Lock()
         self._last_mode:      Optional[str] = None
         self._last_gps_fix:   Optional[int] = None
         self._battery_warned: set           = set()
 
-        # ★ RC RSSI 추적 (10% 이상 변화 시만 기록)
         self._last_rssi_pct: Optional[int] = None
 
         self._lock         = threading.Lock()
@@ -159,7 +157,6 @@ class DroneAgent:
     # 이벤트 헬퍼
     # -------------------------------------------------
     def _add_event(self, event: Dict[str, Any]) -> None:
-        """이벤트 생성 — 최대 100개 유지"""
         event["time"] = _kst_now()
         with self._events_lock:
             self._flight_events.append(event)
@@ -167,7 +164,6 @@ class DroneAgent:
                 self._flight_events = self._flight_events[-100:]
 
     def pop_events(self) -> List[Dict[str, Any]]:
-        """push_loop 에서 호출 — 쌓인 이벤트를 꺼내고 초기화"""
         with self._events_lock:
             events = list(self._flight_events)
             self._flight_events = []
@@ -195,6 +191,7 @@ class DroneAgent:
 
             self.mav   = mav
             self.sysid = sysid
+            self._last_heartbeat_ts = now_ts()  # ★ 초기화
 
             with self._lock:
                 self._cache["sysid"] = self.sysid
@@ -216,14 +213,9 @@ class DroneAgent:
             return False
 
     # -------------------------------------------------
-    # ★ 오프라인 신호 전송 — 배터리/기체 연결 끊김 시 서버 캐시 초기화
+    # ★ Offline 신호 전송
     # -------------------------------------------------
     def _send_offline_signal(self) -> None:
-        """
-        기체 연결이 끊겼을 때 서버에 online=false 신호를 보낸다.
-        서버가 이 신호를 받으면 해당 lte_ip의 캐시를 비우고
-        프론트엔드 WebSocket에 ok=false / no_data 를 내려보낸다.
-        """
         payload = {
             "drone_id":     self.drone_id,
             "vehicle_name": self.vehicle_name,
@@ -233,7 +225,6 @@ class DroneAgent:
             "error":        "no_data",
             "online":       False,
         }
-        # 3회 재시도 — 네트워크 순간 끊김 대비
         for attempt in range(3):
             try:
                 res = self._session.post(
@@ -243,14 +234,14 @@ class DroneAgent:
                     f"[{self.drone_id}] Offline signal sent "
                     f"(attempt {attempt + 1}) → status={res.status_code}"
                 )
-                return  # 성공하면 바로 리턴
+                return
             except Exception as e:
                 print(f"[{self.drone_id}] Offline signal failed (attempt {attempt + 1}): {e}")
                 if attempt < 2:
                     time.sleep(1.0)
 
     # -------------------------------------------------
-    # 미션 push (캐시 → 서버)
+    # 미션 push
     # -------------------------------------------------
     def _push_mission(self) -> None:
         with self._mission_lock:
@@ -265,10 +256,7 @@ class DroneAgent:
             res = self._session.post(
                 MISSION_PUSH_URL, json=payload, timeout=HTTP_TIMEOUT_SEC
             )
-            print(
-                f"[{self.drone_id}] Mission push → "
-                f"status={res.status_code} wp_count={len(waypoints)}"
-            )
+            print(f"[{self.drone_id}] Mission push → status={res.status_code} wp_count={len(waypoints)}")
         except Exception as e:
             print(f"[{self.drone_id}] Mission push failed: {e}")
 
@@ -279,7 +267,7 @@ class DroneAgent:
         })
 
     # -------------------------------------------------
-    # ★ Arming 감지 → 능동 미션 다운로드
+    # 미션 다운로드
     # -------------------------------------------------
     def _download_mission(self) -> None:
         if self._mission_downloading or self.mav is None:
@@ -302,7 +290,6 @@ class DroneAgent:
                 return
 
             count = int(count_msg.count)
-            print(f"[{self.drone_id}] 미션 아이템 수: {count}")
             buf: Dict[int, Dict[str, Any]] = {}
 
             for seq in range(count):
@@ -315,7 +302,6 @@ class DroneAgent:
                 if item is None:
                     item = self._wait_mission_msg("MISSION_ITEM", timeout=3.0, seq=seq)
                 if item is None:
-                    print(f"[{self.drone_id}] MISSION_ITEM[{seq}] 수신 실패 — 다운로드 중단")
                     return
 
                 lat = float(item.x) / 1e7
@@ -340,18 +326,11 @@ class DroneAgent:
             self._mission_download_done = True
 
             print(f"[{self.drone_id}] 미션 다운로드 완료: {len(waypoints)}개")
-            for wp in waypoints:
-                print(
-                    f"  [{wp['index']}] {cmd_label(wp['command'])} "
-                    f"lat={wp['lat']:.6f} lng={wp['lng']:.6f} alt={wp['alt']:.1f}m"
-                )
-
             self._add_event({
                 "type":    "mission_ack",
                 "level":   "success",
                 "message": f"Arming 후 미션 다운로드 완료 — {len(waypoints)}개 웨이포인트",
             })
-
             threading.Thread(target=self._push_mission, daemon=True).start()
 
         except Exception as e:
@@ -372,6 +351,38 @@ class DroneAgent:
         return None
 
     # -------------------------------------------------
+    # ★ HEARTBEAT 감시 루프 (TCP hang 감지 핵심)
+    # -------------------------------------------------
+    def _heartbeat_watchdog(self) -> None:
+        """
+        HEARTBEAT가 HEARTBEAT_WATCHDOG_SEC 이상 안 오면
+        TCP 연결이 hang 상태로 판단하고 강제 종료.
+        배터리 분리 시 일부 포트에서 recv_match가 블록되는 문제 해결.
+        """
+        print(f"[{self.drone_id}] Heartbeat watchdog started")
+        while self.running:
+            time.sleep(2.0)
+            if not self.running:
+                break
+            if self._last_heartbeat_ts == 0.0:
+                continue
+            age = now_ts() - self._last_heartbeat_ts
+            if age > HEARTBEAT_WATCHDOG_SEC:
+                print(
+                    f"[{self.drone_id}] ★ HEARTBEAT watchdog triggered! "
+                    f"No heartbeat for {age:.1f}s → forcing disconnect"
+                )
+                self.running = False
+                # TCP 소켓 강제 종료로 recv_match 블록 해제
+                try:
+                    if self.mav:
+                        self.mav.close()
+                except Exception:
+                    pass
+                break
+        print(f"[{self.drone_id}] Heartbeat watchdog stopped")
+
+    # -------------------------------------------------
     # Listen Loop
     # -------------------------------------------------
     def listen_loop(self):
@@ -390,7 +401,7 @@ class DroneAgent:
         self.running = False
 
     # -------------------------------------------------
-    # Ingest MAVLink message
+    # Ingest
     # -------------------------------------------------
     def _ingest(self, msg) -> None:
         t  = msg.get_type()
@@ -511,33 +522,12 @@ class DroneAgent:
                 except Exception:
                     pass
 
-        # ── lock 바깥: 이벤트 처리 ───────────────────────────
+        # lock 바깥 이벤트 처리
 
-        if t == "STATUSTEXT":
-            severity_map = {
-                0: "danger", 1: "danger", 2: "danger", 3: "danger",
-                4: "caution", 5: "info", 6: "info", 7: "debug",
-            }
-            text  = (msg.text or "").rstrip('\x00')
-            level = severity_map.get(int(msg.severity), "info")
+        if t == "HEARTBEAT":
+            # ★ HEARTBEAT 수신 시각 갱신 (watchdog용)
+            self._last_heartbeat_ts = ts
 
-            text_lower = text.lower()
-            for kw in CALIB_KEYWORDS:
-                if kw.lower() in text_lower:
-                    if "prearm" in text_lower or "failed" in text_lower or "error" in text_lower:
-                        level = "danger"
-                    elif level == "info":
-                        level = "caution"
-                    break
-
-            self._add_event({
-                "type":     "statustext",
-                "level":    level,
-                "message":  text,
-                "severity": int(msg.severity),
-            })
-
-        elif t == "HEARTBEAT":
             try:
                 mode = mavutil.mode_string_v10(msg)
                 if mode and mode != self._last_mode:
@@ -561,17 +551,38 @@ class DroneAgent:
 
             if armed and not self._was_armed and not self._mission_download_done:
                 print(f"[{self.drone_id}] Armed 감지 → 미션 다운로드 스레드 시작")
-                threading.Thread(
-                    target=self._download_mission, daemon=True
-                ).start()
+                threading.Thread(target=self._download_mission, daemon=True).start()
 
             self._was_armed = armed
+
+        elif t == "STATUSTEXT":
+            severity_map = {
+                0: "danger", 1: "danger", 2: "danger", 3: "danger",
+                4: "caution", 5: "info", 6: "info", 7: "debug",
+            }
+            text  = (msg.text or "").rstrip('\x00')
+            level = severity_map.get(int(msg.severity), "info")
+
+            text_lower = text.lower()
+            for kw in CALIB_KEYWORDS:
+                if kw.lower() in text_lower:
+                    if "prearm" in text_lower or "failed" in text_lower or "error" in text_lower:
+                        level = "danger"
+                    elif level == "info":
+                        level = "caution"
+                    break
+
+            self._add_event({
+                "type":     "statustext",
+                "level":    level,
+                "message":  text,
+                "severity": int(msg.severity),
+            })
 
         elif t == "MISSION_COUNT" and not self._mission_downloading:
             count = int(msg.count)
             self._mission_buf = {}
             self._mission_expected_count = count
-            print(f"[{self.drone_id}] Mission upload started: expecting {count} items (passive observe)")
 
         elif t == "MISSION_ITEM_INT" and not self._mission_downloading:
             lat = float(msg.x) / 1e7
@@ -583,18 +594,7 @@ class DroneAgent:
             if abs(lat) < 0.0001 and abs(lng) < 0.0001:
                 return
 
-            self._mission_buf[seq] = {
-                "index":   seq,
-                "command": cmd,
-                "lat":     lat,
-                "lng":     lng,
-                "alt":     alt,
-            }
-            print(
-                f"[{self.drone_id}] Mission item snooped: "
-                f"[{seq}] {cmd_label(cmd)} lat={lat:.6f} lng={lng:.6f} alt={alt:.1f}m "
-                f"({len(self._mission_buf)}/{self._mission_expected_count})"
-            )
+            self._mission_buf[seq] = {"index": seq, "command": cmd, "lat": lat, "lng": lng, "alt": alt}
 
         elif t == "MISSION_ITEM" and not self._mission_downloading:
             lat = float(getattr(msg, "x", 0))
@@ -606,13 +606,7 @@ class DroneAgent:
             if abs(lat) < 0.0001 and abs(lng) < 0.0001:
                 return
 
-            self._mission_buf[seq] = {
-                "index":   seq,
-                "command": cmd,
-                "lat":     lat,
-                "lng":     lng,
-                "alt":     alt,
-            }
+            self._mission_buf[seq] = {"index": seq, "command": cmd, "lat": lat, "lng": lng, "alt": alt}
 
         elif t == "MISSION_ACK" and not self._mission_downloading:
             if int(msg.type) == 0:
@@ -621,13 +615,6 @@ class DroneAgent:
                     self._mission_waypoints = waypoints
                 self._mission_buf = {}
                 self._mission_expected_count = 0
-
-                print(f"[{self.drone_id}] Mission ACK received: {len(waypoints)} waypoints committed")
-                for wp in waypoints:
-                    print(
-                        f"  [{wp['index']}] {cmd_label(wp['command'])} "
-                        f"lat={wp['lat']:.6f} lng={wp['lng']:.6f} alt={wp['alt']:.1f}m"
-                    )
 
                 self._add_event({
                     "type":    "mission_ack",
@@ -679,20 +666,6 @@ class DroneAgent:
                         "message": f"RC 신호 강도 {rssi_pct}% (raw={rssi})",
                     })
 
-        elif t == "CAMERA_FEEDBACK":
-            self._add_event({
-                "type":    "camera_shot",
-                "level":   "info",
-                "message": f"카메라 촬영 — img_idx={getattr(msg, 'img_idx', '?')}",
-            })
-
-        elif t == "CAMERA_IMAGE_CAPTURED":
-            self._add_event({
-                "type":    "camera_shot",
-                "level":   "info",
-                "message": f"이미지 캡처 완료 — #{getattr(msg, 'image_index', '?')}",
-            })
-
         elif t == "COMMAND_ACK":
             cmd    = getattr(msg, "command", None)
             result = getattr(msg, "result", -1)
@@ -701,12 +674,6 @@ class DroneAgent:
                     "type":    "camera_trigger",
                     "level":   "info" if result == 0 else "caution",
                     "message": f"카메라 트리거 {'성공' if result == 0 else f'실패 (result={result})'}",
-                })
-            elif cmd == 178:
-                self._add_event({
-                    "type":    "command_ack",
-                    "level":   "info" if result == 0 else "caution",
-                    "message": f"속도 변경 명령 {'수락' if result == 0 else f'거부 (result={result})'}",
                 })
 
         elif t == "PARAM_VALUE":
@@ -748,7 +715,7 @@ class DroneAgent:
                 "speed_m_s":    speed_m_s,
                 "battery":      self._cache.get("battery"),
                 "gps":          self._cache.get("gps"),
-                "online":       True,   # ★ 정상 push는 항상 online=True
+                "online":       True,
             }
             snap["_age_sec"] = {
                 k: (now_ts() - v) if v else None
@@ -759,7 +726,6 @@ class DroneAgent:
             snap["mission_waypoints"] = list(self._mission_waypoints)
 
         snap["flight_events"] = self.pop_events()
-
         return snap
 
     # -------------------------------------------------
@@ -796,22 +762,25 @@ class DroneAgent:
     def run(self):
         while True:
             self.running = True
+            self._last_heartbeat_ts = 0.0
+
             if self.connect():
-                listen_t = threading.Thread(target=self.listen_loop, daemon=True)
-                push_t   = threading.Thread(target=self.push_loop,   daemon=True)
+                listen_t   = threading.Thread(target=self.listen_loop,          daemon=True)
+                push_t     = threading.Thread(target=self.push_loop,            daemon=True)
+                watchdog_t = threading.Thread(target=self._heartbeat_watchdog,  daemon=True)
+
                 listen_t.start()
                 push_t.start()
+                watchdog_t.start()
 
                 while self.running:
                     time.sleep(1)
 
-                # ★ 연결 끊김 → 서버 캐시 초기화 신호 전송
-                print(f"[{self.drone_id}] 연결 끊김 감지 → 서버에 offline 신호 전송")
+                # ★ 연결 끊김 → offline 신호 즉시 전송
+                print(f"[{self.drone_id}] 연결 끊김 → offline 신호 전송")
                 self._send_offline_signal()
-
                 print(f"[{self.drone_id}] Disconnected. Retry in {LTE_RETRY_SEC:.0f}s...")
             else:
-                # ★ 연결 자체가 안 됐을 때도 혹시 모를 캐시 제거
                 self._send_offline_signal()
                 print(f"[{self.drone_id}] Retry in {LTE_RETRY_SEC:.0f}s...")
 
@@ -847,6 +816,7 @@ class DroneAgent:
             self._last_gps_fix            = None
             self._battery_warned          = set()
             self._last_rssi_pct           = None
+            self._last_heartbeat_ts       = 0.0
 
             time.sleep(LTE_RETRY_SEC)
 
@@ -884,22 +854,20 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("\n[Agent] 종료합니다.")
-        # ★ Ctrl+C 종료 시에도 모든 기체에 offline 신호 전송
-        # (daemon 스레드라 바로 종료되므로 메인에서 직접 처리)
         session = requests.Session()
         for cfg in DRONE_LIST:
             try:
                 session.post(
                     TELEMETRY_PUSH_URL,
                     json={
-                        "drone_id":  cfg["drone_id"],
-                        "lte_ip":    cfg["lte_ip"],
-                        "ok":        False,
-                        "error":     "no_data",
-                        "online":    False,
+                        "drone_id": cfg["drone_id"],
+                        "lte_ip":   cfg["lte_ip"],
+                        "ok":       False,
+                        "error":    "no_data",
+                        "online":   False,
                     },
                     timeout=3.0,
                 )
                 print(f"[{cfg['drone_id']}] Shutdown offline signal sent")
             except Exception as e:
-                print(f"[{cfg['drone_id']}] Shutdown offline signal failed: {e}")
+                print(f"[{cfg['drone_id']}] Shutdown signal failed: {e}")

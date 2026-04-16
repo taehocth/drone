@@ -5,7 +5,6 @@ from threading import Lock
 from typing import Dict, Any, Optional, List
 
 
-# agent.py push 간격 0.1초 기준으로 8초면 충분
 OFFLINE_THRESHOLD_SEC = 8.0
 
 
@@ -28,36 +27,21 @@ def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
 class VehicleRegistry:
     def __init__(self):
         self._lock = Lock()
-
-        # drone_id 기준 텔레메트리 저장
         self._vehicles_by_drone_id: Dict[str, Dict[str, Any]] = {}
-
-        # lte_ip → drone_id 역인덱스
         self._drone_id_by_lte_ip: Dict[str, str] = {}
-
-        # 미션 웨이포인트 (drone_id 기준)
         self._mission_by_drone_id: Dict[str, List[Dict[str, Any]]] = {}
-
-        # 비행 이벤트 (drone_id 기준, 최대 500개)
         self._events_by_drone_id: Dict[str, List[Dict[str, Any]]] = {}
         self._events_lock = Lock()
-
-        # 명시적 offline 플래그
-        # agent.py가 offline 신호를 보내면 True → 새 데이터 수신 시 False
         self._forced_offline: Dict[str, bool] = {}
 
     # -------------------------------------------------
-    # ★ forced_offline 해제 (배터리 재연결 시 명시적 초기화)
+    # forced_offline 즉시 해제
     # -------------------------------------------------
     def clear_forced_offline(
         self,
         lte_ip: Optional[str] = None,
         drone_id: Optional[str] = None,
     ) -> None:
-        """
-        정상 데이터 수신 시 강제 offline 플래그를 즉시 해제.
-        배터리 재연결 후 데이터가 다시 보이도록 하는 핵심 메서드.
-        """
         with self._lock:
             target_id = drone_id
             if not target_id and lte_ip:
@@ -65,6 +49,7 @@ class VehicleRegistry:
 
             if target_id:
                 self._forced_offline[target_id] = False
+                print(f"[Registry] clear_forced_offline: {target_id}")
 
             if lte_ip:
                 self._forced_offline[f"lte:{lte_ip}"] = False
@@ -77,16 +62,11 @@ class VehicleRegistry:
         lte_ip: Optional[str] = None,
         drone_id: Optional[str] = None,
     ) -> None:
-        """
-        agent.py가 기체 연결 끊김을 감지하면 호출.
-        drone_id 키와 lte_ip 키 모두 설정 (WS 조회가 lte_ip 기준이므로 필수).
-        """
         with self._lock:
             target_id = drone_id
             resolved_lte_ip = lte_ip
 
             if target_id and not resolved_lte_ip:
-                # drone_id로 lte_ip 역방향 조회
                 item = self._vehicles_by_drone_id.get(target_id)
                 if item:
                     resolved_lte_ip = item.get("lte_ip")
@@ -94,11 +74,9 @@ class VehicleRegistry:
             if not target_id and resolved_lte_ip:
                 target_id = self._drone_id_by_lte_ip.get(resolved_lte_ip)
 
-            # drone_id 키로 표시
             if target_id:
                 self._forced_offline[target_id] = True
 
-            # lte_ip 키로도 반드시 표시
             if resolved_lte_ip:
                 self._forced_offline[f"lte:{resolved_lte_ip}"] = True
 
@@ -133,7 +111,7 @@ class VehicleRegistry:
             if lte_ip:
                 self._drone_id_by_lte_ip[lte_ip] = drone_id
 
-            # ★ 새 데이터 수신 → forced_offline 해제 (배터리 재연결 핵심)
+            # ★ 새 데이터 → forced_offline 즉시 해제
             self._forced_offline[drone_id] = False
             if lte_ip:
                 self._forced_offline[f"lte:{lte_ip}"] = False
@@ -151,7 +129,7 @@ class VehicleRegistry:
                     self._events_by_drone_id[drone_id] = bucket[-500:]
 
     # -------------------------------------------------
-    # 미션 웨이포인트
+    # 미션
     # -------------------------------------------------
     def ingest_mission(self, drone_id: str, lte_ip: str, waypoints: List[Dict[str, Any]]) -> None:
         with self._lock:
@@ -171,7 +149,7 @@ class VehicleRegistry:
             return list(self._mission_by_drone_id.get(drone_id, []))
 
     # -------------------------------------------------
-    # 비행 이벤트
+    # 이벤트
     # -------------------------------------------------
     def pop_events(self, drone_id: str) -> List[Dict[str, Any]]:
         with self._events_lock:
@@ -203,26 +181,10 @@ class VehicleRegistry:
         return False
 
     # -------------------------------------------------
-    # 조회 메서드
+    # 조회
     # -------------------------------------------------
-    def latest_flattened_by_drone_id(self, drone_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            item = self._vehicles_by_drone_id.get(drone_id)
-            if not item:
-                return None
-            lte_ip = item.get("lte_ip")
-            if self._is_forced_offline(drone_id, lte_ip):
-                return None
-            if not self._is_online(item):
-                return None
-            out = dict(item)
-            out["online"] = True
-            out["mission_waypoints"] = list(self._mission_by_drone_id.get(drone_id, []))
-            return out
-
     def latest_flattened_by_lte_ip(self, lte_ip: str) -> Optional[Dict[str, Any]]:
         with self._lock:
-            # lte_ip 키로 forced_offline 먼저 확인
             if self._forced_offline.get(f"lte:{lte_ip}"):
                 return None
 
@@ -244,8 +206,22 @@ class VehicleRegistry:
             out["mission_waypoints"] = list(self._mission_by_drone_id.get(drone_id, []))
             return out
 
+    def latest_flattened_by_drone_id(self, drone_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            item = self._vehicles_by_drone_id.get(drone_id)
+            if not item:
+                return None
+            lte_ip = item.get("lte_ip")
+            if self._is_forced_offline(drone_id, lte_ip):
+                return None
+            if not self._is_online(item):
+                return None
+            out = dict(item)
+            out["online"] = True
+            out["mission_waypoints"] = list(self._mission_by_drone_id.get(drone_id, []))
+            return out
+
     def latest_flattened(self) -> Optional[Dict[str, Any]]:
-        """하위 호환용. 가장 최근 last_seen 기체 1개 반환."""
         with self._lock:
             if not self._vehicles_by_drone_id:
                 return None

@@ -113,7 +113,7 @@ const GuideBanner = ({
         </span>
         <div>
           <p className="text-sm font-semibold text-red-900">
-            기체 연결 끊김 — 재연결 대기 중
+            기체 신호 끊김 — 재연결 대기 중
           </p>
           <p className="mt-0.5 text-xs text-red-700/80">
             기체로부터 데이터가 수신되지 않습니다. LTE 통신 상태와 기체 전원을
@@ -1746,16 +1746,33 @@ export function UavDashboard() {
     nx: number
     ny: number
   } | null>(null)
-  const [droneConnected, setDroneConnected] = useState(false)
-  const [droneData, setDroneData] = useState<DroneData | null>(null)
+  const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
+  const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
+
+  const [showAlertDetails, setShowAlertDetails] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+
+  const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
+    { ...INITIAL_DRONE_WS_STATE },
+    { ...INITIAL_DRONE_WS_STATE },
+    { ...INITIAL_DRONE_WS_STATE },
+  ])
   const [missionWaypoints, setMissionWaypoints] = useState<MissionWaypoint[]>(
     [],
   )
 
-  const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
-  const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
-  const [isDroneOffline, setIsDroneOffline] = useState(false)
+  // ★ 콜백 state 제거 — allDroneStates에서 직접 파생하여 타이밍 불일치 완전 제거
+  const _selectedState =
+    selectedDroneIdx !== null ? allDroneStates[selectedDroneIdx] : null
+  const droneConnected =
+    (_selectedState?.droneActive ?? false) &&
+    !(_selectedState?.droneOffline ?? false)
+  const isDroneOffline = _selectedState?.droneOffline ?? false
+  const droneData: DroneData | null = droneConnected
+    ? (_selectedState?.data ?? null)
+    : null
 
+  // 드론 위치 → 지도 좌표 변환
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
       const { nx, ny } = convertGRID_GPS(
@@ -1766,15 +1783,6 @@ export function UavDashboard() {
       setClickedCoordinates({ nx, ny })
     }
   }, [droneData?.latitude, droneData?.longitude])
-
-  const [showAlertDetails, setShowAlertDetails] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
-
-  const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
-    { ...INITIAL_DRONE_WS_STATE },
-    { ...INITIAL_DRONE_WS_STATE },
-    { ...INITIAL_DRONE_WS_STATE },
-  ])
 
   const [collapseMap, setCollapseMap] = useState(false)
   const [collapseMonitor, setCollapseMonitor] = useState(false)
@@ -1999,7 +2007,7 @@ export function UavDashboard() {
 
   // ★ FIX: offline 상태를 connectionLabel/connectionTone에 명확히 반영
   const connectionLabel = isDroneOffline
-    ? "연결 끊김"
+    ? "신호 끊김"
     : droneConnected
       ? "연결됨"
       : "연결 대기"
@@ -2347,7 +2355,7 @@ export function UavDashboard() {
                       }
                       label={
                         isDroneOffline
-                          ? "연결 끊김"
+                          ? "신호 끊김"
                           : droneConnected
                             ? "수신 중"
                             : "미연결"
@@ -2371,32 +2379,12 @@ export function UavDashboard() {
                   }
                 >
                   <DroneSimulation
-                    onConnectionChange={(connected) => {
-                      setDroneConnected(connected)
-                    }}
-                    onData={(data) => {
-                      setDroneData(data)
-                    }}
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
                     onSelectedDrone={({ idx, lteIp }) => {
                       setSelectedDroneIdx(idx)
                       setSelectedLteIp(lteIp)
                       clearLogs()
-                      // ★ FIX: 기체 선택 해제 시 상태 초기화
-                      if (idx === null) {
-                        setDroneConnected(false)
-                        setDroneData(null)
-                        setIsDroneOffline(false)
-                      }
-                    }}
-                    onDroneOffline={(offline) => {
-                      setIsDroneOffline(offline)
-                      // ★ FIX: offline=true/false 모두 droneConnected에 반영
-                      if (offline) {
-                        setDroneConnected(false)
-                        setDroneData(null)
-                      }
                     }}
                   />
                 </div>
@@ -2423,7 +2411,7 @@ export function UavDashboard() {
                       className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
                     >
                       {isDroneOffline
-                        ? "연결 끊김"
+                        ? "신호 끊김"
                         : droneConnected
                           ? alerts.length
                             ? `${alerts.length}건 주의`
@@ -2500,7 +2488,7 @@ export function UavDashboard() {
                       }
                       label={
                         isDroneOffline
-                          ? "연결 끊김"
+                          ? "신호 끊김"
                           : droneConnected
                             ? alertLevel === "safe"
                               ? "정상"
