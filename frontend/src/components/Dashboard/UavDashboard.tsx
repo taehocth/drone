@@ -45,6 +45,9 @@ const DEFAULT_MAP_OPTIONS = {
   center: { lat: 36.7881, lng: 126.4664 },
 }
 
+// ★ drone_id 목록 — DRONE_LABELS와 순서 동일하게 유지
+const DRONE_IDS = ["drone-001", "drone-002", "drone-003"]
+
 // ==========================
 // Web Notification 훅
 // ==========================
@@ -1761,7 +1764,6 @@ export function UavDashboard() {
     [],
   )
 
-  // ★ 콜백 state 제거 — allDroneStates에서 직접 파생하여 타이밍 불일치 완전 제거
   const _selectedState =
     selectedDroneIdx !== null ? allDroneStates[selectedDroneIdx] : null
   const droneConnected =
@@ -1772,7 +1774,23 @@ export function UavDashboard() {
     ? (_selectedState?.data ?? null)
     : null
 
-  // 드론 위치 → 지도 좌표 변환
+  // ★ armed 값 추출 — DroneData에 armed 필드가 있으면 그걸 쓰고,
+  //   없으면 WebSocket raw 데이터에서 직접 꺼냄 (any 캐스팅)
+  const armedValue: boolean = (() => {
+    if (!droneConnected || !_selectedState) return false
+    // DroneData에 armed가 있는 경우
+    if (typeof (droneData as any)?.armed === "boolean")
+      return (droneData as any).armed
+    // DroneData에 없으면 raw state에서 직접 접근
+    if (typeof (_selectedState?.data as any)?.armed === "boolean")
+      return (_selectedState.data as any).armed
+    return false
+  })()
+
+  // ★ 선택된 드론의 drone_id
+  const selectedDroneId: string | undefined =
+    selectedDroneIdx !== null ? DRONE_IDS[selectedDroneIdx] : undefined
+
   useEffect(() => {
     if (droneData?.latitude != null && droneData?.longitude != null) {
       const { nx, ny } = convertGRID_GPS(
@@ -1799,7 +1817,6 @@ export function UavDashboard() {
 
   const alerts = (() => {
     if (selectedDroneIdx === null) return []
-    // ★ FIX: offline 상태이거나 연결 안 된 경우 alerts 비움
     if (!droneConnected || isDroneOffline) return []
     if (!droneData)
       return [
@@ -2004,8 +2021,6 @@ export function UavDashboard() {
       : alertLevel === "caution"
         ? "bg-amber-100 text-amber-700"
         : "bg-emerald-100 text-emerald-700"
-
-  // ★ FIX: offline 상태를 connectionLabel/connectionTone에 명확히 반영
   const connectionLabel = isDroneOffline
     ? "신호 끊김"
     : droneConnected
@@ -2016,7 +2031,6 @@ export function UavDashboard() {
     : droneConnected
       ? "bg-emerald-100 text-emerald-700"
       : "bg-amber-100 text-amber-700"
-
   const lastUpdateLabel = formatLastUpdate(droneData?.timestamp ?? null)
   const batteryVal =
     droneData?.battery != null ? `${droneData.battery.toFixed(0)}` : null
@@ -2227,7 +2241,6 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ★ FIX: offline 상태에선 StatCard 숨김 (연결된 것처럼 보이는 문제 방지) */}
         {droneConnected && !isDroneOffline && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
@@ -2318,7 +2331,9 @@ export function UavDashboard() {
                   battery: droneData?.battery,
                   altitude: droneData?.altitude,
                   speed: droneData?.speed,
+                  armed: armedValue, // ★ armed 추가
                 }}
+                droneId={selectedDroneId} // ★ droneId 추가
                 flightPath={
                   missionWaypoints.length > 0
                     ? missionWaypoints.map((wp) => ({
