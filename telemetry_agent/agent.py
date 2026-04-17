@@ -23,7 +23,6 @@ VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 LTE_HEARTBEAT_TIMEOUT_SEC  = 8.0
 LTE_RETRY_SEC              = 5.0
 
-# ★ 핵심: HEARTBEAT 감시 타임아웃
 # MAVLink HEARTBEAT는 보통 1Hz로 수신됨
 # 이 시간 동안 HEARTBEAT가 안 오면 TCP hang으로 판단하고 강제 종료
 HEARTBEAT_WATCHDOG_SEC = 10.0
@@ -126,7 +125,7 @@ class DroneAgent:
             "gps":      0.0,
         }
 
-        # ★ HEARTBEAT 감시용
+        # HEARTBEAT 감시용
         self._last_heartbeat_ts: float = 0.0
 
         self._mission_waypoints: List[Dict[str, Any]] = []
@@ -191,7 +190,7 @@ class DroneAgent:
 
             self.mav   = mav
             self.sysid = sysid
-            self._last_heartbeat_ts = now_ts()  # ★ 초기화
+            self._last_heartbeat_ts = now_ts()
 
             with self._lock:
                 self._cache["sysid"] = self.sysid
@@ -213,7 +212,7 @@ class DroneAgent:
             return False
 
     # -------------------------------------------------
-    # ★ Offline 신호 전송
+    # Offline 신호 전송
     # -------------------------------------------------
     def _send_offline_signal(self) -> None:
         payload = {
@@ -351,14 +350,9 @@ class DroneAgent:
         return None
 
     # -------------------------------------------------
-    # ★ HEARTBEAT 감시 루프 (TCP hang 감지 핵심)
+    # HEARTBEAT 감시 루프 (TCP hang 감지)
     # -------------------------------------------------
     def _heartbeat_watchdog(self) -> None:
-        """
-        HEARTBEAT가 HEARTBEAT_WATCHDOG_SEC 이상 안 오면
-        TCP 연결이 hang 상태로 판단하고 강제 종료.
-        배터리 분리 시 일부 포트에서 recv_match가 블록되는 문제 해결.
-        """
         print(f"[{self.drone_id}] Heartbeat watchdog started")
         while self.running:
             time.sleep(2.0)
@@ -373,7 +367,6 @@ class DroneAgent:
                     f"No heartbeat for {age:.1f}s → forcing disconnect"
                 )
                 self.running = False
-                # TCP 소켓 강제 종료로 recv_match 블록 해제
                 try:
                     if self.mav:
                         self.mav.close()
@@ -525,7 +518,7 @@ class DroneAgent:
         # lock 바깥 이벤트 처리
 
         if t == "HEARTBEAT":
-            # ★ HEARTBEAT 수신 시각 갱신 (watchdog용)
+            # HEARTBEAT 수신 시각 갱신 (watchdog용)
             self._last_heartbeat_ts = ts
 
             try:
@@ -688,7 +681,7 @@ class DroneAgent:
                 })
 
     # -------------------------------------------------
-    # Build snapshot
+    # ★ Build snapshot — armed 필드 추가
     # -------------------------------------------------
     def build_snapshot(self) -> dict:
         with self._lock:
@@ -716,6 +709,7 @@ class DroneAgent:
                 "battery":      self._cache.get("battery"),
                 "gps":          self._cache.get("gps"),
                 "online":       True,
+                "armed":        self._was_armed,  # ★ 추가 — NaverMap이 Armed 감지하는 핵심
             }
             snap["_age_sec"] = {
                 k: (now_ts() - v) if v else None
@@ -748,6 +742,7 @@ class DroneAgent:
                             f"[{self.drone_id}] PUSH status={res.status_code} "
                             f"alt={fmt_num(pos.get('alt'), 'm')} "
                             f"speed={fmt_num(snap.get('speed_m_s'), 'm/s')} "
+                            f"armed={snap.get('armed')} "
                             f"wp={len(snap.get('mission_waypoints', []))} "
                             f"events={len(snap.get('flight_events', []))}"
                         )
@@ -765,9 +760,9 @@ class DroneAgent:
             self._last_heartbeat_ts = 0.0
 
             if self.connect():
-                listen_t   = threading.Thread(target=self.listen_loop,          daemon=True)
-                push_t     = threading.Thread(target=self.push_loop,            daemon=True)
-                watchdog_t = threading.Thread(target=self._heartbeat_watchdog,  daemon=True)
+                listen_t   = threading.Thread(target=self.listen_loop,         daemon=True)
+                push_t     = threading.Thread(target=self.push_loop,           daemon=True)
+                watchdog_t = threading.Thread(target=self._heartbeat_watchdog, daemon=True)
 
                 listen_t.start()
                 push_t.start()
@@ -776,7 +771,7 @@ class DroneAgent:
                 while self.running:
                     time.sleep(1)
 
-                # ★ 연결 끊김 → offline 신호 즉시 전송
+                # 연결 끊김 → offline 신호 즉시 전송
                 print(f"[{self.drone_id}] 연결 끊김 → offline 신호 전송")
                 self._send_offline_signal()
                 print(f"[{self.drone_id}] Disconnected. Retry in {LTE_RETRY_SEC:.0f}s...")
