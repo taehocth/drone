@@ -27,6 +27,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
 
+// ★ 수정 1: NaverMapProps에 missionWaypoints 추가
 interface NaverMapProps {
   lat?: number
   lng?: number
@@ -43,9 +44,17 @@ interface NaverMapProps {
     battery?: number
     altitude?: number
     speed?: number
-    armed?: boolean // ★ Arming 상태 추가
+    armed?: boolean
   }
-  droneId?: string // ★ 미션 폴링용 드론 ID
+  droneId?: string
+  missionWaypoints?: Array<{
+    // ★ 추가
+    index: number
+    command: number
+    lat: number
+    lng: number
+    alt: number
+  }>
 }
 
 const DEFAULT_LAT = 36.5941
@@ -1004,6 +1013,7 @@ function MissionInfoCard({
 // ─────────────────────────────────────────────────────────────
 // 메인 NaverMap 컴포넌트
 // ─────────────────────────────────────────────────────────────
+// ★ 수정 2: 함수 인자에 missionWaypoints 추가
 export function NaverMap({
   lat,
   lng,
@@ -1013,6 +1023,7 @@ export function NaverMap({
   dronePosition,
   droneStats,
   droneId,
+  missionWaypoints, // ★ 추가
 }: NaverMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
@@ -1047,63 +1058,47 @@ export function NaverMap({
   const missionDoneLineRef = useRef<any>(null)
   const missionMarkersRef = useRef<any[]>([])
 
-  // ★ Arming 상태 추적 (armed → 미션 자동 fetch)
-  const wasArmedRef = useRef(false)
-  const missionFetchedThisArm = useRef(false)
-
   const { overall: safetyOverall, items: safetyItems } = calcSafety(
     droneStats,
     isDroneConnected ? satellites : null,
     weatherData?.windSpeed,
   )
 
-  // ── ★ Arming 감지 → 서버에서 미션 fetch ──────────────────
+  // ★ 수정 3: armed 기반 useEffect 전체를 missionWaypoints prop 기반으로 교체
   useEffect(() => {
-    const armed = droneStats?.armed ?? false
-
-    // Disarm 시 초기화
-    if (!armed && wasArmedRef.current) {
-      missionFetchedThisArm.current = false
+    if (!missionWaypoints || missionWaypoints.length === 0) {
       setMissionPlan(null)
       setCurrentWpIndex(-1)
+      return
     }
 
-    // Armed로 전환되는 순간 미션 fetch (1회만)
-    if (armed && !wasArmedRef.current && !missionFetchedThisArm.current) {
-      missionFetchedThisArm.current = true
-      fetchMissionFromServer()
+    // 동일한 웨이포인트면 스킵 (불필요한 지도 재렌더 방지)
+    const prev = missionPlan?.waypoints
+    const same =
+      prev &&
+      prev.length === missionWaypoints.length &&
+      prev.every(
+        (wp, i) =>
+          wp.lat === missionWaypoints[i].lat &&
+          wp.lng === missionWaypoints[i].lng,
+      )
+    if (same) return
+
+    let totalDistanceM = 0
+    for (let i = 1; i < missionWaypoints.length; i++) {
+      totalDistanceM += haversineM(
+        missionWaypoints[i - 1].lat,
+        missionWaypoints[i - 1].lng,
+        missionWaypoints[i].lat,
+        missionWaypoints[i].lng,
+      )
     }
+    setMissionPlan({ waypoints: missionWaypoints, totalDistanceM })
+    setCurrentWpIndex(-1)
+    console.log(`[NaverMap] 미션 수신: ${missionWaypoints.length}개 웨이포인트`)
+  }, [missionWaypoints])
 
-    wasArmedRef.current = armed
-  }, [droneStats?.armed, droneId])
-
-  const fetchMissionFromServer = async () => {
-    if (!droneId) return
-    try {
-      const res = await fetch(`${API_BASE_URL}/qgc/mission/${droneId}`)
-      if (!res.ok) return
-      const data = await res.json()
-      const waypoints: MissionWaypoint[] = data.waypoints ?? []
-      if (!waypoints.length) return
-
-      let totalDistanceM = 0
-      for (let i = 1; i < waypoints.length; i++) {
-        totalDistanceM += haversineM(
-          waypoints[i - 1].lat,
-          waypoints[i - 1].lng,
-          waypoints[i].lat,
-          waypoints[i].lng,
-        )
-      }
-      setMissionPlan({ waypoints, totalDistanceM })
-      setCurrentWpIndex(-1)
-      console.log(`[NaverMap] Arming 후 미션 로드 완료: ${waypoints.length}개`)
-    } catch (e) {
-      console.error("[NaverMap] 미션 fetch 실패:", e)
-    }
-  }
-
-  // ── QGC passive 수신 (업로드 타이밍 맞춘 경우 유지) ──────
+  // ── QGC passive 수신 (window 이벤트 방식 — 호환성 유지) ──────
   useEffect(() => {
     const onMissionUpdate = (e: CustomEvent) => {
       const { waypoints } = e.detail
@@ -1532,10 +1527,10 @@ export function NaverMap({
     if (minDist < 30) setCurrentWpIndex(closestIdx)
   }, [dronePosition, missionPlan])
 
+  // ★ 수정 4: clearMission에서 armed 관련 ref 제거
   const clearMission = () => {
     setMissionPlan(null)
     setCurrentWpIndex(-1)
-    missionFetchedThisArm.current = false
   }
 
   return (
@@ -1625,7 +1620,7 @@ export function NaverMap({
               </span>
             </div>
           )}
-          {/* ★ Arming 상태 표시 */}
+          {/* Arming 상태 표시 */}
           {droneStats.armed != null && (
             <div
               className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md ${
