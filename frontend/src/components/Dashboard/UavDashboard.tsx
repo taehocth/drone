@@ -45,7 +45,6 @@ const DEFAULT_MAP_OPTIONS = {
   center: { lat: 36.7881, lng: 126.4664 },
 }
 
-// ★ drone_id 목록 — DRONE_LABELS와 순서 동일하게 유지
 const DRONE_IDS = ["drone-001", "drone-002", "drone-003"]
 
 // ==========================
@@ -1284,7 +1283,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
   const [collapsed, setCollapsed] = useState(false)
   const [filterLevel, setFilterLevel] = useState<FilterLevel>("all")
   const [filterCategory, setFilterCategory] = useState<FilterCategory>("all")
-  const listRef = useRef<HTMLDivElement>(null)
 
   const fmt = (d: Date) =>
     d.toLocaleTimeString("ko-KR", {
@@ -1425,14 +1423,15 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
                 </p>
               </div>
             ) : (
-              <div
-                ref={listRef}
-                className="max-h-80 space-y-1 overflow-y-auto pr-1"
-              >
-                {filtered.map((log) => {
-                  const s = LOG_STYLE[log.level]
-                  return <LogItem key={log.id} log={log} s={s} fmt={fmt} />
-                })}
+              <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
+                {filtered.map((log) => (
+                  <LogItem
+                    key={log.id}
+                    log={log}
+                    s={LOG_STYLE[log.level]}
+                    fmt={fmt}
+                  />
+                ))}
               </div>
             )}
             {logs.length > 0 && (
@@ -1760,6 +1759,8 @@ export function UavDashboard() {
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
   ])
+
+  // ★ FIX 1: missionWaypoints 상태 선언
   const [missionWaypoints, setMissionWaypoints] = useState<MissionWaypoint[]>(
     [],
   )
@@ -1774,20 +1775,15 @@ export function UavDashboard() {
     ? (_selectedState?.data ?? null)
     : null
 
-  // ★ armed 값 추출 — DroneData에 armed 필드가 있으면 그걸 쓰고,
-  //   없으면 WebSocket raw 데이터에서 직접 꺼냄 (any 캐스팅)
   const armedValue: boolean = (() => {
     if (!droneConnected || !_selectedState) return false
-    // DroneData에 armed가 있는 경우
     if (typeof (droneData as any)?.armed === "boolean")
       return (droneData as any).armed
-    // DroneData에 없으면 raw state에서 직접 접근
     if (typeof (_selectedState?.data as any)?.armed === "boolean")
       return (_selectedState.data as any).armed
     return false
   })()
 
-  // ★ 선택된 드론의 drone_id
   const selectedDroneId: string | undefined =
     selectedDroneIdx !== null ? DRONE_IDS[selectedDroneIdx] : undefined
 
@@ -1801,6 +1797,17 @@ export function UavDashboard() {
       setClickedCoordinates({ nx, ny })
     }
   }, [droneData?.latitude, droneData?.longitude])
+
+  // ★ FIX 2: 드론 변경 시 미션 웨이포인트 초기화
+  const handleSelectedDrone = useCallback(
+    ({ idx, lteIp }: { idx: number | null; lteIp: string | null }) => {
+      setSelectedDroneIdx(idx)
+      setSelectedLteIp(lteIp)
+      setMissionWaypoints([]) // 드론 변경 시 이전 미션 제거
+      clearLogs()
+    },
+    [],
+  )
 
   const [collapseMap, setCollapseMap] = useState(false)
   const [collapseMonitor, setCollapseMonitor] = useState(false)
@@ -2292,6 +2299,12 @@ export function UavDashboard() {
                 </p>
                 <p className="text-xs text-slate-500">
                   지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
+                  {/* ★ FIX 3: 미션 웨이포인트 개수 표시 */}
+                  {missionWaypoints.length > 0 && (
+                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                      미션 {missionWaypoints.length}개 WP
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -2331,17 +2344,11 @@ export function UavDashboard() {
                   battery: droneData?.battery,
                   altitude: droneData?.altitude,
                   speed: droneData?.speed,
-                  armed: armedValue, // ★ armed 추가
+                  armed: armedValue,
                 }}
-                droneId={selectedDroneId} // ★ droneId 추가
-                flightPath={
-                  missionWaypoints.length > 0
-                    ? missionWaypoints.map((wp) => ({
-                        lat: wp.lat,
-                        lng: wp.lng,
-                        alt: wp.alt,
-                      }))
-                    : undefined
+                droneId={selectedDroneId}
+                missionWaypoints={
+                  missionWaypoints.length > 0 ? missionWaypoints : undefined
                 }
               />
             </div>
@@ -2396,11 +2403,7 @@ export function UavDashboard() {
                   <DroneSimulation
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
-                    onSelectedDrone={({ idx, lteIp }) => {
-                      setSelectedDroneIdx(idx)
-                      setSelectedLteIp(lteIp)
-                      clearLogs()
-                    }}
+                    onSelectedDrone={handleSelectedDrone}
                   />
                 </div>
               </div>
