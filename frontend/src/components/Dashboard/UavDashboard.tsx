@@ -40,6 +40,34 @@ import {
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
+// =====================================================
+// ★ 드론 배송 임계값 상수
+// 여기만 수정하면 전체 대시보드에 자동 반영됩니다
+// =====================================================
+const THRESHOLD = {
+  battery: {
+    danger: 25, // % — 즉시 RTL (해상 복귀 거리 고려)
+    caution: 40, // % — 귀환 준비
+    plan: 55, // % — 귀환 계획 수립 권고
+  },
+  altitude: {
+    danger: 120, // m — 배송 안전 한도 (법적 150m에 여유 마진)
+    caution: 100, // m — 해상 장애물(선박 마스트 등) 고려
+  },
+  speed: {
+    danger: 15, // m/s — DM4 기체 최대 안전속도
+    caution: 12, // m/s — 배송 임무 중 권장 순항속도
+  },
+  latency: {
+    danger: 10000, // ms — 10초: LTE 해상 환경 기준
+    caution: 5000, // ms — 5초: 조기 경고
+  },
+  gps: {
+    danger: 10, // 위성 수 — 해상 배송 최소 요구
+    caution: 15, // 위성 수 — 정밀 비행 권장 최소
+  },
+} as const
+
 const DEFAULT_MAP_OPTIONS = {
   zoom: 11,
   center: { lat: 36.7881, lng: 126.4664 },
@@ -107,7 +135,7 @@ const GuideBanner = ({
   droneData: DroneData | null
   droneOffline: boolean
 }) => {
-  if (droneOffline) {
+  if (droneOffline)
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-red-200/60 bg-red-50/80 px-5 py-4">
         <span className="mt-0.5 flex h-7 w-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-100 text-red-600">
@@ -124,8 +152,7 @@ const GuideBanner = ({
         </div>
       </div>
     )
-  }
-  if (!droneConnected) {
+  if (!droneConnected)
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4">
         <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
@@ -142,8 +169,7 @@ const GuideBanner = ({
         </div>
       </div>
     )
-  }
-  if (!droneData) {
+  if (!droneData)
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-sky-200/60 bg-sky-50/80 px-5 py-4">
         <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-600">
@@ -159,8 +185,7 @@ const GuideBanner = ({
         </div>
       </div>
     )
-  }
-  if (alertLevel === "danger") {
+  if (alertLevel === "danger")
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-red-200/60 bg-red-50/80 px-5 py-4">
         <span className="mt-0.5 flex h-7 w-7 shrink-0 animate-pulse items-center justify-center rounded-full bg-red-100 text-red-600">
@@ -176,8 +201,7 @@ const GuideBanner = ({
         </div>
       </div>
     )
-  }
-  if (alertLevel === "caution") {
+  if (alertLevel === "caution")
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/80 px-5 py-4">
         <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
@@ -193,7 +217,6 @@ const GuideBanner = ({
         </div>
       </div>
     )
-  }
   return (
     <div className="flex items-start gap-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/80 px-5 py-4">
       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
@@ -361,7 +384,8 @@ function buildActionGuides(
   }
   const battery = droneData?.battery ?? null
   const altitude = droneData?.altitude ?? null
-  if (battery !== null && battery <= 20) {
+
+  if (battery !== null && battery <= THRESHOLD.battery.danger) {
     guides.push({
       priority: "immediate",
       title: "즉시 귀환 (RTL) 실행",
@@ -371,38 +395,38 @@ function buildActionGuides(
         "착륙 지점 주변 인원을 대피시키세요",
         "착륙 완료 후 즉시 배터리를 분리하세요",
       ],
-      why: `배터리가 ${battery.toFixed(0)}%로 위험 수준입니다. RTL 비행 중 방전 시 추락합니다.`,
+      why: `배터리가 ${battery.toFixed(0)}%로 위험 수준입니다. 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다.`,
       icon: <BatteryLow className="h-5 w-5" />,
     })
-  } else if (battery !== null && battery <= 35) {
+  } else if (battery !== null && battery <= THRESHOLD.battery.caution) {
     guides.push({
       priority: "soon",
       title: "귀환 준비 시작",
       steps: [
         "현재 임무 단계를 마무리하세요",
         "5분 내 귀환 비행을 시작할 준비를 하세요",
-        "자동 귀환 배터리 임계값(통상 25%)에 도달하기 전에 수동 복귀하세요",
+        `자동 귀환 임계값(${THRESHOLD.battery.danger}%)에 도달하기 전에 수동 복귀하세요`,
       ],
-      why: `배터리 ${battery.toFixed(0)}% — 귀환까지 여유가 줄어들고 있습니다.`,
+      why: `배터리 ${battery.toFixed(0)}% — 해상 복귀 거리를 고려해 귀환을 준비하세요.`,
       icon: <Battery className="h-5 w-5" />,
     })
   }
-  if (altitude !== null && altitude > 150) {
+  if (altitude !== null && altitude > THRESHOLD.altitude.danger) {
     guides.push({
       priority: "immediate",
       title: "즉시 고도 낮추기",
       steps: [
         "수동 모드로 전환하고 하강 명령을 내리세요",
-        "목표 고도 120m 이하로 안전하게 하강시키세요",
+        `목표 고도 ${THRESHOLD.altitude.caution}m 이하로 안전하게 하강시키세요`,
         "항공법 위반 상황 — 인근 관제탑에 보고가 필요할 수 있습니다",
       ],
-      why: `현재 고도 ${altitude.toFixed(0)}m는 항공법상 허용 한도(150m)를 초과합니다.`,
+      why: `현재 고도 ${altitude.toFixed(0)}m는 배송 안전 한도(${THRESHOLD.altitude.danger}m)를 초과합니다.`,
       icon: <Navigation className="h-5 w-5" />,
     })
   }
   if (droneData?.timestamp) {
     const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
-    if (!isNaN(ageMs) && ageMs > 15000) {
+    if (!isNaN(ageMs) && ageMs > THRESHOLD.latency.danger) {
       guides.push({
         priority: "immediate",
         title: "통신 이상 — 즉각 대응",
@@ -411,7 +435,7 @@ function buildActionGuides(
           "기체가 페일세이프 동작(자동 호버링/귀환)을 수행하는지 즉시 확인하세요",
           "통신 복구를 기다리되 복구 안 되면 수동 RTL 명령을 시도하세요",
         ],
-        why: "15초 이상 데이터가 끊겼습니다. 기체가 페일세이프 모드로 진입했을 수 있습니다.",
+        why: `${THRESHOLD.latency.danger / 1000}초 이상 데이터가 끊겼습니다. 기체가 페일세이프 모드로 진입했을 수 있습니다.`,
         icon: <Radio className="h-5 w-5" />,
       })
     }
@@ -421,8 +445,8 @@ function buildActionGuides(
       priority: "monitor",
       title: "정상 운항 — 지속 모니터링",
       steps: [
-        `배터리: ${battery?.toFixed(0) ?? "—"}% — ${(battery ?? 100) > 50 ? "충분. 계속 모니터링하세요" : "절반 이하. 귀환 계획 수립하세요"}`,
-        `고도: ${altitude?.toFixed(0) ?? "—"}m — ${(altitude ?? 0) <= 120 ? "안전 범위" : "주의 고도"}`,
+        `배터리: ${battery?.toFixed(0) ?? "—"}% — ${(battery ?? 100) > THRESHOLD.battery.plan ? "충분. 계속 모니터링하세요" : "귀환 계획을 수립하세요"}`,
+        `고도: ${altitude?.toFixed(0) ?? "—"}m — ${(altitude ?? 0) <= THRESHOLD.altitude.caution ? "안전 범위" : "주의 고도"}`,
         "GPS 신호 및 통신 상태를 30초마다 확인하세요",
         "비행 중 주변 공역 변화(다른 항공기 등)를 주시하세요",
       ],
@@ -600,7 +624,6 @@ interface FlightLogEntry {
     | "flight"
     | "system"
 }
-
 const PERIODIC_INTERVAL_MS = 60_000
 
 function useFlightLog(
@@ -645,7 +668,7 @@ function useFlightLog(
   )
 
   useEffect(() => {
-    if (droneConnected && !prevRef.current.connected) {
+    if (droneConnected && !prevRef.current.connected)
       addLog(
         "success",
         "기체 연결됨",
@@ -653,13 +676,13 @@ function useFlightLog(
         "connection",
         "WebSocket 연결 성공. 텔레메트리 수신을 시작합니다.",
       )
-    } else if (!droneConnected && prevRef.current.connected) {
+    else if (!droneConnected && prevRef.current.connected) {
       addLog(
         "warn",
         "기체 연결 끊김",
         undefined,
         "connection",
-        "WebSocket 연결이 끊겼습니다. 네트워크 상태와 기체 전원을 확인하세요.",
+        "WebSocket 연결이 끊겼습니다.",
       )
       prevRef.current.battery = null
       prevRef.current.altitude = null
@@ -692,7 +715,11 @@ function useFlightLog(
     )
     if (b != null)
       addLog(
-        b <= 20 ? "danger" : b <= 35 ? "warn" : "info",
+        b <= THRESHOLD.battery.danger
+          ? "danger"
+          : b <= THRESHOLD.battery.caution
+            ? "warn"
+            : "info",
         "초기 배터리",
         `${b.toFixed(0)}%`,
         "battery",
@@ -700,7 +727,11 @@ function useFlightLog(
       )
     if (a != null)
       addLog(
-        a > 150 ? "danger" : a > 120 ? "warn" : "info",
+        a > THRESHOLD.altitude.danger
+          ? "danger"
+          : a > THRESHOLD.altitude.caution
+            ? "warn"
+            : "info",
         "초기 고도",
         `${a.toFixed(0)}m`,
         "altitude",
@@ -708,7 +739,11 @@ function useFlightLog(
       )
     if (s != null)
       addLog(
-        s > 35 ? "danger" : s > 25 ? "warn" : "info",
+        s > THRESHOLD.speed.danger
+          ? "danger"
+          : s > THRESHOLD.speed.caution
+            ? "warn"
+            : "info",
         "초기 속도",
         `${s.toFixed(1)}m/s`,
         "speed",
@@ -716,7 +751,11 @@ function useFlightLog(
       )
     if (sat != null)
       addLog(
-        sat < 6 ? "danger" : sat < 10 ? "warn" : "info",
+        sat < THRESHOLD.gps.danger
+          ? "danger"
+          : sat < THRESHOLD.gps.caution
+            ? "warn"
+            : "info",
         "초기 GPS",
         `${sat}위성`,
         "gps",
@@ -762,11 +801,11 @@ function useFlightLog(
     }
     const bands = [
       {
-        value: 20,
+        value: THRESHOLD.battery.danger,
         downLevel: "danger" as const,
-        downMsg: "배터리 위험 — 즉시 귀환 (≤20%)",
-        downTip: "RTL 즉시 실행",
-        upTip: "20% 이상 회복",
+        downMsg: `배터리 위험 — 즉시 귀환 (≤${THRESHOLD.battery.danger}%)`,
+        downTip: "RTL 즉시 실행 — 해상 복귀 거리 고려",
+        upTip: `${THRESHOLD.battery.danger}% 이상 회복`,
       },
       {
         value: 30,
@@ -776,18 +815,18 @@ function useFlightLog(
         upTip: "30% 이상 회복",
       },
       {
-        value: 35,
+        value: THRESHOLD.battery.caution,
         downLevel: "warn" as const,
-        downMsg: "배터리 주의 — 귀환 준비 (≤35%)",
+        downMsg: `배터리 주의 — 귀환 준비 (≤${THRESHOLD.battery.caution}%)`,
         downTip: "5분 내 귀환 준비",
-        upTip: "35% 이상 회복",
+        upTip: `${THRESHOLD.battery.caution}% 이상 회복`,
       },
       {
-        value: 50,
+        value: THRESHOLD.battery.plan,
         downLevel: "info" as const,
-        downMsg: "배터리 50% 이하",
-        downTip: "귀환 계획 재검토",
-        upTip: "50% 이상 충전",
+        downMsg: `배터리 ${THRESHOLD.battery.plan}% 이하 — 귀환 계획 수립`,
+        downTip: "귀환 경로 및 시간 계획 수립",
+        upTip: `${THRESHOLD.battery.plan}% 이상 충전`,
       },
       {
         value: 70,
@@ -828,21 +867,21 @@ function useFlightLog(
     }
     const bands = [
       {
-        threshold: 150,
+        threshold: THRESHOLD.altitude.danger,
         upLevel: "danger" as const,
-        upMsg: "고도 법정 한계 초과 (>150m)",
+        upMsg: `고도 배송 안전 한도 초과 (>${THRESHOLD.altitude.danger}m)`,
         upTip: "즉시 하강 필요",
         downLevel: "info" as const,
-        downMsg: "고도 150m 이하 복귀",
-        downTip: "법적 한도 이하 복귀",
+        downMsg: `고도 ${THRESHOLD.altitude.danger}m 이하 복귀`,
+        downTip: "안전 고도 복귀",
       },
       {
-        threshold: 120,
+        threshold: THRESHOLD.altitude.caution,
         upLevel: "warn" as const,
-        upMsg: "고도 주의 구간 진입 (>120m)",
+        upMsg: `고도 주의 구간 진입 (>${THRESHOLD.altitude.caution}m)`,
         upTip: "상승 중단 권고",
         downLevel: "info" as const,
-        downMsg: "고도 안전 구간 복귀 (≤120m)",
+        downMsg: `고도 안전 구간 복귀 (≤${THRESHOLD.altitude.caution}m)`,
         downTip: "안전 고도 복귀",
       },
       {
@@ -895,21 +934,21 @@ function useFlightLog(
     }
     const bands = [
       {
-        threshold: 35,
+        threshold: THRESHOLD.speed.danger,
         upLevel: "danger" as const,
-        upMsg: "과속 위험 (>35m/s)",
-        upTip: "즉시 감속",
+        upMsg: `과속 위험 (>${THRESHOLD.speed.danger}m/s)`,
+        upTip: "즉시 감속 — 배송 물품 낙하 위험",
         downLevel: "info" as const,
-        downMsg: "과속 해제 (≤35m/s)",
+        downMsg: `과속 해제 (≤${THRESHOLD.speed.danger}m/s)`,
         downTip: "감속 완료",
       },
       {
-        threshold: 25,
+        threshold: THRESHOLD.speed.caution,
         upLevel: "warn" as const,
-        upMsg: "속도 주의 (>25m/s)",
+        upMsg: `속도 주의 (>${THRESHOLD.speed.caution}m/s)`,
         upTip: "감속 권장",
         downLevel: "info" as const,
-        downMsg: "속도 정상 복귀 (≤25m/s)",
+        downMsg: `속도 정상 복귀 (≤${THRESHOLD.speed.caution}m/s)`,
         downTip: "안전 속도 복귀",
       },
       {
@@ -972,30 +1011,30 @@ function useFlightLog(
     }
     const bands = [
       {
-        threshold: 6,
+        threshold: THRESHOLD.gps.danger,
         upLevel: "success" as const,
-        upMsg: "GPS 신호 정상 회복 (≥6위성)",
+        upMsg: `GPS 신호 회복 (≥${THRESHOLD.gps.danger}위성)`,
         upTip: "위치 추적 가능",
         downLevel: "danger" as const,
-        downMsg: "GPS 위성 위험 수준 (<6위성)",
-        downTip: "착륙 검토 필요",
+        downMsg: `GPS 위성 위험 수준 (<${THRESHOLD.gps.danger}위성)`,
+        downTip: "해상 배송 중단 — 착륙 검토 필요",
       },
       {
-        threshold: 10,
+        threshold: THRESHOLD.gps.caution,
         upLevel: "info" as const,
-        upMsg: "GPS 위성 증가 (≥10위성)",
-        upTip: "정확도 향상",
+        upMsg: `GPS 위성 증가 (≥${THRESHOLD.gps.caution}위성)`,
+        upTip: "정밀 배송 가능 수준",
         downLevel: "warn" as const,
-        downMsg: "GPS 위성 감소 (<10위성)",
-        downTip: "정밀 비행 주의",
+        downMsg: `GPS 위성 감소 (<${THRESHOLD.gps.caution}위성)`,
+        downTip: "해상 정밀 비행 주의 — 위성 증가 대기",
       },
       {
-        threshold: 20,
+        threshold: 25,
         upLevel: "info" as const,
-        upMsg: "GPS 신호 양호 (≥20위성)",
-        upTip: "최적 GPS 환경",
+        upMsg: "GPS 신호 최적 (≥25위성)",
+        upTip: "RTK 수준 정밀도",
         downLevel: "info" as const,
-        downMsg: "GPS 위성 20개 이하",
+        downMsg: "GPS 위성 25개 이하",
         downTip: "모니터링 유지",
       },
     ]
@@ -1017,16 +1056,16 @@ function useFlightLog(
       const prev = prevRef.current.latencyMs
       const latencyBands = [
         {
-          threshold: 15000,
+          threshold: THRESHOLD.latency.danger,
           level: "danger" as const,
-          msg: "통신 두절 15초 — 페일세이프 위험",
-          tip: "즉시 육안 확인 필요",
+          msg: `통신 두절 ${THRESHOLD.latency.danger / 1000}초 — 페일세이프 위험`,
+          tip: "즉시 육안 확인 — 해상 기체 시야 확보",
         },
         {
-          threshold: 8000,
+          threshold: THRESHOLD.latency.caution,
           level: "warn" as const,
-          msg: "통신 지연 8초 이상",
-          tip: "LTE 신호 확인",
+          msg: `통신 지연 ${THRESHOLD.latency.caution / 1000}초 이상`,
+          tip: "LTE 신호 확인 — 해상 음영 구간 주의",
         },
         {
           threshold: 3000,
@@ -1106,7 +1145,6 @@ const LOG_STYLE: Record<
     border: "border-emerald-200/60",
   },
 }
-
 const CATEGORY_LABEL: Record<
   NonNullable<FlightLogEntry["category"]>,
   string
@@ -1120,7 +1158,6 @@ const CATEGORY_LABEL: Record<
   flight: "비행",
   system: "시스템",
 }
-
 const CATEGORY_COLOR: Record<
   NonNullable<FlightLogEntry["category"]>,
   string
@@ -1159,9 +1196,8 @@ function LogItem({
     let left = rect.left
     if (left + TIP_W + MARGIN > window.innerWidth)
       left = Math.max(MARGIN, rect.right - TIP_W)
-    const spaceAbove = rect.top
     let top: number, side: "top" | "bottom"
-    if (spaceAbove >= TIP_H_EST + GAP) {
+    if (rect.top >= TIP_H_EST + GAP) {
       top = rect.top - GAP - TIP_H_EST
       side = "bottom"
     } else {
@@ -1283,7 +1319,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
   const [collapsed, setCollapsed] = useState(false)
   const [filterLevel, setFilterLevel] = useState<FilterLevel>("all")
   const [filterCategory, setFilterCategory] = useState<FilterCategory>("all")
-
   const fmt = (d: Date) =>
     d.toLocaleTimeString("ko-KR", {
       hour: "2-digit",
@@ -1298,7 +1333,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
   })
   const dangerCount = logs.filter((l) => l.level === "danger").length
   const warnCount = logs.filter((l) => l.level === "warn").length
-
   const levelButtons: Array<{
     key: FilterLevel
     label: string
@@ -1336,7 +1370,6 @@ function FlightLogWidget({ logs }: { logs: FlightLogEntry[] }) {
       idle: "bg-sky-50 text-sky-600 hover:bg-sky-100",
     },
   ]
-
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
       <div
@@ -1506,19 +1539,19 @@ function FlightFeasibilityWidget({
     result:
       battery == null
         ? "unknown"
-        : battery > 50
+        : battery > THRESHOLD.battery.plan
           ? "pass"
-          : battery > 30
+          : battery > THRESHOLD.battery.caution
             ? "warn"
             : "fail",
     detail:
       battery == null
         ? "데이터 없음"
-        : battery > 50
+        : battery > THRESHOLD.battery.plan
           ? `${battery.toFixed(0)}% — 충분`
-          : battery > 30
-            ? `${battery.toFixed(0)}% — 짧은 비행만 가능`
-            : `${battery.toFixed(0)}% — 충전 필요`,
+          : battery > THRESHOLD.battery.caution
+            ? `${battery.toFixed(0)}% — 귀환 준비 필요`
+            : `${battery.toFixed(0)}% — 즉시 귀환`,
   })
   const hasgps =
     typeof droneData?.latitude === "number" &&
@@ -1529,15 +1562,15 @@ function FlightFeasibilityWidget({
     label: "GPS",
     result: !droneConnected
       ? "unknown"
-      : hasgps && (satellites == null || satellites > 6)
+      : hasgps && (satellites == null || satellites >= THRESHOLD.gps.caution)
         ? "pass"
-        : hasgps
+        : hasgps && (satellites == null || satellites >= THRESHOLD.gps.danger)
           ? "warn"
           : "fail",
     detail: !droneConnected
       ? "데이터 없음"
       : hasgps
-        ? `위성 ${satellites ?? "?"}개 — 위치 확인됨`
+        ? `위성 ${satellites ?? "?"}개 — ${(satellites ?? 0) >= THRESHOLD.gps.caution ? "양호" : (satellites ?? 0) >= THRESHOLD.gps.danger ? "보통" : "불량"}`
         : "GPS 신호 없음 — 비행 불가",
   })
   const timestampAge = droneData?.timestamp
@@ -1549,17 +1582,17 @@ function FlightFeasibilityWidget({
     result:
       timestampAge == null
         ? "unknown"
-        : timestampAge < 5000
+        : timestampAge < THRESHOLD.latency.caution
           ? "pass"
-          : timestampAge < 10000
+          : timestampAge < THRESHOLD.latency.danger
             ? "warn"
             : "fail",
     detail:
       timestampAge == null
         ? "데이터 없음"
-        : timestampAge < 5000
-          ? "정상 (<5초)"
-          : timestampAge < 10000
+        : timestampAge < THRESHOLD.latency.caution
+          ? "정상"
+          : timestampAge < THRESHOLD.latency.danger
             ? `${(timestampAge / 1000).toFixed(0)}초 지연 — 주의`
             : `${(timestampAge / 1000).toFixed(0)}초 지연 — 통신 점검 필요`,
   })
@@ -1583,7 +1616,6 @@ function FlightFeasibilityWidget({
           ? `주의 ${cautionAlerts.length}건`
           : "이상 없음",
   })
-
   const feasibility: FeasibilityResult = !droneConnected
     ? "unknown"
     : checks.some((c) => c.result === "fail")
@@ -1637,7 +1669,6 @@ function FlightFeasibilityWidget({
       <span className="inline-block h-4 w-4 rounded-full border-2 border-slate-300" />
     ),
   }
-
   return (
     <div
       className={`rounded-3xl border ${feasibilityConfig.border} ${feasibilityConfig.bg2} overflow-hidden`}
@@ -1715,21 +1746,39 @@ const formatLastUpdate = (timestamp?: string | number | null) => {
   return `${Math.floor(diffMin / 60)}시간 전`
 }
 
+// StatCard 레벨 판정 — THRESHOLD 기준
 const getBatteryLevel = (
   v?: number | null,
 ): "safe" | "caution" | "danger" | "off" =>
-  v == null ? "off" : v <= 20 ? "danger" : v <= 35 ? "caution" : "safe"
+  v == null
+    ? "off"
+    : v <= THRESHOLD.battery.danger
+      ? "danger"
+      : v <= THRESHOLD.battery.caution
+        ? "caution"
+        : "safe"
 const getAltitudeLevel = (
   v?: number | null,
 ): "safe" | "caution" | "danger" | "off" =>
-  v == null ? "off" : v > 150 ? "danger" : v > 120 ? "caution" : "safe"
+  v == null
+    ? "off"
+    : v > THRESHOLD.altitude.danger
+      ? "danger"
+      : v > THRESHOLD.altitude.caution
+        ? "caution"
+        : "safe"
 const getSpeedLevel = (
   v?: number | null,
 ): "safe" | "caution" | "danger" | "off" =>
-  v == null ? "off" : v > 35 ? "danger" : v > 25 ? "caution" : "safe"
+  v == null
+    ? "off"
+    : v > THRESHOLD.speed.danger
+      ? "danger"
+      : v > THRESHOLD.speed.caution
+        ? "caution"
+        : "safe"
 
 const DRONE_LABELS = ["DM4_1", "DM4_2", "DM3"]
-
 const INITIAL_DRONE_WS_STATE: DroneWsState = {
   wsConnected: false,
   droneActive: false,
@@ -1750,17 +1799,13 @@ export function UavDashboard() {
   } | null>(null)
   const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
-
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
-
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
   ])
-
-  // ★ FIX 1: missionWaypoints 상태 선언
   const [missionWaypoints, setMissionWaypoints] = useState<MissionWaypoint[]>(
     [],
   )
@@ -1798,15 +1843,128 @@ export function UavDashboard() {
     }
   }, [droneData?.latitude, droneData?.longitude])
 
-  // ★ FIX 2: 드론 변경 시 미션 웨이포인트 초기화
+  const alerts = (() => {
+    if (selectedDroneIdx === null) return []
+    if (!droneConnected || isDroneOffline) return []
+    if (!droneData)
+      return [
+        {
+          id: "waiting",
+          level: "caution" as const,
+          label: "데이터 수신 대기 중",
+        },
+      ]
+    const next: Array<{
+      id: string
+      level: "safe" | "caution" | "danger"
+      label: string
+    }> = []
+    if (typeof droneData.battery === "number") {
+      if (droneData.battery <= THRESHOLD.battery.danger)
+        next.push({
+          id: "battery",
+          level: "danger",
+          label: `배터리 위험 (${droneData.battery.toFixed(0)}%) — 즉시 복귀`,
+        })
+      else if (droneData.battery <= THRESHOLD.battery.caution)
+        next.push({
+          id: "battery",
+          level: "caution",
+          label: `배터리 주의 (${droneData.battery.toFixed(0)}%) — 귀환 준비`,
+        })
+    }
+    if (typeof droneData.altitude === "number") {
+      if (droneData.altitude > THRESHOLD.altitude.danger)
+        next.push({
+          id: "altitude",
+          level: "danger",
+          label: `고도 초과 (${droneData.altitude.toFixed(0)}m > ${THRESHOLD.altitude.danger}m)`,
+        })
+      else if (droneData.altitude > THRESHOLD.altitude.caution)
+        next.push({
+          id: "altitude",
+          level: "caution",
+          label: `고도 주의 (${droneData.altitude.toFixed(0)}m)`,
+        })
+    }
+    if (typeof droneData.speed === "number") {
+      if (droneData.speed > THRESHOLD.speed.danger)
+        next.push({
+          id: "speed",
+          level: "danger",
+          label: `과속 위험 (${droneData.speed.toFixed(1)}m/s > ${THRESHOLD.speed.danger}m/s)`,
+        })
+      else if (droneData.speed > THRESHOLD.speed.caution)
+        next.push({
+          id: "speed",
+          level: "caution",
+          label: `과속 주의 (${droneData.speed.toFixed(1)}m/s)`,
+        })
+    }
+    const sat = droneData.gpsSatellites
+    if (sat != null) {
+      if (sat < THRESHOLD.gps.danger)
+        next.push({
+          id: "gps-sat",
+          level: "danger",
+          label: `GPS 위성 위험 (${sat}위성 < ${THRESHOLD.gps.danger}위성)`,
+        })
+      else if (sat < THRESHOLD.gps.caution)
+        next.push({
+          id: "gps-sat",
+          level: "caution",
+          label: `GPS 위성 부족 (${sat}위성) — 정밀 비행 주의`,
+        })
+    }
+    const hasGps =
+      typeof droneData.latitude === "number" &&
+      typeof droneData.longitude === "number"
+    if (!hasGps)
+      next.push({
+        id: "gps-pos",
+        level: "caution",
+        label: "GPS 위치 신호 약함 — 위치 정확도 저하",
+      })
+    if (droneData.timestamp) {
+      const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
+      if (!Number.isNaN(ageMs)) {
+        if (ageMs > THRESHOLD.latency.danger)
+          next.push({
+            id: "stale",
+            level: "danger",
+            label: `데이터 지연 ${Math.floor(ageMs / 1000)}초+ — 통신 점검 필요`,
+          })
+        else if (ageMs > THRESHOLD.latency.caution)
+          next.push({
+            id: "stale",
+            level: "caution",
+            label: `데이터 지연 ${Math.floor(ageMs / 1000)}초+`,
+          })
+      }
+    }
+    return next
+  })()
+
+  const alertLevel = alerts.some((a) => a.level === "danger")
+    ? "danger"
+    : alerts.some((a) => a.level === "caution")
+      ? "caution"
+      : "safe"
+
+  const { logs, addLog, clearLogs } = useFlightLog(
+    droneConnected,
+    droneData,
+    alertLevel,
+  )
+
   const handleSelectedDrone = useCallback(
     ({ idx, lteIp }: { idx: number | null; lteIp: string | null }) => {
       setSelectedDroneIdx(idx)
       setSelectedLteIp(lteIp)
-      setMissionWaypoints([]) // 드론 변경 시 이전 미션 제거
+      setMissionWaypoints([])
       clearLogs()
     },
-    [],
+    [clearLogs],
   )
 
   const [collapseMap, setCollapseMap] = useState(false)
@@ -1822,100 +1980,6 @@ export function UavDashboard() {
   const [modalDismissed, setModalDismissed] = useState(false)
   const prevModalKeyRef = useRef<string>("")
 
-  const alerts = (() => {
-    if (selectedDroneIdx === null) return []
-    if (!droneConnected || isDroneOffline) return []
-    if (!droneData)
-      return [
-        {
-          id: "waiting",
-          level: "caution" as const,
-          label: "데이터 수신 대기 중",
-        },
-      ]
-
-    const next: Array<{
-      id: string
-      level: "safe" | "caution" | "danger"
-      label: string
-    }> = []
-    if (typeof droneData.battery === "number") {
-      if (droneData.battery <= 20)
-        next.push({
-          id: "battery",
-          level: "danger",
-          label: `배터리 위험 (${droneData.battery.toFixed(0)}%) — 즉시 복귀`,
-        })
-      else if (droneData.battery <= 35)
-        next.push({
-          id: "battery",
-          level: "caution",
-          label: `배터리 주의 (${droneData.battery.toFixed(0)}%)`,
-        })
-    }
-    if (typeof droneData.altitude === "number") {
-      if (droneData.altitude > 150)
-        next.push({
-          id: "altitude",
-          level: "danger",
-          label: `고도 초과 (${droneData.altitude.toFixed(0)}m > 150m)`,
-        })
-      else if (droneData.altitude > 120)
-        next.push({
-          id: "altitude",
-          level: "caution",
-          label: `고도 주의 (${droneData.altitude.toFixed(0)}m)`,
-        })
-    }
-    if (typeof droneData.speed === "number") {
-      if (droneData.speed > 35)
-        next.push({
-          id: "speed",
-          level: "danger",
-          label: `과속 위험 (${droneData.speed.toFixed(0)}m/s)`,
-        })
-      else if (droneData.speed > 25)
-        next.push({
-          id: "speed",
-          level: "caution",
-          label: `과속 주의 (${droneData.speed.toFixed(0)}m/s)`,
-        })
-    }
-    const hasGps =
-      typeof droneData.latitude === "number" &&
-      typeof droneData.longitude === "number"
-    if (!hasGps)
-      next.push({
-        id: "gps",
-        level: "caution",
-        label: "GPS 신호 약함 — 위치 정확도 저하",
-      })
-    if (droneData.timestamp) {
-      const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
-      if (!Number.isNaN(ageMs)) {
-        if (ageMs > 15000)
-          next.push({
-            id: "stale",
-            level: "danger",
-            label: "데이터 지연 15초+ — 통신 점검 필요",
-          })
-        else if (ageMs > 8000)
-          next.push({
-            id: "stale",
-            level: "caution",
-            label: "데이터 지연 8초+",
-          })
-      }
-    }
-    return next
-  })()
-
-  const alertLevel = alerts.some((a) => a.level === "danger")
-    ? "danger"
-    : alerts.some((a) => a.level === "caution")
-      ? "caution"
-      : "safe"
-
   interface DangerModalItem {
     id: string
     type: "battery" | "speed"
@@ -1924,20 +1988,28 @@ export function UavDashboard() {
     action: string
   }
   const dangerModalItems: DangerModalItem[] = []
-  if (droneData?.battery != null && droneData.battery <= 20 && !isDroneOffline)
+  if (
+    droneData?.battery != null &&
+    droneData.battery <= THRESHOLD.battery.danger &&
+    !isDroneOffline
+  )
     dangerModalItems.push({
       id: "battery",
       type: "battery",
       label: "배터리 위험",
-      detail: `현재 ${droneData.battery.toFixed(0)}% — RTL 비행 중 방전 시 추락합니다`,
+      detail: `현재 ${droneData.battery.toFixed(0)}% — 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다`,
       action: "즉시 RTL 모드로 전환 후 귀환하세요",
     })
-  if (droneData?.speed != null && droneData.speed > 12 && !isDroneOffline)
+  if (
+    droneData?.speed != null &&
+    droneData.speed > THRESHOLD.speed.danger &&
+    !isDroneOffline
+  )
     dangerModalItems.push({
       id: "speed",
       type: "speed",
       label: "과속 감지",
-      detail: `현재 ${droneData.speed.toFixed(1)}m/s — 권장 속도(12m/s)를 초과했습니다`,
+      detail: `현재 ${droneData.speed.toFixed(1)}m/s — 배송 안전 속도(${THRESHOLD.speed.danger}m/s)를 초과했습니다`,
       action: "즉시 스로틀을 줄여 속도를 낮추세요",
     })
 
@@ -1967,12 +2039,6 @@ export function UavDashboard() {
     }
     prevAlertLevelRef.current = alertLevel
   }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const { logs, addLog, clearLogs } = useFlightLog(
-    droneConnected,
-    droneData,
-    alertLevel,
-  )
 
   useEffect(() => {
     const onQgcEvents = (e: Event) => {
@@ -2008,7 +2074,7 @@ export function UavDashboard() {
         statustext: "system",
         connected: "connection",
       }
-      for (const ev of detail.events) {
+      for (const ev of detail.events)
         addLog(
           levelMap[ev.level] ?? "info",
           `[QGC] ${ev.message}`,
@@ -2016,7 +2082,6 @@ export function UavDashboard() {
           categoryMap[ev.type] ?? "system",
           `QGC/MAVLink 수신 이벤트 (${ev.time})`,
         )
-      }
     }
     window.addEventListener("qgcFlightEvents", onQgcEvents)
     return () => window.removeEventListener("qgcFlightEvents", onQgcEvents)
@@ -2256,7 +2321,7 @@ export function UavDashboard() {
               value={batteryVal}
               unit="%"
               level={getBatteryLevel(droneData?.battery)}
-              hint="배터리 잔량입니다. 35% 이하이면 복귀를 준비하세요."
+              hint={`${THRESHOLD.battery.caution}% 이하 귀환 준비, ${THRESHOLD.battery.danger}% 이하 즉시 RTL`}
             />
             <StatCard
               icon={<Navigation className="h-4 w-4" />}
@@ -2264,7 +2329,7 @@ export function UavDashboard() {
               value={altitudeVal}
               unit="m"
               level={getAltitudeLevel(droneData?.altitude)}
-              hint="현재 비행 고도입니다. 150m를 초과하면 법적 제한에 걸릴 수 있습니다."
+              hint={`${THRESHOLD.altitude.caution}m 초과 주의, ${THRESHOLD.altitude.danger}m 초과 위험`}
             />
             <StatCard
               icon={<Gauge className="h-4 w-4" />}
@@ -2272,14 +2337,14 @@ export function UavDashboard() {
               value={speedVal}
               unit="m/s"
               level={getSpeedLevel(droneData?.speed)}
-              hint="현재 비행 속도입니다. 25m/s를 초과하면 주의가 필요합니다."
+              hint={`${THRESHOLD.speed.caution}m/s 초과 주의, ${THRESHOLD.speed.danger}m/s 초과 위험`}
             />
             <StatCard
               icon={<MapPin className="h-4 w-4" />}
               label="GPS"
               value={gpsVal}
               level={gpsVal ? "safe" : droneConnected ? "caution" : "off"}
-              hint="연결된 GPS 위성 수입니다."
+              hint={`${THRESHOLD.gps.caution}위성 미만 주의, ${THRESHOLD.gps.danger}위성 미만 위험`}
             />
           </div>
         )}
@@ -2299,7 +2364,6 @@ export function UavDashboard() {
                 </p>
                 <p className="text-xs text-slate-500">
                   지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
-                  {/* ★ FIX 3: 미션 웨이포인트 개수 표시 */}
                   {missionWaypoints.length > 0 && (
                     <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
                       미션 {missionWaypoints.length}개 WP
@@ -2416,7 +2480,7 @@ export function UavDashboard() {
                 <SectionHeader
                   icon={<AlertTriangle />}
                   title="임계값 알림"
-                  desc="배터리·고도·속도·GPS·통신 지연 감지"
+                  desc={`배터리 ${THRESHOLD.battery.danger}%/${THRESHOLD.battery.caution}% · 고도 ${THRESHOLD.altitude.caution}/${THRESHOLD.altitude.danger}m · 속도 ${THRESHOLD.speed.caution}/${THRESHOLD.speed.danger}m/s · GPS ${THRESHOLD.gps.caution}/${THRESHOLD.gps.danger}위성`}
                   badge={
                     <button
                       type="button"
