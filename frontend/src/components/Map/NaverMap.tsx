@@ -23,11 +23,12 @@ import {
   Info,
   Route,
   Trash2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
 
-// ★ 수정 1: NaverMapProps에 missionWaypoints 추가
 interface NaverMapProps {
   lat?: number
   lng?: number
@@ -48,7 +49,6 @@ interface NaverMapProps {
   }
   droneId?: string
   missionWaypoints?: Array<{
-    // ★ 추가
     index: number
     command: number
     lat: number
@@ -189,6 +189,32 @@ const getAltitudeColor = (v: number) =>
 const getSpeedColor = (v: number) =>
   v > 35 ? "text-red-400" : v > 25 ? "text-amber-400" : "text-emerald-400"
 
+// ── 아코디언 토글 버튼 공통 컴포넌트 ──────────────────────────
+function HudToggleBtn({
+  collapsed,
+  onToggle,
+  label,
+}: {
+  collapsed: boolean
+  onToggle: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex items-center gap-1 self-start rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-semibold text-white/50 backdrop-blur-md transition hover:bg-black/80 hover:text-white/90"
+    >
+      {label}
+      {collapsed ? (
+        <ChevronDown className="h-3 w-3" />
+      ) : (
+        <ChevronUp className="h-3 w-3" />
+      )}
+    </button>
+  )
+}
+
 function SafetyBanner({
   overall,
   items,
@@ -224,7 +250,6 @@ function SafetyBanner({
       : overall === "caution"
         ? AlertTriangle
         : CheckCircle
-
   const overallLabel =
     overall === "danger" ? "위험" : overall === "caution" ? "주의" : "정상"
 
@@ -376,7 +401,6 @@ function BatteryGuideCard({
           />
         </span>
       </div>
-
       <div className="px-3 pt-2.5">
         <div className="mb-1 flex items-center justify-between">
           <span className="text-[10px] text-white/40">배터리 잔량</span>
@@ -406,7 +430,6 @@ function BatteryGuideCard({
           </span>
         </div>
       </div>
-
       <div className="px-3 pb-3 pt-1.5">
         <p className="mb-1.5 text-[10px] leading-relaxed text-white/50">
           {guide.desc}
@@ -422,7 +445,6 @@ function BatteryGuideCard({
           ))}
         </div>
       </div>
-
       {altitude != null && (
         <div className="border-t border-white/10 px-3 py-2">
           <div className="flex items-center justify-between">
@@ -960,7 +982,6 @@ function MissionInfoCard({
               <p className="text-[9px] text-white/30">현재 WP</p>
             </div>
           </div>
-
           <div className="max-h-36 overflow-y-auto">
             {plan.waypoints.map((wp, i) => {
               const isActive = i === currentWpIndex
@@ -970,13 +991,7 @@ function MissionInfoCard({
               return (
                 <div
                   key={wp.index}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-[10px] ${
-                    isActive
-                      ? "bg-blue-500/20 text-blue-300"
-                      : isDone
-                        ? "text-white/25"
-                        : "text-white/50"
-                  }`}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-[10px] ${isActive ? "bg-blue-500/20 text-blue-300" : isDone ? "text-white/25" : "text-white/50"}`}
                 >
                   <span
                     className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
@@ -1013,7 +1028,6 @@ function MissionInfoCard({
 // ─────────────────────────────────────────────────────────────
 // 메인 NaverMap 컴포넌트
 // ─────────────────────────────────────────────────────────────
-// ★ 수정 2: 함수 인자에 missionWaypoints 추가
 export function NaverMap({
   lat,
   lng,
@@ -1023,7 +1037,7 @@ export function NaverMap({
   dronePosition,
   droneStats,
   droneId,
-  missionWaypoints, // ★ 추가
+  missionWaypoints,
 }: NaverMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
@@ -1051,6 +1065,18 @@ export function NaverMap({
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
+  // ── HUD 아코디언 상태 ──────────────────────────────────────
+  const [hudCollapsed, setHudCollapsed] = useState({
+    stats: false, // 좌상단 배터리/고도/속도/Armed
+    gnss: false, // 우상단 GNSS
+    mission: false, // 미션 정보 카드
+    battery: false, // 배터리 가이드 카드
+    flightTime: false, // 비행시간
+    checklist: false, // 체크리스트
+  })
+  const toggleHud = (key: keyof typeof hudCollapsed) =>
+    setHudCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
+
   // ── 미션 플랜 상태 ─────────────────────────────────────────
   const [missionPlan, setMissionPlan] = useState<MissionPlan | null>(null)
   const [currentWpIndex, setCurrentWpIndex] = useState(-1)
@@ -1064,15 +1090,12 @@ export function NaverMap({
     weatherData?.windSpeed,
   )
 
-  // ★ 수정 3: armed 기반 useEffect 전체를 missionWaypoints prop 기반으로 교체
   useEffect(() => {
     if (!missionWaypoints || missionWaypoints.length === 0) {
       setMissionPlan(null)
       setCurrentWpIndex(-1)
       return
     }
-
-    // 동일한 웨이포인트면 스킵 (불필요한 지도 재렌더 방지)
     const prev = missionPlan?.waypoints
     const same =
       prev &&
@@ -1098,7 +1121,6 @@ export function NaverMap({
     console.log(`[NaverMap] 미션 수신: ${missionWaypoints.length}개 웨이포인트`)
   }, [missionWaypoints])
 
-  // ── QGC passive 수신 (window 이벤트 방식 — 호환성 유지) ──────
   useEffect(() => {
     const onMissionUpdate = (e: CustomEvent) => {
       const { waypoints } = e.detail
@@ -1153,11 +1175,9 @@ export function NaverMap({
   const toggleFullscreen = async () => {
     if (!mapContainerRef.current) return
     try {
-      if (!document.fullscreenElement) {
+      if (!document.fullscreenElement)
         await mapContainerRef.current.requestFullscreen?.()
-      } else {
-        await document.exitFullscreen?.()
-      }
+      else await document.exitFullscreen?.()
     } catch (e) {
       console.error("전체화면 오류:", e)
     }
@@ -1415,7 +1435,7 @@ export function NaverMap({
     }
   }, [flightPath])
 
-  // ── 미션 지도 렌더링 ──────────────────────────────────────────
+  // ── 미션 지도 렌더링 ── ★ strokeStyle 제거 → 실선으로 변경
   useEffect(() => {
     const naver = (window as any).naver
     if (!naver || !mapInstance.current) return
@@ -1430,13 +1450,13 @@ export function NaverMap({
     const wps = missionPlan.waypoints
     const allLatLngs = wps.map((wp) => new naver.maps.LatLng(wp.lat, wp.lng))
 
+    // ★ 실선으로 변경: strokeStyle 삭제, strokeWeight/Opacity 상향
     missionPolylineRef.current = new naver.maps.Polyline({
       map: mapInstance.current,
       path: allLatLngs,
       strokeColor: "#3b82f6",
-      strokeWeight: 2,
-      strokeOpacity: 0.6,
-      strokeStyle: "shortdash",
+      strokeWeight: 3,
+      strokeOpacity: 0.85,
       zIndex: 250,
     })
 
@@ -1510,7 +1530,6 @@ export function NaverMap({
     }
   }, [missionPlan, currentWpIndex])
 
-  // ── 기체 위치 → 현재 웨이포인트 자동 추적 ────────────────────
   useEffect(() => {
     if (!missionPlan || !dronePosition) return
     const { lat: dLat, lng: dLng } = dronePosition
@@ -1527,7 +1546,6 @@ export function NaverMap({
     if (minDist < 30) setCurrentWpIndex(closestIdx)
   }, [dronePosition, missionPlan])
 
-  // ★ 수정 4: clearMission에서 armed 관련 ref 제거
   const clearMission = () => {
     setMissionPlan(null)
     setCurrentWpIndex(-1)
@@ -1568,166 +1586,213 @@ export function NaverMap({
         />
       </div>
 
-      {/* 드론 HUD — 좌측 상단 */}
+      {/* ── 좌측 상단: 드론 HUD (배터리/고도/속도/Armed) ───────── */}
       {isDroneConnected && droneStats && (
         <div className="absolute left-3 top-[7.5rem] z-50 flex flex-col gap-1.5">
-          {droneStats.battery != null && (
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
-              <Battery
-                className={`h-3.5 w-3.5 ${getBatteryColor(droneStats.battery)}`}
-              />
-              <span className="text-white/50">배터리</span>
-              <span
-                className={`font-semibold tabular-nums ${getBatteryColor(droneStats.battery)}`}
-              >
-                {droneStats.battery.toFixed(0)}%
-              </span>
-              {droneStats.battery <= 20 && (
-                <span className="ml-1 animate-pulse rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold">
-                  즉시 복귀
-                </span>
+          {/* 아코디언 토글 버튼 */}
+          <HudToggleBtn
+            collapsed={hudCollapsed.stats}
+            onToggle={() => toggleHud("stats")}
+            label="비행 정보"
+          />
+          {!hudCollapsed.stats && (
+            <>
+              {droneStats.battery != null && (
+                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
+                  <Battery
+                    className={`h-3.5 w-3.5 ${getBatteryColor(droneStats.battery)}`}
+                  />
+                  <span className="text-white/50">배터리</span>
+                  <span
+                    className={`font-semibold tabular-nums ${getBatteryColor(droneStats.battery)}`}
+                  >
+                    {droneStats.battery.toFixed(0)}%
+                  </span>
+                  {droneStats.battery <= 20 && (
+                    <span className="ml-1 animate-pulse rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold">
+                      즉시 복귀
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          {droneStats.altitude != null && (
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
-              <ArrowUp
-                className={`h-3.5 w-3.5 ${getAltitudeColor(droneStats.altitude)}`}
-              />
-              <span className="text-white/50">고도</span>
-              <span
-                className={`font-semibold tabular-nums ${getAltitudeColor(droneStats.altitude)}`}
-              >
-                {droneStats.altitude.toFixed(0)}m
-              </span>
-              {droneStats.altitude > 150 && (
-                <span className="ml-1 animate-pulse rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold">
-                  제한 초과
-                </span>
+              {droneStats.altitude != null && (
+                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
+                  <ArrowUp
+                    className={`h-3.5 w-3.5 ${getAltitudeColor(droneStats.altitude)}`}
+                  />
+                  <span className="text-white/50">고도</span>
+                  <span
+                    className={`font-semibold tabular-nums ${getAltitudeColor(droneStats.altitude)}`}
+                  >
+                    {droneStats.altitude.toFixed(0)}m
+                  </span>
+                  {droneStats.altitude > 150 && (
+                    <span className="ml-1 animate-pulse rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold">
+                      제한 초과
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
+              {droneStats.speed != null && (
+                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
+                  <Gauge
+                    className={`h-3.5 w-3.5 ${getSpeedColor(droneStats.speed)}`}
+                  />
+                  <span className="text-white/50">속도</span>
+                  <span
+                    className={`font-semibold tabular-nums ${getSpeedColor(droneStats.speed)}`}
+                  >
+                    {droneStats.speed.toFixed(1)}m/s
+                  </span>
+                </div>
+              )}
+              {droneStats.armed != null && (
+                <div
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md ${droneStats.armed ? "border-emerald-500/40 bg-emerald-950/80" : "border-slate-500/40 bg-slate-900/80"}`}
+                >
+                  <span
+                    className={`h-2 w-2 rounded-full ${droneStats.armed ? "animate-pulse bg-emerald-400" : "bg-slate-500"}`}
+                  />
+                  <span
+                    className={
+                      droneStats.armed
+                        ? "font-semibold text-emerald-300"
+                        : "text-slate-400"
+                    }
+                  >
+                    {droneStats.armed ? "ARMED" : "DISARMED"}
+                  </span>
+                </div>
+              )}
+            </>
           )}
-          {droneStats.speed != null && (
-            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
-              <Gauge
-                className={`h-3.5 w-3.5 ${getSpeedColor(droneStats.speed)}`}
-              />
-              <span className="text-white/50">속도</span>
-              <span
-                className={`font-semibold tabular-nums ${getSpeedColor(droneStats.speed)}`}
-              >
-                {droneStats.speed.toFixed(1)}m/s
-              </span>
-            </div>
-          )}
-          {/* Arming 상태 표시 */}
-          {droneStats.armed != null && (
+        </div>
+      )}
+
+      {/* ── 우측 상단: GNSS ───────────────────────────────────── */}
+      {satellites !== null && isDroneConnected && (
+        <div className="absolute right-3 top-[7.5rem] z-50 flex flex-col items-end gap-1.5">
+          <HudToggleBtn
+            collapsed={hudCollapsed.gnss}
+            onToggle={() => toggleHud("gnss")}
+            label="GNSS"
+          />
+          {!hudCollapsed.gnss && (
             <div
-              className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md ${
-                droneStats.armed
-                  ? "border-emerald-500/40 bg-emerald-950/80"
-                  : "border-slate-500/40 bg-slate-900/80"
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md ${
+                satellites < 10
+                  ? "border-red-500/40 bg-red-950/80"
+                  : satellites < 25
+                    ? "border-amber-500/40 bg-amber-950/80"
+                    : "border-emerald-500/40 bg-emerald-950/80"
               }`}
             >
-              <span
-                className={`h-2 w-2 rounded-full ${droneStats.armed ? "animate-pulse bg-emerald-400" : "bg-slate-500"}`}
+              <Satellite
+                className={`h-4 w-4 ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
               />
-              <span
-                className={
-                  droneStats.armed
-                    ? "font-semibold text-emerald-300"
-                    : "text-slate-400"
-                }
-              >
-                {droneStats.armed ? "ARMED" : "DISARMED"}
-              </span>
+              <div className="flex flex-col leading-tight">
+                <span className="text-[10px] text-white/40">GNSS</span>
+                <span
+                  className={`font-semibold ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
+                >
+                  {satellites < 10 ? "불량" : satellites < 25 ? "보통" : "양호"}{" "}
+                  ({satellites})
+                </span>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* GNSS HUD — 우측 상단 */}
-      {satellites !== null && isDroneConnected && (
-        <div
-          className={`absolute right-3 top-[7.5rem] z-50 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md ${
-            satellites < 10
-              ? "border-red-500/40 bg-red-950/80"
-              : satellites < 25
-                ? "border-amber-500/40 bg-amber-950/80"
-                : "border-emerald-500/40 bg-emerald-950/80"
-          }`}
-        >
-          <Satellite
-            className={`h-4 w-4 ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
-          />
-          <div className="flex flex-col leading-tight">
-            <span className="text-[10px] text-white/40">GNSS</span>
-            <span
-              className={`font-semibold ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
-            >
-              {satellites < 10 ? "불량" : satellites < 25 ? "보통" : "양호"} (
-              {satellites})
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* 미션 정보 카드 */}
+      {/* ── 미션 정보 카드 ────────────────────────────────────── */}
       {missionPlan && (
         <div
-          className="absolute left-3 z-50"
-          style={{ top: isDroneConnected ? "calc(7.5rem + 8.5rem)" : "4rem" }}
+          className="absolute left-3 z-50 flex flex-col gap-1.5"
+          style={{ top: isDroneConnected ? "calc(7.5rem + 9rem)" : "4rem" }}
         >
-          <MissionInfoCard
-            plan={missionPlan}
-            onClear={clearMission}
-            currentWpIndex={currentWpIndex}
+          <HudToggleBtn
+            collapsed={hudCollapsed.mission}
+            onToggle={() => toggleHud("mission")}
+            label="미션"
           />
+          {!hudCollapsed.mission && (
+            <MissionInfoCard
+              plan={missionPlan}
+              onClear={clearMission}
+              currentWpIndex={currentWpIndex}
+            />
+          )}
         </div>
       )}
 
-      {/* 좌하단: 추적 버튼 + 배터리 가이드 */}
+      {/* ── 좌하단: 추적 버튼 + 배터리 가이드 ───────────────── */}
       {isDroneConnected && (
         <div className="absolute bottom-4 left-3 z-50 flex flex-col items-start gap-2">
-          <button
-            onClick={() => setIsTrackingDrone((v) => !v)}
-            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${
-              isTrackingDrone
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "bg-slate-600/80 backdrop-blur-sm hover:bg-slate-700"
-            }`}
-          >
-            {isTrackingDrone ? (
-              <Navigation className="h-4 w-4" />
-            ) : (
-              <NavigationOff className="h-4 w-4" />
-            )}
-            {isTrackingDrone ? "추적 중" : "추적 해제"}
-          </button>
-          <BatteryGuideCard
-            battery={droneStats?.battery}
-            altitude={droneStats?.altitude}
-          />
+          {/* 추적 버튼 + 배터리 가이드 토글 한 줄에 */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsTrackingDrone((v) => !v)}
+              className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${isTrackingDrone ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600/80 backdrop-blur-sm hover:bg-slate-700"}`}
+            >
+              {isTrackingDrone ? (
+                <Navigation className="h-4 w-4" />
+              ) : (
+                <NavigationOff className="h-4 w-4" />
+              )}
+              {isTrackingDrone ? "추적 중" : "추적 해제"}
+            </button>
+            <HudToggleBtn
+              collapsed={hudCollapsed.battery}
+              onToggle={() => toggleHud("battery")}
+              label="배터리 가이드"
+            />
+          </div>
+          {!hudCollapsed.battery && (
+            <BatteryGuideCard
+              battery={droneStats?.battery}
+              altitude={droneStats?.altitude}
+            />
+          )}
         </div>
       )}
 
-      {/* 우하단: 비행 시간 + 체크리스트 */}
+      {/* ── 우하단: 비행 시간 + 체크리스트 ──────────────────── */}
       {isDroneConnected && (
         <div className="absolute bottom-4 right-3 z-50 flex flex-col items-end gap-2">
-          <FlightStatusMiniCard
-            speed={droneStats?.speed}
-            altitude={droneStats?.altitude}
-          />
-          <ChecklistCard
-            battery={droneStats?.battery}
-            altitude={droneStats?.altitude}
-            speed={droneStats?.speed}
-            satellites={satellites}
-            windSpeed={weatherData?.windSpeed ?? null}
-            temperature={weatherData?.temperature ?? null}
-            precipitation={weatherData?.precipitationAmount ?? null}
-            connected={isDroneConnected}
-          />
+          {/* 비행시간 토글 */}
+          <div className="flex items-center gap-2">
+            <HudToggleBtn
+              collapsed={hudCollapsed.flightTime}
+              onToggle={() => toggleHud("flightTime")}
+              label="비행 시간"
+            />
+          </div>
+          {!hudCollapsed.flightTime && (
+            <FlightStatusMiniCard
+              speed={droneStats?.speed}
+              altitude={droneStats?.altitude}
+            />
+          )}
+          {/* 체크리스트 토글 — ChecklistCard 자체가 내부 아코디언 있으므로 외부 토글 추가 */}
+          <div className="flex items-center gap-2">
+            <HudToggleBtn
+              collapsed={hudCollapsed.checklist}
+              onToggle={() => toggleHud("checklist")}
+              label="체크리스트"
+            />
+          </div>
+          {!hudCollapsed.checklist && (
+            <ChecklistCard
+              battery={droneStats?.battery}
+              altitude={droneStats?.altitude}
+              speed={droneStats?.speed}
+              satellites={satellites}
+              windSpeed={weatherData?.windSpeed ?? null}
+              temperature={weatherData?.temperature ?? null}
+              precipitation={weatherData?.precipitationAmount ?? null}
+              connected={isDroneConnected}
+            />
+          )}
         </div>
       )}
 

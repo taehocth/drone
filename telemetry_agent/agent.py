@@ -23,8 +23,6 @@ VFR_VEL_FALLBACK_AFTER_SEC = 0.5
 LTE_HEARTBEAT_TIMEOUT_SEC  = 8.0
 LTE_RETRY_SEC              = 5.0
 
-# MAVLink HEARTBEAT는 보통 1Hz로 수신됨
-# 이 시간 동안 HEARTBEAT가 안 오면 TCP hang으로 판단하고 강제 종료
 HEARTBEAT_WATCHDOG_SEC = 10.0
 
 # =====================================================
@@ -125,7 +123,6 @@ class DroneAgent:
             "gps":      0.0,
         }
 
-        # HEARTBEAT 감시용
         self._last_heartbeat_ts: float = 0.0
 
         self._mission_waypoints: List[Dict[str, Any]] = []
@@ -203,6 +200,17 @@ class DroneAgent:
                 "message": f"드론 연결됨 — sysid={self.sysid}",
             })
 
+            # ★ 수정 1: 연결 직후 미션 다운로드 시도
+            # Arming 전이라도 QGC에 업로드된 미션을 바로 가져옴
+            # → DM4_2, DM3도 연결만 되면 미션 경로가 지도에 표시됨
+            if not self._mission_download_done:
+                print(f"[{self.drone_id}] 연결 직후 미션 다운로드 시도")
+                threading.Thread(
+                    target=self._download_mission,
+                    daemon=True,
+                    name=f"{self.drone_id}-mission-init",
+                ).start()
+
             return True
 
         except Exception as e:
@@ -272,7 +280,7 @@ class DroneAgent:
         if self._mission_downloading or self.mav is None:
             return
         self._mission_downloading = True
-        print(f"[{self.drone_id}] Arming 감지 → 능동 미션 다운로드 시작")
+        print(f"[{self.drone_id}] 미션 다운로드 시작")
 
         try:
             with self._mission_queue_lock:
@@ -328,7 +336,7 @@ class DroneAgent:
             self._add_event({
                 "type":    "mission_ack",
                 "level":   "success",
-                "message": f"Arming 후 미션 다운로드 완료 — {len(waypoints)}개 웨이포인트",
+                "message": f"미션 다운로드 완료 — {len(waypoints)}개 웨이포인트",
             })
             threading.Thread(target=self._push_mission, daemon=True).start()
 
@@ -350,7 +358,7 @@ class DroneAgent:
         return None
 
     # -------------------------------------------------
-    # HEARTBEAT 감시 루프 (TCP hang 감지)
+    # HEARTBEAT 감시 루프
     # -------------------------------------------------
     def _heartbeat_watchdog(self) -> None:
         print(f"[{self.drone_id}] Heartbeat watchdog started")
@@ -518,7 +526,6 @@ class DroneAgent:
         # lock 바깥 이벤트 처리
 
         if t == "HEARTBEAT":
-            # HEARTBEAT 수신 시각 갱신 (watchdog용)
             self._last_heartbeat_ts = ts
 
             try:
@@ -536,11 +543,13 @@ class DroneAgent:
 
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
+            # ★ 수정 2: Disarm 시 미션 캐시 유지
+            # 기존: Disarm되면 미션을 지워버려서 DM4_2, DM3 전환 시 미션이 사라졌음
+            # 변경: 미션은 유지하고 download_done만 리셋 → 다음 Arming 때 새 미션으로 갱신됨
             if not armed and self._was_armed:
                 self._mission_download_done = False
-                with self._mission_lock:
-                    self._mission_waypoints = []
-                print(f"[{self.drone_id}] Disarmed — 미션 캐시 초기화")
+                # self._mission_waypoints = []  ← 삭제: 미션 유지
+                print(f"[{self.drone_id}] Disarmed — 미션 캐시 유지 (wp={len(self._mission_waypoints)}개)")
 
             if armed and not self._was_armed and not self._mission_download_done:
                 print(f"[{self.drone_id}] Armed 감지 → 미션 다운로드 스레드 시작")
@@ -681,7 +690,7 @@ class DroneAgent:
                 })
 
     # -------------------------------------------------
-    # ★ Build snapshot — armed 필드 추가
+    # Build snapshot
     # -------------------------------------------------
     def build_snapshot(self) -> dict:
         with self._lock:
@@ -709,7 +718,7 @@ class DroneAgent:
                 "battery":      self._cache.get("battery"),
                 "gps":          self._cache.get("gps"),
                 "online":       True,
-                "armed":        self._was_armed,  # ★ 추가 — NaverMap이 Armed 감지하는 핵심
+                "armed":        self._was_armed,
             }
             snap["_age_sec"] = {
                 k: (now_ts() - v) if v else None
@@ -771,7 +780,6 @@ class DroneAgent:
                 while self.running:
                     time.sleep(1)
 
-                # 연결 끊김 → offline 신호 즉시 전송
                 print(f"[{self.drone_id}] 연결 끊김 → offline 신호 전송")
                 self._send_offline_signal()
                 print(f"[{self.drone_id}] Disconnected. Retry in {LTE_RETRY_SEC:.0f}s...")
@@ -780,6 +788,8 @@ class DroneAgent:
                 print(f"[{self.drone_id}] Retry in {LTE_RETRY_SEC:.0f}s...")
 
             # 재연결 시 캐시 초기화
+            # ★ 참고: 미션(_mission_waypoints)은 여기서도 초기화됨
+            # 완전히 재연결되는 경우이므로 새로 다운로드하는 것이 맞음
             with self._lock:
                 self._cache = {
                     "sysid":    None,
