@@ -25,6 +25,7 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  GripHorizontal,
 } from "lucide-react"
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
@@ -190,28 +191,133 @@ const getSpeedColor = (v: number) =>
   v > 35 ? "text-red-400" : v > 25 ? "text-amber-400" : "text-emerald-400"
 
 // ── 아코디언 토글 버튼 공통 컴포넌트 ──────────────────────────
-function HudToggleBtn({
-  collapsed,
-  onToggle,
+// ── 드래그 훅 ──────────────────────────────────────────────
+function useDraggable(initialPos: { x: number; y: number }) {
+  const [pos, setPos] = useState(initialPos)
+  const dragging = useRef(false)
+  const offset = useRef({ x: 0, y: 0 })
+
+  const onHandleMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true
+    offset.current = { x: e.clientX - pos.x, y: e.clientY - pos.y }
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return
+      setPos({
+        x: e.clientX - offset.current.x,
+        y: e.clientY - offset.current.y,
+      })
+    }
+    const onUp = () => {
+      dragging.current = false
+    }
+    window.addEventListener("mousemove", onMove)
+    window.addEventListener("mouseup", onUp)
+    return () => {
+      window.removeEventListener("mousemove", onMove)
+      window.removeEventListener("mouseup", onUp)
+    }
+  }, [])
+
+  return { pos, onHandleMouseDown }
+}
+
+// ── 팝오버 패널 ────────────────────────────────────────────
+type SafetyLevel2 = "safe" | "caution" | "danger"
+
+function PopoverPanel({
+  icon,
   label,
+  badge,
+  badgeLevel,
+  initialPos,
+  children,
+  defaultOpen = false,
 }: {
-  collapsed: boolean
-  onToggle: () => void
+  icon: React.ReactNode
   label: string
+  badge?: string
+  badgeLevel?: SafetyLevel2
+  initialPos: { x: number; y: number }
+  children: React.ReactNode
+  defaultOpen?: boolean
 }) {
+  const [open, setOpen] = useState(defaultOpen)
+  const { pos, onHandleMouseDown } = useDraggable(initialPos)
+
+  const borderColor =
+    badgeLevel === "danger"
+      ? "border-red-500/70"
+      : badgeLevel === "caution"
+        ? "border-amber-500/70"
+        : "border-white/15"
+  const badgeBg =
+    badgeLevel === "danger"
+      ? "bg-red-500/20 text-red-300"
+      : badgeLevel === "caution"
+        ? "bg-amber-500/20 text-amber-300"
+        : "bg-emerald-500/20 text-emerald-300"
+
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="flex items-center gap-1 self-start rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-semibold text-white/50 backdrop-blur-md transition hover:bg-black/80 hover:text-white/90"
+    <div
+      className="absolute z-50"
+      style={{ left: pos.x, top: pos.y, userSelect: "none" }}
     >
-      {label}
-      {collapsed ? (
-        <ChevronDown className="h-3 w-3" />
-      ) : (
-        <ChevronUp className="h-3 w-3" />
+      {open && (
+        <div
+          className={`mb-2 overflow-hidden rounded-2xl border ${borderColor} bg-slate-900/95 shadow-2xl shadow-black/50 backdrop-blur-md`}
+          style={{ minWidth: 230 }}
+        >
+          {/* 드래그 핸들 */}
+          <div
+            className="flex cursor-grab items-center gap-2 border-b border-white/10 bg-white/5 px-3 py-2 active:cursor-grabbing"
+            onMouseDown={onHandleMouseDown}
+          >
+            <GripHorizontal className="h-3.5 w-3.5 shrink-0 text-white/25" />
+            <span className="flex-1 text-[10px] font-bold uppercase tracking-widest text-white/35">
+              {label}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+              }}
+              className="rounded-md p-0.5 text-white/25 transition hover:bg-white/10 hover:text-white/60"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {children}
+        </div>
       )}
-    </button>
+
+      {/* 토글 버튼 */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-2 rounded-full border ${borderColor} bg-slate-900/90 px-3 py-1.5 text-xs font-semibold text-white/80 shadow-lg shadow-black/40 backdrop-blur-md transition-all hover:scale-[1.03] hover:bg-slate-800/90 active:scale-[0.97]`}
+      >
+        <span className="flex h-4 w-4 items-center justify-center opacity-80">
+          {icon}
+        </span>
+        <span>{label}</span>
+        {badge && badgeLevel && (
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${badgeBg}`}
+          >
+            {badge}
+          </span>
+        )}
+        <span className="ml-0.5 text-[9px] text-white/25">
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+    </div>
   )
 }
 
@@ -1065,18 +1171,6 @@ export function NaverMap({
   const [satellites, setSatellites] = useState<number | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // ── HUD 아코디언 상태 ──────────────────────────────────────
-  const [hudCollapsed, setHudCollapsed] = useState({
-    stats: false, // 좌상단 배터리/고도/속도/Armed
-    gnss: false, // 우상단 GNSS
-    mission: false, // 미션 정보 카드
-    battery: false, // 배터리 가이드 카드
-    flightTime: false, // 비행시간
-    checklist: false, // 체크리스트
-  })
-  const toggleHud = (key: keyof typeof hudCollapsed) =>
-    setHudCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
-
   // ── 미션 플랜 상태 ─────────────────────────────────────────
   const [missionPlan, setMissionPlan] = useState<MissionPlan | null>(null)
   const [currentWpIndex, setCurrentWpIndex] = useState(-1)
@@ -1586,233 +1680,233 @@ export function NaverMap({
         />
       </div>
 
-      {/* ── 좌측 상단: 드론 HUD (배터리/고도/속도/Armed) ───────── */}
-      {isDroneConnected && droneStats && (
-        <div className="absolute left-3 top-[7.5rem] z-50 flex flex-col gap-1.5">
-          {/* 아코디언 토글 버튼 */}
-          <HudToggleBtn
-            collapsed={hudCollapsed.stats}
-            onToggle={() => toggleHud("stats")}
-            label="비행 정보"
-          />
-          {!hudCollapsed.stats && (
-            <>
+      {/* ── 팝오버 1: 비행 정보 (HUD + 체크리스트 + 배터리가이드 + 기상 통합) */}
+      <PopoverPanel
+        icon={<Battery className="h-4 w-4" />}
+        label="비행 정보"
+        badge={
+          droneStats?.battery != null
+            ? `${Math.round(droneStats.battery)}%`
+            : undefined
+        }
+        badgeLevel={safetyOverall}
+        initialPos={{ x: 12, y: isDroneConnected ? 116 : 64 }}
+        defaultOpen={isDroneConnected}
+      >
+        {isDroneConnected && droneStats ? (
+          <div>
+            {/* Armed 상태 */}
+            {droneStats.armed != null && (
+              <div
+                className={`border-white/8 flex items-center gap-2 border-b px-3 py-2 text-[10px] font-bold ${droneStats.armed ? "text-emerald-400" : "text-slate-500"}`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${droneStats.armed ? "animate-pulse bg-emerald-400" : "bg-slate-600"}`}
+                />
+                {droneStats.armed ? "ARMED" : "DISARMED"}
+              </div>
+            )}
+            {/* 수치 행 */}
+            <div className="divide-y divide-white/5">
               {droneStats.battery != null && (
-                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
                   <Battery
-                    className={`h-3.5 w-3.5 ${getBatteryColor(droneStats.battery)}`}
+                    className={`h-3.5 w-3.5 shrink-0 ${getBatteryColor(droneStats.battery)}`}
                   />
-                  <span className="text-white/50">배터리</span>
+                  <span className="flex-1 text-[11px] font-medium text-white/40">
+                    배터리
+                  </span>
                   <span
-                    className={`font-semibold tabular-nums ${getBatteryColor(droneStats.battery)}`}
+                    className={`font-mono text-sm font-bold tabular-nums ${getBatteryColor(droneStats.battery)}`}
                   >
                     {droneStats.battery.toFixed(0)}%
                   </span>
                   {droneStats.battery <= 20 && (
-                    <span className="ml-1 animate-pulse rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold">
-                      즉시 복귀
-                    </span>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
                   )}
                 </div>
               )}
               {droneStats.altitude != null && (
-                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
                   <ArrowUp
-                    className={`h-3.5 w-3.5 ${getAltitudeColor(droneStats.altitude)}`}
+                    className={`h-3.5 w-3.5 shrink-0 ${getAltitudeColor(droneStats.altitude)}`}
                   />
-                  <span className="text-white/50">고도</span>
+                  <span className="flex-1 text-[11px] font-medium text-white/40">
+                    고도
+                  </span>
                   <span
-                    className={`font-semibold tabular-nums ${getAltitudeColor(droneStats.altitude)}`}
+                    className={`font-mono text-sm font-bold tabular-nums ${getAltitudeColor(droneStats.altitude)}`}
                   >
                     {droneStats.altitude.toFixed(0)}m
                   </span>
                   {droneStats.altitude > 150 && (
-                    <span className="ml-1 animate-pulse rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold">
-                      제한 초과
-                    </span>
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-400" />
                   )}
                 </div>
               )}
               {droneStats.speed != null && (
-                <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/70 px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md">
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
                   <Gauge
-                    className={`h-3.5 w-3.5 ${getSpeedColor(droneStats.speed)}`}
+                    className={`h-3.5 w-3.5 shrink-0 ${getSpeedColor(droneStats.speed)}`}
                   />
-                  <span className="text-white/50">속도</span>
+                  <span className="flex-1 text-[11px] font-medium text-white/40">
+                    속도
+                  </span>
                   <span
-                    className={`font-semibold tabular-nums ${getSpeedColor(droneStats.speed)}`}
+                    className={`font-mono text-sm font-bold tabular-nums ${getSpeedColor(droneStats.speed)}`}
                   >
                     {droneStats.speed.toFixed(1)}m/s
                   </span>
                 </div>
               )}
-              {droneStats.armed != null && (
-                <div
-                  className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs text-white shadow-lg backdrop-blur-md ${droneStats.armed ? "border-emerald-500/40 bg-emerald-950/80" : "border-slate-500/40 bg-slate-900/80"}`}
-                >
-                  <span
-                    className={`h-2 w-2 rounded-full ${droneStats.armed ? "animate-pulse bg-emerald-400" : "bg-slate-500"}`}
+              {satellites != null && (
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <Satellite
+                    className={`h-3.5 w-3.5 shrink-0 ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
                   />
+                  <span className="flex-1 text-[11px] font-medium text-white/40">
+                    GNSS
+                  </span>
                   <span
-                    className={
-                      droneStats.armed
-                        ? "font-semibold text-emerald-300"
-                        : "text-slate-400"
-                    }
+                    className={`font-mono text-sm font-bold tabular-nums ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
                   >
-                    {droneStats.armed ? "ARMED" : "DISARMED"}
+                    {satellites}위성
                   </span>
                 </div>
               )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── 우측 상단: GNSS ───────────────────────────────────── */}
-      {satellites !== null && isDroneConnected && (
-        <div className="absolute right-3 top-[7.5rem] z-50 flex flex-col items-end gap-1.5">
-          <HudToggleBtn
-            collapsed={hudCollapsed.gnss}
-            onToggle={() => toggleHud("gnss")}
-            label="GNSS"
-          />
-          {!hudCollapsed.gnss && (
-            <div
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs text-white shadow-lg backdrop-blur-md ${
-                satellites < 10
-                  ? "border-red-500/40 bg-red-950/80"
-                  : satellites < 25
-                    ? "border-amber-500/40 bg-amber-950/80"
-                    : "border-emerald-500/40 bg-emerald-950/80"
-              }`}
-            >
-              <Satellite
-                className={`h-4 w-4 ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
-              />
-              <div className="flex flex-col leading-tight">
-                <span className="text-[10px] text-white/40">GNSS</span>
-                <span
-                  className={`font-semibold ${satellites < 10 ? "text-red-400" : satellites < 25 ? "text-amber-400" : "text-emerald-400"}`}
-                >
-                  {satellites < 10 ? "불량" : satellites < 25 ? "보통" : "양호"}{" "}
-                  ({satellites})
+              {weatherData?.windSpeed != null && (
+                <div className="flex items-center gap-2.5 px-3 py-2.5">
+                  <Wind
+                    className={`h-3.5 w-3.5 shrink-0 ${weatherData.windSpeed >= 14 ? "text-red-400" : weatherData.windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
+                  />
+                  <span className="flex-1 text-[11px] font-medium text-white/40">
+                    풍속
+                  </span>
+                  <span
+                    className={`font-mono text-sm font-bold tabular-nums ${weatherData.windSpeed >= 14 ? "text-red-400" : weatherData.windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
+                  >
+                    {weatherData.windSpeed}m/s
+                  </span>
+                </div>
+              )}
+            </div>
+            {/* 위험 배너 */}
+            {droneStats.battery != null && droneStats.battery <= 20 && (
+              <div className="mx-3 mb-2 mt-1 flex items-center gap-2 rounded-lg bg-red-500/15 px-2.5 py-2">
+                <PlaneLanding className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-400" />
+                <span className="text-[10px] font-semibold text-red-300">
+                  즉시 RTL — 배터리 위험
                 </span>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+            {droneStats.altitude != null && droneStats.altitude > 150 && (
+              <div className="mx-3 mb-2 mt-1 flex items-center gap-2 rounded-lg bg-red-500/15 px-2.5 py-2">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-400" />
+                <span className="text-[10px] font-semibold text-red-300">
+                  고도 한도 초과 — 즉시 하강
+                </span>
+              </div>
+            )}
+            {/* 기상 정보 */}
+            {weatherData && (
+              <div className="border-white/8 grid grid-cols-3 gap-2 border-t px-3 py-2.5 text-center">
+                <div>
+                  <p className="text-sm font-bold text-orange-300">
+                    {weatherData.temperature}°
+                  </p>
+                  <p className="text-[9px] text-white/30">기온</p>
+                </div>
+                <div>
+                  <p
+                    className={`text-sm font-bold ${weatherData.windSpeed >= 14 ? "text-red-400" : weatherData.windSpeed >= 7 ? "text-amber-400" : "text-emerald-400"}`}
+                  >
+                    {weatherData.windSpeed}
+                    <span className="text-[9px] font-normal">m/s</span>
+                  </p>
+                  <p className="text-[9px] text-white/30">풍속</p>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-sky-300">
+                    {weatherData.precipitationAmount}
+                    <span className="text-[9px] font-normal">mm</span>
+                  </p>
+                  <p className="text-[9px] text-white/30">강수</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* 미연결 시 체크리스트 */
+          <div className="space-y-2 px-3 py-3">
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-white/30">
+              비행 전 체크리스트
+            </p>
+            {[
+              "배터리 셀 체크 확인",
+              "조종기 / 기체 전원 확인",
+              "QGC LTE 연결 / P900 연결 확인",
+              "GPS 신호 확인 (25위성+)",
+              "미션 플랜 경로 일치 확인",
+              "수평 캘리브레이션 확인",
+              "식별장치 확인",
+            ].map((item, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-600 text-[9px] text-slate-500">
+                  {i + 1}
+                </span>
+                <p className="text-[10px] text-slate-400">{item}</p>
+              </div>
+            ))}
+            <p className="mt-2 border-t border-white/10 pt-2 text-[10px] text-slate-500">
+              기체 연결 시 실시간 정보로 전환됩니다.
+            </p>
+          </div>
+        )}
+      </PopoverPanel>
 
-      {/* ── 미션 정보 카드 ────────────────────────────────────── */}
+      {/* ── 팝오버 2: 미션 플랜 (미션 있을 때만) ───────────── */}
       {missionPlan && (
-        <div
-          className="absolute left-3 z-50 flex flex-col gap-1.5"
-          style={{ top: isDroneConnected ? "calc(7.5rem + 9rem)" : "4rem" }}
+        <PopoverPanel
+          icon={<Route className="h-4 w-4 text-blue-400" />}
+          label="미션 플랜"
+          badge={`${missionPlan.waypoints.length}WP`}
+          badgeLevel="safe"
+          initialPos={{ x: 12, y: isDroneConnected ? 178 : 126 }}
+          defaultOpen
         >
-          <HudToggleBtn
-            collapsed={hudCollapsed.mission}
-            onToggle={() => toggleHud("mission")}
-            label="미션"
+          <MissionInfoCard
+            plan={missionPlan}
+            onClear={clearMission}
+            currentWpIndex={currentWpIndex}
           />
-          {!hudCollapsed.mission && (
-            <MissionInfoCard
-              plan={missionPlan}
-              onClear={clearMission}
-              currentWpIndex={currentWpIndex}
-            />
-          )}
-        </div>
+        </PopoverPanel>
       )}
 
-      {/* ── 좌하단: 추적 버튼 + 배터리 가이드 ───────────────── */}
+      {/* ── 좌하단: 추적 버튼 + 비행 시간 ──────────────────── */}
       {isDroneConnected && (
         <div className="absolute bottom-4 left-3 z-50 flex flex-col items-start gap-2">
-          {/* 추적 버튼 + 배터리 가이드 토글 한 줄에 */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsTrackingDrone((v) => !v)}
-              className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${isTrackingDrone ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600/80 backdrop-blur-sm hover:bg-slate-700"}`}
-            >
-              {isTrackingDrone ? (
-                <Navigation className="h-4 w-4" />
-              ) : (
-                <NavigationOff className="h-4 w-4" />
-              )}
-              {isTrackingDrone ? "추적 중" : "추적 해제"}
-            </button>
-            <HudToggleBtn
-              collapsed={hudCollapsed.battery}
-              onToggle={() => toggleHud("battery")}
-              label="배터리 가이드"
-            />
-          </div>
-          {!hudCollapsed.battery && (
-            <BatteryGuideCard
-              battery={droneStats?.battery}
-              altitude={droneStats?.altitude}
-            />
-          )}
-        </div>
-      )}
-
-      {/* ── 우하단: 비행 시간 + 체크리스트 ──────────────────── */}
-      {isDroneConnected && (
-        <div className="absolute bottom-4 right-3 z-50 flex flex-col items-end gap-2">
-          {/* 비행시간 토글 */}
-          <div className="flex items-center gap-2">
-            <HudToggleBtn
-              collapsed={hudCollapsed.flightTime}
-              onToggle={() => toggleHud("flightTime")}
-              label="비행 시간"
-            />
-          </div>
-          {!hudCollapsed.flightTime && (
-            <FlightStatusMiniCard
-              speed={droneStats?.speed}
-              altitude={droneStats?.altitude}
-            />
-          )}
-          {/* 체크리스트 토글 — ChecklistCard 자체가 내부 아코디언 있으므로 외부 토글 추가 */}
-          <div className="flex items-center gap-2">
-            <HudToggleBtn
-              collapsed={hudCollapsed.checklist}
-              onToggle={() => toggleHud("checklist")}
-              label="체크리스트"
-            />
-          </div>
-          {!hudCollapsed.checklist && (
-            <ChecklistCard
-              battery={droneStats?.battery}
-              altitude={droneStats?.altitude}
-              speed={droneStats?.speed}
-              satellites={satellites}
-              windSpeed={weatherData?.windSpeed ?? null}
-              temperature={weatherData?.temperature ?? null}
-              precipitation={weatherData?.precipitationAmount ?? null}
-              connected={isDroneConnected}
-            />
-          )}
-        </div>
-      )}
-
-      {/* 미연결 시 사전 체크리스트 */}
-      {!isDroneConnected && (
-        <div className="absolute bottom-16 right-3 z-50">
-          <ChecklistCard
-            connected={false}
-            windSpeed={weatherData?.windSpeed ?? null}
-            temperature={weatherData?.temperature ?? null}
-            precipitation={weatherData?.precipitationAmount ?? null}
+          <button
+            onClick={() => setIsTrackingDrone((v) => !v)}
+            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg transition-all hover:scale-105 ${isTrackingDrone ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600/80 backdrop-blur-sm hover:bg-slate-700"}`}
+          >
+            {isTrackingDrone ? (
+              <Navigation className="h-4 w-4" />
+            ) : (
+              <NavigationOff className="h-4 w-4" />
+            )}
+            {isTrackingDrone ? "추적 중" : "추적 해제"}
+          </button>
+          <FlightStatusMiniCard
+            speed={droneStats?.speed}
+            altitude={droneStats?.altitude}
           />
         </div>
       )}
-
       {/* 전체화면 버튼 */}
       <button
         onClick={toggleFullscreen}
         className="absolute bottom-4 z-[60] flex items-center justify-center rounded-full bg-blue-600 p-3 text-white shadow-lg transition-all hover:scale-110 hover:bg-blue-700"
-        style={{ right: isDroneConnected ? "244px" : "12px" }}
+        style={{ right: "12px" }}
         title={isFullscreen ? "전체화면 종료" : "전체화면"}
       >
         {isFullscreen ? (
