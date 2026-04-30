@@ -64,7 +64,7 @@ const THRESHOLD = {
   },
   gps: {
     danger: 10, // 위성 수 — 해상 배송 최소 요구
-    caution: 15, // 위성 수 — 정밀 비행 권장 최소
+    caution: 20, // 위성 수 — 정밀 비행 권장 최소
   },
 } as const
 
@@ -1788,7 +1788,24 @@ const INITIAL_DRONE_WS_STATE: DroneWsState = {
   droneOffline: false,
   lastDataAgeSec: null,
 }
+// ==========================
+// 위험 모달 타입
+// ==========================
+type DangerModalType =
+  | "battery"
+  | "speed"
+  | "altitude"
+  | "gps"
+  | "attitude"
+  | "signal"
 
+interface DangerModalItem {
+  id: string
+  type: DangerModalType
+  label: string
+  detail: string
+  action: string
+}
 // ==========================
 // UAV Dashboard Component
 // ==========================
@@ -1980,38 +1997,184 @@ export function UavDashboard() {
   const [modalDismissed, setModalDismissed] = useState(false)
   const prevModalKeyRef = useRef<string>("")
 
-  interface DangerModalItem {
-    id: string
-    type: "battery" | "speed"
-    label: string
-    detail: string
-    action: string
-  }
   const dangerModalItems: DangerModalItem[] = []
-  if (
-    droneData?.battery != null &&
-    droneData.battery <= THRESHOLD.battery.danger &&
-    !isDroneOffline
-  )
-    dangerModalItems.push({
-      id: "battery",
-      type: "battery",
-      label: "배터리 위험",
-      detail: `현재 ${droneData.battery.toFixed(0)}% — 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다`,
-      action: "즉시 RTL 모드로 전환 후 귀환하세요",
-    })
-  if (
-    droneData?.speed != null &&
-    droneData.speed > THRESHOLD.speed.danger &&
-    !isDroneOffline
-  )
-    dangerModalItems.push({
-      id: "speed",
-      type: "speed",
-      label: "과속 감지",
-      detail: `현재 ${droneData.speed.toFixed(1)}m/s — 배송 안전 속도(${THRESHOLD.speed.danger}m/s)를 초과했습니다`,
-      action: "즉시 스로틀을 줄여 속도를 낮추세요",
-    })
+
+  if (!isDroneOffline && droneData) {
+    if (
+      droneData.battery != null &&
+      droneData.battery <= THRESHOLD.battery.danger
+    )
+      dangerModalItems.push({
+        id: "battery",
+        type: "battery",
+        label: "배터리 위험",
+        detail: `현재 ${droneData.battery.toFixed(0)}% — 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다`,
+        action: "즉시 RTL 모드로 전환 후 귀환하세요",
+      })
+
+    if (droneData.speed != null && droneData.speed > THRESHOLD.speed.danger)
+      dangerModalItems.push({
+        id: "speed",
+        type: "speed",
+        label: "과속 감지",
+        detail: `현재 ${droneData.speed.toFixed(1)}m/s — 배송 안전 속도(${THRESHOLD.speed.danger}m/s)를 초과했습니다`,
+        action: "즉시 스로틀을 줄여 속도를 낮추세요",
+      })
+
+    if (
+      droneData.altitude != null &&
+      droneData.altitude > THRESHOLD.altitude.danger
+    )
+      dangerModalItems.push({
+        id: "altitude",
+        type: "altitude",
+        label: "고도 한도 초과",
+        detail: `현재 ${droneData.altitude.toFixed(0)}m — 배송 안전 한도(${THRESHOLD.altitude.danger}m)를 초과했습니다`,
+        action: "즉시 하강하여 안전 고도로 복귀하세요",
+      })
+
+    if (
+      droneData.gpsSatellites != null &&
+      droneData.gpsSatellites < THRESHOLD.gps.danger
+    )
+      dangerModalItems.push({
+        id: "gps",
+        type: "gps",
+        label: "GPS 신호 위험",
+        detail: `현재 ${droneData.gpsSatellites}위성 — 해상 배송 최소 요구(${THRESHOLD.gps.danger}위성) 미달`,
+        action: "즉시 호버링 후 GPS 신호 회복을 대기하거나 수동 착륙하세요",
+      })
+
+    if (
+      (droneData as any).roll != null &&
+      Math.abs((droneData as any).roll) > 20
+    )
+      dangerModalItems.push({
+        id: "roll",
+        type: "attitude",
+        label: "과도한 롤(Roll) 감지",
+        detail: `현재 Roll ${((droneData as any).roll as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
+        action: "즉시 수평을 유지하고 속도를 줄이세요. 강풍 여부를 확인하세요",
+      })
+
+    if (
+      (droneData as any).pitch != null &&
+      Math.abs((droneData as any).pitch) > 20
+    )
+      dangerModalItems.push({
+        id: "pitch",
+        type: "attitude",
+        label: "과도한 피치(Pitch) 감지",
+        detail: `현재 Pitch ${((droneData as any).pitch as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
+        action:
+          "즉시 수평을 유지하고 속도를 줄이세요. 페이로드 균형을 확인하세요",
+      })
+
+    if (droneData.timestamp) {
+      const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
+      if (!isNaN(ageMs) && ageMs > THRESHOLD.latency.danger)
+        dangerModalItems.push({
+          id: "signal",
+          type: "signal",
+          label: "통신 두절",
+          detail: `${Math.floor(ageMs / 1000)}초 동안 데이터가 수신되지 않고 있습니다`,
+          action:
+            "기체의 페일세이프 동작을 확인하고 즉시 육안으로 상태를 파악하세요",
+        })
+    }
+  }
+
+  if (!isDroneOffline && droneData) {
+    // 배터리 위험
+    if (
+      droneData.battery != null &&
+      droneData.battery <= THRESHOLD.battery.danger
+    )
+      dangerModalItems.push({
+        id: "battery",
+        type: "battery",
+        label: "배터리 위험",
+        detail: `현재 ${droneData.battery.toFixed(0)}% — 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다`,
+        action: "즉시 RTL 모드로 전환 후 귀환하세요",
+      })
+
+    // 과속
+    if (droneData.speed != null && droneData.speed > THRESHOLD.speed.danger)
+      dangerModalItems.push({
+        id: "speed",
+        type: "speed",
+        label: "과속 감지",
+        detail: `현재 ${droneData.speed.toFixed(1)}m/s — 배송 안전 속도(${THRESHOLD.speed.danger}m/s)를 초과했습니다`,
+        action: "즉시 스로틀을 줄여 속도를 낮추세요",
+      })
+
+    // 고도 초과
+    if (
+      droneData.altitude != null &&
+      droneData.altitude > THRESHOLD.altitude.danger
+    )
+      dangerModalItems.push({
+        id: "altitude",
+        type: "altitude",
+        label: "고도 한도 초과",
+        detail: `현재 ${droneData.altitude.toFixed(0)}m — 배송 안전 한도(${THRESHOLD.altitude.danger}m)를 초과했습니다`,
+        action: "즉시 하강하여 안전 고도로 복귀하세요",
+      })
+
+    // GPS 위성 부족
+    if (
+      droneData.gpsSatellites != null &&
+      droneData.gpsSatellites < THRESHOLD.gps.danger
+    )
+      dangerModalItems.push({
+        id: "gps",
+        type: "gps",
+        label: "GPS 신호 위험",
+        detail: `현재 ${droneData.gpsSatellites}위성 — 해상 배송 최소 요구(${THRESHOLD.gps.danger}위성) 미달`,
+        action: "즉시 호버링 후 GPS 신호 회복을 대기하거나 수동 착륙하세요",
+      })
+
+    // Roll 과도
+    if (
+      (droneData as any).roll != null &&
+      Math.abs((droneData as any).roll) > 20
+    )
+      dangerModalItems.push({
+        id: "roll",
+        type: "attitude",
+        label: "과도한 롤(Roll) 감지",
+        detail: `현재 Roll ${((droneData as any).roll as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
+        action: "즉시 수평을 유지하고 속도를 줄이세요. 강풍 여부를 확인하세요",
+      })
+
+    // Pitch 과도
+    if (
+      (droneData as any).pitch != null &&
+      Math.abs((droneData as any).pitch) > 20
+    )
+      dangerModalItems.push({
+        id: "pitch",
+        type: "attitude",
+        label: "과도한 피치(Pitch) 감지",
+        detail: `현재 Pitch ${((droneData as any).pitch as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
+        action:
+          "즉시 수평을 유지하고 속도를 줄이세요. 페이로드 균형을 확인하세요",
+      })
+
+    // 통신 두절
+    if (droneData.timestamp) {
+      const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
+      if (!isNaN(ageMs) && ageMs > THRESHOLD.latency.danger)
+        dangerModalItems.push({
+          id: "signal",
+          type: "signal",
+          label: "통신 두절",
+          detail: `${Math.floor(ageMs / 1000)}초 동안 데이터가 수신되지 않고 있습니다`,
+          action:
+            "기체의 페일세이프 동작을 확인하고 즉시 육안으로 상태를 파악하세요",
+        })
+    }
+  }
 
   const modalKey = dangerModalItems.map((a) => a.id).join(",")
   if (modalKey !== prevModalKeyRef.current) {
@@ -2180,9 +2343,15 @@ export function UavDashboard() {
               </div>
               <div className="space-y-3 px-6 py-5">
                 {dangerModalItems.map((item) => {
-                  const iconMap = {
+                  const iconMap: Record<DangerModalType, React.ReactNode> = {
                     battery: <BatteryLow className="h-5 w-5 text-red-400" />,
                     speed: <Gauge className="h-5 w-5 text-red-400" />,
+                    altitude: <Navigation className="h-5 w-5 text-red-400" />,
+                    gps: <MapPin className="h-5 w-5 text-red-400" />,
+                    attitude: (
+                      <AlertTriangle className="h-5 w-5 text-red-400" />
+                    ),
+                    signal: <Radio className="h-5 w-5 text-red-400" />,
                   }
                   return (
                     <div
