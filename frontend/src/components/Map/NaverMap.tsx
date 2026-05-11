@@ -273,7 +273,7 @@ function PopoverPanel({
       {open && (
         <div
           className={`mb-2 overflow-hidden rounded-2xl border ${borderColor} bg-slate-900/95 shadow-2xl shadow-black/50 backdrop-blur-md`}
-          style={{ minWidth: 230 }}
+          style={{ minWidth: 260 }}
         >
           {/* 드래그 핸들 */}
           <div
@@ -504,18 +504,20 @@ function BatteryPredictionPanel({
     >
       {open && (
         <div
-          className={`mb-2 w-[230px] overflow-hidden rounded-2xl border ${borderColor} bg-slate-900/95 shadow-2xl shadow-black/50 backdrop-blur-md`}
+          className={`mb-2 w-[280px] overflow-hidden rounded-2xl border ${borderColor} bg-slate-900/95 shadow-2xl shadow-black/50 backdrop-blur-md`}
         >
           {/* 드래그 핸들 */}
           <div
-            className="flex cursor-grab items-center gap-2 border-b border-white/10 bg-white/5 px-3 py-2 active:cursor-grabbing"
+            className="flex cursor-grab items-center gap-2 border-b border-white/10 bg-white/5 px-4 py-2.5 active:cursor-grabbing"
             onMouseDown={onHandleMouseDown}
           >
             <GripHorizontal className="h-3.5 w-3.5 shrink-0 text-white/25" />
-            <span className="flex-1 text-[10px] font-bold uppercase tracking-widest text-white/35">
+            <span className="flex-1 text-[11px] font-bold uppercase tracking-widest text-white/40">
               배터리 예측
             </span>
-            <span className={`text-[9px] ${confidenceLabel.color}`}>
+            <span
+              className={`text-[10px] font-medium ${confidenceLabel.color}`}
+            >
               {confidenceLabel.text}
             </span>
             <button
@@ -524,65 +526,65 @@ function BatteryPredictionPanel({
                 e.stopPropagation()
                 setOpen(false)
               }}
-              className="rounded-md p-0.5 text-white/25 transition hover:bg-white/10 hover:text-white/60"
+              className="ml-1 rounded-md p-0.5 text-white/25 transition hover:bg-white/10 hover:text-white/60"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
 
           {/* 배터리 바 + 수치 */}
-          <div className="px-3 pb-1 pt-3">
-            <div className="mb-1 flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Battery
-                  className={`h-3.5 w-3.5 ${getBatteryColor(battery)}`}
-                />
-                <span className="text-[10px] text-white/40">현재 잔량</span>
+          <div className="px-4 pb-2 pt-3.5">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Battery className={`h-4 w-4 ${getBatteryColor(battery)}`} />
+                <span className="text-xs text-white/50">현재 잔량</span>
               </div>
               <span
-                className={`font-mono text-sm font-bold tabular-nums ${getBatteryColor(battery)}`}
+                className={`font-mono text-lg font-bold tabular-nums ${getBatteryColor(battery)}`}
               >
                 {battery.toFixed(0)}%
               </span>
             </div>
             {/* 배터리 시각 바 */}
-            <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/10">
               <div
                 className={`h-full rounded-full transition-all duration-700 ${barColor}`}
                 style={{ width: `${Math.min(battery, 100)}%` }}
               />
               {/* RTL 예비선 20% */}
               <div
-                className="absolute top-0 h-full w-px bg-red-400/80"
+                className="absolute top-0 h-full w-0.5 bg-red-400/90"
                 style={{ left: "20%" }}
               />
             </div>
-            <div className="mt-0.5 flex justify-between">
-              <span className="text-[9px] text-red-400/60">RTL 20%</span>
-              <span className="text-[9px] text-white/20">100%</span>
+            <div className="mt-1 flex justify-between">
+              <span className="text-[10px] font-medium text-red-400/70">
+                RTL 예비 20%
+              </span>
+              <span className="text-[10px] text-white/25">100%</span>
             </div>
           </div>
 
           {/* 소모율 */}
           {drainRatePerMin !== null && (
-            <div className="border-t border-white/5 px-3 py-2">
+            <div className="border-t border-white/5 px-4 py-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <TrendingDown className="h-3 w-3 text-white/30" />
-                  <span className="text-[10px] text-white/40">소모율</span>
+                <div className="flex items-center gap-2">
+                  <TrendingDown className="h-3.5 w-3.5 text-white/35" />
+                  <span className="text-xs text-white/45">소모율</span>
                 </div>
-                <span className="font-mono text-xs font-semibold tabular-nums text-white/70">
-                  {drainRatePerMin.toFixed(2)}%/분
+                <span className="font-mono text-sm font-semibold tabular-nums text-white/80">
+                  {drainRatePerMin.toFixed(2)}% / 분
                 </span>
               </div>
             </div>
           )}
 
-          {/* 예측 시간 카드들 */}
-          <div className="grid grid-cols-2 gap-2 border-t border-white/5 px-3 py-2.5">
-            {/* 총 비행 가능 시간 */}
+          {/* 예측 시간 카드 2개 */}
+          <div className="grid grid-cols-2 gap-2.5 border-t border-white/5 px-4 py-3">
+            {/* 비행 가능 시간 */}
             <div
-              className={`rounded-xl p-2.5 ${
+              className={`rounded-xl px-3 py-2.5 ${
                 remainingMinutes !== null && remainingMinutes <= 0
                   ? "bg-red-500/15"
                   : remainingMinutes !== null && remainingMinutes < 5
@@ -590,14 +592,16 @@ function BatteryPredictionPanel({
                     : "bg-white/5"
               }`}
             >
-              <div className="mb-1 flex items-center gap-1">
-                <Timer className="h-3 w-3 text-white/30" />
-                <span className="text-[9px] text-white/30">비행 가능</span>
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <Timer className="h-3.5 w-3.5 text-white/35" />
+                <span className="text-[10px] font-semibold text-white/40">
+                  비행 가능
+                </span>
               </div>
               <p
-                className={`font-mono text-xs font-bold tabular-nums leading-tight ${
+                className={`font-mono text-sm font-bold tabular-nums ${
                   remainingMinutes === null
-                    ? "text-white/20"
+                    ? "text-white/25"
                     : remainingMinutes <= 0
                       ? "text-red-400"
                       : remainingMinutes < 5
@@ -609,12 +613,12 @@ function BatteryPredictionPanel({
                   ? "계산 중"
                   : fmtMin(remainingMinutes)}
               </p>
-              <p className="mt-0.5 text-[9px] text-white/20">RTL 20% 제외</p>
+              <p className="mt-1 text-[9px] text-white/25">RTL 20% 제외</p>
             </div>
 
-            {/* RTL 까지 남은 시간 */}
+            {/* RTL 복귀 권장 */}
             <div
-              className={`rounded-xl p-2.5 ${
+              className={`rounded-xl px-3 py-2.5 ${
                 rtlUrgency === "danger"
                   ? "bg-red-500/20"
                   : rtlUrgency === "caution"
@@ -622,18 +626,20 @@ function BatteryPredictionPanel({
                     : "bg-white/5"
               }`}
             >
-              <div className="mb-1 flex items-center gap-1">
+              <div className="mb-1.5 flex items-center gap-1.5">
                 <PlaneLanding
-                  className={`h-3 w-3 ${
-                    rtlUrgency === "danger" ? "text-red-400" : "text-white/30"
+                  className={`h-3.5 w-3.5 ${
+                    rtlUrgency === "danger" ? "text-red-400" : "text-white/35"
                   }`}
                 />
-                <span className="text-[9px] text-white/30">RTL 복귀</span>
+                <span className="text-[10px] font-semibold text-white/40">
+                  RTL 복귀
+                </span>
               </div>
               <p
-                className={`font-mono text-xs font-bold tabular-nums leading-tight ${
+                className={`font-mono text-sm font-bold tabular-nums ${
                   rtlSafeMinutes === null
-                    ? "text-white/20"
+                    ? "text-white/25"
                     : rtlUrgency === "danger"
                       ? "text-red-400"
                       : rtlUrgency === "caution"
@@ -643,45 +649,45 @@ function BatteryPredictionPanel({
               >
                 {rtlSafeMinutes === null ? "계산 중" : fmtMin(rtlSafeMinutes)}
               </p>
-              <p className="mt-0.5 text-[9px] text-white/20">귀환 권장 시점</p>
+              <p className="mt-1 text-[9px] text-white/25">귀환 권장 시점</p>
             </div>
           </div>
 
-          {/* 위험/경고 배너 */}
+          {/* 경고 배너 */}
           {battery <= 20 && (
-            <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/15 px-2.5 py-2">
-              <AlertOctagon className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-400" />
-              <span className="text-[10px] font-bold text-red-300">
+            <div className="mx-4 mb-3 flex items-center gap-2.5 rounded-xl border border-red-500/30 bg-red-500/15 px-3 py-2.5">
+              <AlertOctagon className="h-4 w-4 shrink-0 animate-pulse text-red-400" />
+              <span className="text-xs font-bold text-red-300">
                 즉시 RTL — 배터리 위험
               </span>
             </div>
           )}
           {battery > 20 && battery <= 35 && (
-            <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/15 px-2.5 py-2">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-              <span className="text-[10px] font-semibold text-amber-300">
+            <div className="mx-4 mb-3 flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-2.5">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+              <span className="text-xs font-semibold text-amber-300">
                 귀환 준비 — 복귀 경로 확인
               </span>
             </div>
           )}
           {rtlUrgency === "caution" && battery > 35 && (
-            <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-2.5 py-2">
-              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-              <span className="text-[10px] font-semibold text-amber-300">
+            <div className="mx-4 mb-3 flex items-center gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2.5">
+              <Clock className="h-4 w-4 shrink-0 text-amber-400" />
+              <span className="text-xs font-semibold text-amber-300">
                 5분 내 귀환 시작 권장
               </span>
             </div>
           )}
 
-          {/* 샘플 수 / 데이터 품질 */}
-          <div className="border-t border-white/5 px-3 py-2">
+          {/* 신뢰도 바 */}
+          <div className="border-t border-white/5 px-4 py-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-[9px] text-white/20">데이터 샘플</span>
+              <span className="text-[10px] text-white/25">데이터 신뢰도</span>
               <div className="flex items-center gap-1">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div
                     key={i}
-                    className={`h-1 w-3 rounded-full transition-all ${
+                    className={`h-1.5 w-4 rounded-full transition-all ${
                       i < Math.ceil((sampleCount / 24) * 5)
                         ? confidence === "high"
                           ? "bg-emerald-500"
@@ -692,8 +698,8 @@ function BatteryPredictionPanel({
                     }`}
                   />
                 ))}
-                <span className="ml-1 text-[9px] text-white/20">
-                  {sampleCount}
+                <span className="ml-1.5 text-[10px] text-white/25">
+                  {sampleCount}개
                 </span>
               </div>
             </div>
@@ -706,19 +712,19 @@ function BatteryPredictionPanel({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={`flex items-center gap-2 rounded-full border ${borderColor} bg-slate-900/90 px-3 py-1.5 text-xs font-semibold text-white/80 shadow-lg shadow-black/40 backdrop-blur-md transition-all hover:scale-[1.03] hover:bg-slate-800/90 active:scale-[0.97]`}
+          className={`flex items-center gap-2 rounded-full border ${borderColor} bg-slate-900/90 px-3.5 py-2 text-xs font-semibold text-white/80 shadow-lg shadow-black/40 backdrop-blur-md transition-all hover:scale-[1.03] hover:bg-slate-800/90 active:scale-[0.97]`}
         >
           <Battery className={`h-4 w-4 ${getBatteryColor(battery)}`} />
           <span>배터리 예측</span>
           <span
-            className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${badgeBg}`}
+            className={`rounded-full px-2 py-0.5 text-xs font-bold ${badgeBg}`}
           >
             {battery.toFixed(0)}%
           </span>
           {remainingMinutes !== null && (
-            <span className="text-[10px] text-white/40">
+            <span className="text-[11px] text-white/45">
               {remainingMinutes <= 0
-                ? "⚠"
+                ? "⚠ 즉시RTL"
                 : `~${Math.floor(remainingMinutes)}분`}
             </span>
           )}
@@ -1452,13 +1458,13 @@ function MissionInfoCard({
   const distKm = (plan.totalDistanceM / 1000).toFixed(2)
 
   return (
-    <div className="w-[200px] overflow-hidden rounded-2xl border border-blue-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
+    <div className="w-full overflow-hidden rounded-2xl border border-blue-500/40 bg-slate-900/90 shadow-2xl backdrop-blur-md">
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
-        className="flex w-full items-center gap-2 border-b border-white/10 px-3 py-2 text-left transition hover:bg-white/5"
+        className="flex w-full items-center gap-2 border-b border-white/10 px-4 py-2.5 text-left transition hover:bg-white/5"
       >
-        <Route className="h-3.5 w-3.5 text-blue-400" />
+        <Route className="h-4 w-4 shrink-0 text-blue-400" />
         <span className="flex-1 text-xs font-bold text-blue-300">
           미션 플랜
         </span>
@@ -1471,34 +1477,39 @@ function MissionInfoCard({
             e.stopPropagation()
             onClear()
           }}
-          className="ml-1 rounded p-0.5 text-white/30 transition hover:bg-red-500/20 hover:text-red-400"
+          className="ml-2 rounded-md p-1 text-white/30 transition hover:bg-red-500/20 hover:text-red-400"
           title="미션 초기화"
         >
-          <Trash2 className="h-3 w-3" />
+          <Trash2 className="h-3.5 w-3.5" />
         </button>
       </button>
 
       {!collapsed && (
         <>
-          <div className="grid grid-cols-3 gap-1 border-b border-white/5 px-3 py-2 text-center">
-            <div>
-              <p className="text-sm font-bold text-blue-300">
+          {/* 요약 통계 — 3칸 균등 분할, 구분선 포함 */}
+          <div className="grid grid-cols-3 border-b border-white/5">
+            <div className="flex flex-col items-center px-2 py-3">
+              <p className="text-base font-bold tabular-nums text-blue-300">
                 {plan.waypoints.length}
               </p>
-              <p className="text-[9px] text-white/30">웨이포인트</p>
+              <p className="mt-0.5 text-[10px] text-white/30">웨이포인트</p>
             </div>
-            <div>
-              <p className="text-sm font-bold text-sky-300">{distKm}</p>
-              <p className="text-[9px] text-white/30">거리(km)</p>
+            <div className="flex flex-col items-center border-x border-white/5 px-2 py-3">
+              <p className="text-base font-bold tabular-nums text-sky-300">
+                {distKm}
+              </p>
+              <p className="mt-0.5 text-[10px] text-white/30">거리(km)</p>
             </div>
-            <div>
-              <p className="text-sm font-bold text-emerald-300">
+            <div className="flex flex-col items-center px-2 py-3">
+              <p className="text-base font-bold tabular-nums text-emerald-300">
                 {currentWpIndex >= 0 ? `${currentWpIndex + 1}` : "—"}
               </p>
-              <p className="text-[9px] text-white/30">현재 WP</p>
+              <p className="mt-0.5 text-[10px] text-white/30">현재 WP</p>
             </div>
           </div>
-          <div className="max-h-36 overflow-y-auto">
+
+          {/* 웨이포인트 목록 */}
+          <div className="max-h-40 overflow-y-auto">
             {plan.waypoints.map((wp, i) => {
               const isActive = i === currentWpIndex
               const isDone = currentWpIndex >= 0 && i < currentWpIndex
@@ -1507,10 +1518,16 @@ function MissionInfoCard({
               return (
                 <div
                   key={wp.index}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-[10px] ${isActive ? "bg-blue-500/20 text-blue-300" : isDone ? "text-white/25" : "text-white/50"}`}
+                  className={`flex items-center gap-2.5 px-4 py-2 text-xs ${
+                    isActive
+                      ? "bg-blue-500/20 text-blue-300"
+                      : isDone
+                        ? "text-white/25"
+                        : "text-white/55"
+                  }`}
                 >
                   <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                       isActive
                         ? "bg-blue-500 text-white"
                         : isDone
@@ -1524,8 +1541,10 @@ function MissionInfoCard({
                   >
                     {isStart ? "↑" : isLand ? "↓" : i + 1}
                   </span>
-                  <span className="flex-1">{commandLabel(wp.command)}</span>
-                  <span className="tabular-nums text-white/30">
+                  <span className="flex-1 font-medium">
+                    {commandLabel(wp.command)}
+                  </span>
+                  <span className="text-[11px] tabular-nums text-white/35">
                     {wp.alt.toFixed(0)}m
                   </span>
                   {isActive && (
