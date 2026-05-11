@@ -1992,122 +1992,182 @@ export function UavDashboard() {
   const [notifyEnabled, setNotifyEnabled] = useState(true)
   const prevAlertLevelRef = useRef<"safe" | "caution" | "danger">("safe")
 
-  // ★ 수정 7: 위험 모달 — "확인한 ID 셋" 방식으로 변경
-  // 기존: modalKey 비교 → 항목이 추가/제거될 때마다 dismissed 초기화 → 팝업 재등장
-  // 변경: 새로 추가된 ID만 미확인으로 처리 → 기존 확인 항목은 유지
-  const [acknowledgedIds, setAcknowledgedIds] = useState<Set<string>>(new Set())
-  // 드론 기체 변경 시 확인 기록 초기화
+  // ── 위험 모달: "발생 이력" 기반으로 완전 재구조화 ──────────────
+  // 핵심 원칙:
+  //   - 위험 항목이 발생하는 순간 modalQueue에 추가 (한 번만)
+  //   - 항목이 실시간으로 해소돼도 modalQueue에서 제거하지 않음
+  //   - 사용자가 "확인" 버튼을 눌러야만 해당 항목들이 사라짐
+  //   - 확인 후 동일 항목이 재발하면 다시 modalQueue에 추가 → 팝업 재등장
+  const [modalQueue, setModalQueue] = useState<DangerModalItem[]>([])
+  const [modalVisible, setModalVisible] = useState(false)
+  const prevTriggerRef = useRef<Set<string>>(new Set())
+
+  // 기체 변경 또는 연결 끊김 시 모달 상태 초기화
   useEffect(() => {
-    setAcknowledgedIds(new Set())
+    setModalQueue([])
+    setModalVisible(false)
+    prevTriggerRef.current = new Set()
   }, [selectedDroneIdx])
-  // 연결 끊김 시 확인 기록 초기화
+
   useEffect(() => {
-    if (!droneConnected) setAcknowledgedIds(new Set())
+    if (!droneConnected) {
+      setModalQueue([])
+      setModalVisible(false)
+      prevTriggerRef.current = new Set()
+    }
   }, [droneConnected])
 
-  const dangerModalItems: DangerModalItem[] = []
-
+  // 매 렌더마다 "현재 활성 위험 항목" 계산 (실시간 감지용)
+  const currentDangerIds = new Set<string>()
   if (!isDroneOffline && droneData) {
     if (
       droneData.battery != null &&
       droneData.battery <= THRESHOLD.battery.danger
     )
-      dangerModalItems.push({
-        id: "battery",
-        type: "battery",
-        label: "배터리 위험",
-        detail: `현재 ${droneData.battery.toFixed(0)}% — 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다`,
-        action: "즉시 RTL 모드로 전환 후 귀환하세요",
-      })
-
+      currentDangerIds.add("battery")
     if (droneData.speed != null && droneData.speed > THRESHOLD.speed.danger)
-      dangerModalItems.push({
-        id: "speed",
-        type: "speed",
-        label: "과속 감지",
-        detail: `현재 ${droneData.speed.toFixed(1)}m/s — 배송 안전 속도(${THRESHOLD.speed.danger}m/s)를 초과했습니다`,
-        action: "즉시 스로틀을 줄여 속도를 낮추세요",
-      })
-
+      currentDangerIds.add("speed")
     if (
       droneData.altitude != null &&
       droneData.altitude > THRESHOLD.altitude.danger
     )
-      dangerModalItems.push({
-        id: "altitude",
-        type: "altitude",
-        label: "고도 한도 초과",
-        detail: `현재 ${droneData.altitude.toFixed(0)}m — 배송 안전 한도(${THRESHOLD.altitude.danger}m)를 초과했습니다`,
-        action: "즉시 하강하여 안전 고도로 복귀하세요",
-      })
-
+      currentDangerIds.add("altitude")
     if (
       droneData.gpsSatellites != null &&
       droneData.gpsSatellites < THRESHOLD.gps.danger
     )
-      dangerModalItems.push({
-        id: "gps",
-        type: "gps",
-        label: "GPS 신호 위험",
-        detail: `현재 ${droneData.gpsSatellites}위성 — 해상 배송 최소 요구(${THRESHOLD.gps.danger}위성) 미달`,
-        action: "즉시 호버링 후 GPS 신호 회복을 대기하거나 수동 착륙하세요",
-      })
-
+      currentDangerIds.add("gps")
     if (
       (droneData as any).roll != null &&
       Math.abs((droneData as any).roll) > 20
     )
-      dangerModalItems.push({
-        id: "roll",
-        type: "attitude",
-        label: "과도한 롤(Roll) 감지",
-        detail: `현재 Roll ${((droneData as any).roll as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
-        action: "즉시 수평을 유지하고 속도를 줄이세요. 강풍 여부를 확인하세요",
-      })
-
+      currentDangerIds.add("roll")
     if (
       (droneData as any).pitch != null &&
       Math.abs((droneData as any).pitch) > 20
     )
-      dangerModalItems.push({
-        id: "pitch",
-        type: "attitude",
-        label: "과도한 피치(Pitch) 감지",
-        detail: `현재 Pitch ${((droneData as any).pitch as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
-        action:
-          "즉시 수평을 유지하고 속도를 줄이세요. 페이로드 균형을 확인하세요",
-      })
-
+      currentDangerIds.add("pitch")
     if (droneData.timestamp) {
       const ageMs = Date.now() - new Date(droneData.timestamp).getTime()
       if (!isNaN(ageMs) && ageMs > THRESHOLD.latency.danger)
-        dangerModalItems.push({
-          id: "signal",
-          type: "signal",
-          label: "통신 두절",
-          detail: `${Math.floor(ageMs / 1000)}초 동안 데이터가 수신되지 않고 있습니다`,
-          action:
-            "기체의 페일세이프 동작을 확인하고 즉시 육안으로 상태를 파악하세요",
-        })
+        currentDangerIds.add("signal")
     }
   }
 
-  // ★ 핵심 수정: 미확인 항목 = 현재 위험 항목 중 acknowledgedIds에 없는 것
-  // → 항목이 사라져도 acknowledgedIds는 유지 → 재출현 시에만 다시 팝업
-  const unacknowledgedItems = dangerModalItems.filter(
-    (item) => !acknowledgedIds.has(item.id),
-  )
-  const showDangerModal =
-    droneConnected && !isDroneOffline && unacknowledgedItems.length > 0
+  // 새로 발생한 위험 항목을 modalQueue에 추가
+  useEffect(() => {
+    if (!droneConnected || isDroneOffline || !droneData) return
 
-  // 확인 버튼: 현재 표시된 모든 미확인 항목 ID를 acknowledgedIds에 추가
-  const handleAcknowledgeAll = () => {
-    setAcknowledgedIds((prev) => {
-      const next = new Set(prev)
-      unacknowledgedItems.forEach((item) => next.add(item.id))
-      return next
+    const newItems: DangerModalItem[] = []
+
+    const makeItem = (id: string): DangerModalItem | null => {
+      switch (id) {
+        case "battery":
+          return {
+            id: "battery",
+            type: "battery",
+            label: "배터리 위험",
+            detail: `현재 ${droneData.battery!.toFixed(0)}% — 해상 복귀 거리 고려 시 즉시 RTL이 필요합니다`,
+            action: "즉시 RTL 모드로 전환 후 귀환하세요",
+          }
+        case "speed":
+          return {
+            id: "speed",
+            type: "speed",
+            label: "과속 감지",
+            detail: `현재 ${droneData.speed!.toFixed(1)}m/s — 배송 안전 속도(${THRESHOLD.speed.danger}m/s)를 초과했습니다`,
+            action: "즉시 스로틀을 줄여 속도를 낮추세요",
+          }
+        case "altitude":
+          return {
+            id: "altitude",
+            type: "altitude",
+            label: "고도 한도 초과",
+            detail: `현재 ${droneData.altitude!.toFixed(0)}m — 배송 안전 한도(${THRESHOLD.altitude.danger}m)를 초과했습니다`,
+            action: "즉시 하강하여 안전 고도로 복귀하세요",
+          }
+        case "gps":
+          return {
+            id: "gps",
+            type: "gps",
+            label: "GPS 신호 위험",
+            detail: `현재 ${droneData.gpsSatellites}위성 — 해상 배송 최소 요구(${THRESHOLD.gps.danger}위성) 미달`,
+            action: "즉시 호버링 후 GPS 신호 회복을 대기하거나 수동 착륙하세요",
+          }
+        case "roll":
+          return {
+            id: "roll",
+            type: "attitude",
+            label: "과도한 롤(Roll) 감지",
+            detail: `현재 Roll ${((droneData as any).roll as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
+            action:
+              "즉시 수평을 유지하고 속도를 줄이세요. 강풍 여부를 확인하세요",
+          }
+        case "pitch":
+          return {
+            id: "pitch",
+            type: "attitude",
+            label: "과도한 피치(Pitch) 감지",
+            detail: `현재 Pitch ${((droneData as any).pitch as number).toFixed(1)}° — 정상 범위(±20°)를 초과했습니다`,
+            action:
+              "즉시 수평을 유지하고 속도를 줄이세요. 페이로드 균형을 확인하세요",
+          }
+        case "signal":
+          return {
+            id: "signal",
+            type: "signal",
+            label: "통신 두절",
+            detail: `${Math.floor((Date.now() - new Date(droneData.timestamp!).getTime()) / 1000)}초 동안 데이터가 수신되지 않고 있습니다`,
+            action:
+              "기체의 페일세이프 동작을 확인하고 즉시 육안으로 상태를 파악하세요",
+          }
+        default:
+          return null
+      }
+    }
+
+    // 이전에 없었는데 새로 나타난 ID만 추가
+    currentDangerIds.forEach((id) => {
+      if (!prevTriggerRef.current.has(id)) {
+        const item = makeItem(id)
+        if (item) newItems.push(item)
+      }
     })
+
+    if (newItems.length > 0) {
+      setModalQueue((prev) => {
+        // 이미 큐에 있는 ID는 중복 추가하지 않음
+        const existingIds = new Set(prev.map((i) => i.id))
+        const toAdd = newItems.filter((i) => !existingIds.has(i.id))
+        return toAdd.length > 0 ? [...prev, ...toAdd] : prev
+      })
+      setModalVisible(true)
+    }
+
+    prevTriggerRef.current = new Set(currentDangerIds)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    droneConnected,
+    isDroneOffline,
+    droneData?.battery,
+    droneData?.speed,
+    droneData?.altitude,
+    droneData?.gpsSatellites,
+    droneData?.timestamp,
+    (droneData as any)?.roll,
+    (droneData as any)?.pitch,
+  ])
+
+  const showDangerModal = modalVisible && modalQueue.length > 0
+
+  // 확인 버튼: 큐를 비우고 모달 닫음
+  const handleAcknowledgeAll = () => {
+    setModalQueue([])
+    setModalVisible(false)
   }
+
+  // 하위 호환용 (기존 코드에서 dangerModalItems 참조하던 곳 대응)
+  const dangerModalItems = modalQueue
 
   // 웹 알림: 위험 레벨 상승 시
   useEffect(() => {
@@ -2261,11 +2321,11 @@ export function UavDashboard() {
                   </p>
                 </div>
                 <span className="ml-auto rounded-full bg-red-500/20 px-3 py-1 text-sm font-bold text-red-300">
-                  {unacknowledgedItems.length}건
+                  {dangerModalItems.length}건
                 </span>
               </div>
               <div className="space-y-3 px-6 py-5">
-                {unacknowledgedItems.map((item) => {
+                {dangerModalItems.map((item) => {
                   const iconMap: Record<DangerModalType, React.ReactNode> = {
                     battery: <BatteryLow className="h-5 w-5 text-red-400" />,
                     speed: <Gauge className="h-5 w-5 text-red-400" />,
@@ -2314,7 +2374,7 @@ export function UavDashboard() {
                 </button>
                 {/* ★ 수정: 동작 설명 변경 — 확인한 항목은 재출현 시에만 다시 표시 */}
                 <p className="mt-2 text-center text-[10px] text-red-600/60">
-                  확인 후 해당 항목이 해소됐다가 다시 발생하면 재표시됩니다
+                  확인 후 동일 위험이 재발하면 다시 알림이 표시됩니다
                 </p>
               </div>
             </div>
