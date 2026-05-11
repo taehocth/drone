@@ -2186,6 +2186,10 @@ export function UavDashboard() {
     prevAlertLevelRef.current = alertLevel
   }, [alertLevel]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // QGC 이벤트 중복 억제용 ref
+  // key: "type:message", value: 마지막 기록 timestamp(ms)
+  const qgcDedupeRef = useRef<Map<string, number>>(new Map())
+
   useEffect(() => {
     const onQgcEvents = (e: Event) => {
       const detail = (e as CustomEvent).detail as {
@@ -2200,6 +2204,7 @@ export function UavDashboard() {
       if (!selectedLteIp) return
       if (detail.lteIp && detail.lteIp !== selectedLteIp) return
       if (!detail.events?.length) return
+
       const levelMap: Record<string, FlightLogEntry["level"]> = {
         danger: "danger",
         caution: "warn",
@@ -2220,14 +2225,50 @@ export function UavDashboard() {
         statustext: "system",
         connected: "connection",
       }
-      for (const ev of detail.events)
+
+      // ── 타입별 필터링 규칙 ─────────────────────────────────
+      // DROP_TYPES: 항상 무시 (반복성 높고 정보 가치 낮음)
+      const DROP_TYPES = new Set([
+        "mission_current", // "현재 목표 → WP n" — 웨이포인트 진행마다 반복
+        "gps_status", // GPS 위성 수 변동 — 매초 수신
+      ])
+      // info 레벨 동일 메시지: 60초 내 중복 차단
+      const INFO_DEBOUNCE_MS = 60_000
+      // warn 이상: 30초 내 동일 메시지만 중복 차단
+      const WARN_DEBOUNCE_MS = 30_000
+
+      const now = Date.now()
+      // 5분 이상 된 항목 정리 (메모리 누수 방지)
+      if (qgcDedupeRef.current.size > 200) {
+        for (const [k, ts] of qgcDedupeRef.current) {
+          if (now - ts > 5 * 60_000) qgcDedupeRef.current.delete(k)
+        }
+      }
+
+      for (const ev of detail.events) {
+        // 1) 반복성 타입 완전 드롭
+        if (DROP_TYPES.has(ev.type)) continue
+
+        // 2) debug 레벨 완전 무시
+        if (ev.level === "debug") continue
+
+        // 3) 동일 메시지 중복 억제
+        const mappedLevel = levelMap[ev.level] ?? "info"
+        const dedupeKey = `${ev.type}:${ev.message}`
+        const lastTs = qgcDedupeRef.current.get(dedupeKey)
+        const debounceMs =
+          mappedLevel === "info" ? INFO_DEBOUNCE_MS : WARN_DEBOUNCE_MS
+        if (lastTs !== undefined && now - lastTs < debounceMs) continue
+        qgcDedupeRef.current.set(dedupeKey, now)
+
         addLog(
-          levelMap[ev.level] ?? "info",
+          mappedLevel,
           `[QGC] ${ev.message}`,
           undefined,
           categoryMap[ev.type] ?? "system",
           `QGC/MAVLink 수신 이벤트 (${ev.time})`,
         )
+      }
     }
     window.addEventListener("qgcFlightEvents", onQgcEvents)
     return () => window.removeEventListener("qgcFlightEvents", onQgcEvents)
