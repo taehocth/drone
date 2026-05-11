@@ -26,6 +26,10 @@ import {
   ChevronDown,
   ChevronUp,
   GripHorizontal,
+  Zap,
+  Timer,
+  TrendingUp,
+  AlertOctagon,
 } from "lucide-react"
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "/api/v1"
@@ -190,7 +194,6 @@ const getAltitudeColor = (v: number) =>
 const getSpeedColor = (v: number) =>
   v > 35 ? "text-red-400" : v > 25 ? "text-amber-400" : "text-emerald-400"
 
-// ── 아코디언 토글 버튼 공통 컴포넌트 ──────────────────────────
 // ── 드래그 훅 ──────────────────────────────────────────────
 function useDraggable(initialPos: { x: number; y: number }) {
   const [pos, setPos] = useState(initialPos)
@@ -317,6 +320,413 @@ function PopoverPanel({
           {open ? "▲" : "▼"}
         </span>
       </button>
+    </div>
+  )
+}
+
+// ── 배터리 소모율 추적 훅 ─────────────────────────────────
+interface BatteryPrediction {
+  drainRatePerMin: number | null // %/min
+  remainingMinutes: number | null // 현재 배터리로 비행 가능 시간(분)
+  rtlSafeMinutes: number | null // RTL 예비(20%) 까지 남은 시간
+  rtlReservePercent: number // RTL 예비 %
+  confidence: "low" | "medium" | "high"
+  sampleCount: number
+}
+
+function useBatteryPrediction(
+  battery: number | undefined,
+  speed: number | undefined,
+  connected: boolean,
+): BatteryPrediction {
+  // 샘플: { battery, ts }
+  const samplesRef = useRef<Array<{ battery: number; ts: number }>>([])
+  const [prediction, setPrediction] = useState<BatteryPrediction>({
+    drainRatePerMin: null,
+    remainingMinutes: null,
+    rtlSafeMinutes: null,
+    rtlReservePercent: 20,
+    confidence: "low",
+    sampleCount: 0,
+  })
+
+  useEffect(() => {
+    if (!connected || battery == null) {
+      samplesRef.current = []
+      setPrediction({
+        drainRatePerMin: null,
+        remainingMinutes: null,
+        rtlSafeMinutes: null,
+        rtlReservePercent: 20,
+        confidence: "low",
+        sampleCount: 0,
+      })
+      return
+    }
+
+    const now = Date.now()
+    const samples = samplesRef.current
+
+    // 샘플 추가 (5초마다 유효한 변화만)
+    const last = samples[samples.length - 1]
+    if (!last || now - last.ts >= 5000) {
+      samples.push({ battery, ts: now })
+      // 최대 60개 샘플 유지 (약 5분)
+      if (samples.length > 60) samples.shift()
+    }
+
+    // 최소 3개 샘플 필요
+    if (samples.length < 3) {
+      setPrediction((p) => ({ ...p, sampleCount: samples.length }))
+      return
+    }
+
+    // 선형 회귀로 소모율 계산
+    const oldest = samples[0]
+    const newest = samples[samples.length - 1]
+    const dtMin = (newest.ts - oldest.ts) / 60000
+    const dbPct = oldest.battery - newest.battery
+
+    if (dtMin < 0.1 || dbPct <= 0) {
+      setPrediction((p) => ({ ...p, sampleCount: samples.length }))
+      return
+    }
+
+    const drainRatePerMin = dbPct / dtMin
+    const rtlReservePercent = 20
+    const usableBattery = battery - rtlReservePercent
+
+    const remainingMinutes =
+      usableBattery > 0 ? usableBattery / drainRatePerMin : 0
+    const rtlSafeMinutes =
+      battery > rtlReservePercent
+        ? (battery - rtlReservePercent) / drainRatePerMin
+        : 0
+
+    const confidence: "low" | "medium" | "high" =
+      samples.length >= 24 ? "high" : samples.length >= 10 ? "medium" : "low"
+
+    setPrediction({
+      drainRatePerMin,
+      remainingMinutes,
+      rtlSafeMinutes,
+      rtlReservePercent,
+      confidence,
+      sampleCount: samples.length,
+    })
+  }, [battery, connected])
+
+  return prediction
+}
+
+// ── 배터리 예측 패널 컴포넌트 ─────────────────────────────
+function BatteryPredictionPanel({
+  battery,
+  speed,
+  altitude,
+  prediction,
+  connected,
+}: {
+  battery?: number
+  speed?: number
+  altitude?: number
+  prediction: BatteryPrediction
+  connected: boolean
+}) {
+  const { pos, onHandleMouseDown } = useDraggable({ x: -999, y: 64 }) // x는 right CSS로 override
+  const [open, setOpen] = useState(true)
+
+  if (!connected || battery == null) return null
+
+  const {
+    drainRatePerMin,
+    remainingMinutes,
+    rtlSafeMinutes,
+    confidence,
+    sampleCount,
+  } = prediction
+
+  // 신호등 색상
+  const batteryLevel =
+    battery <= 20 ? "danger" : battery <= 35 ? "caution" : "safe"
+
+  const borderColor =
+    batteryLevel === "danger"
+      ? "border-red-500/70"
+      : batteryLevel === "caution"
+        ? "border-amber-500/70"
+        : "border-emerald-500/40"
+
+  const badgeBg =
+    batteryLevel === "danger"
+      ? "bg-red-500/20 text-red-300"
+      : batteryLevel === "caution"
+        ? "bg-amber-500/20 text-amber-300"
+        : "bg-emerald-500/20 text-emerald-300"
+
+  const barColor =
+    batteryLevel === "danger"
+      ? "bg-red-500"
+      : batteryLevel === "caution"
+        ? "bg-amber-500"
+        : "bg-emerald-500"
+
+  // 남은 시간 포맷
+  const fmtMin = (min: number | null) => {
+    if (min === null) return "—"
+    if (min <= 0) return "0분"
+    const m = Math.floor(min)
+    const s = Math.round((min - m) * 60)
+    return m > 0 ? `${m}분 ${s}초` : `${s}초`
+  }
+
+  // 신뢰도 표시
+  const confidenceLabel = {
+    low: { text: "예측 중...", color: "text-white/30" },
+    medium: { text: "보통 신뢰도", color: "text-amber-400/70" },
+    high: { text: "높은 신뢰도", color: "text-emerald-400/70" },
+  }[confidence]
+
+  // RTL 위험 단계
+  const rtlUrgency =
+    battery <= 20
+      ? "danger"
+      : rtlSafeMinutes !== null && rtlSafeMinutes < 2
+        ? "danger"
+        : rtlSafeMinutes !== null && rtlSafeMinutes < 5
+          ? "caution"
+          : "safe"
+
+  return (
+    <div
+      className="absolute z-50"
+      style={{ right: 12, top: 64, userSelect: "none" }}
+    >
+      {open && (
+        <div
+          className={`mb-2 w-[230px] overflow-hidden rounded-2xl border ${borderColor} bg-slate-900/95 shadow-2xl shadow-black/50 backdrop-blur-md`}
+        >
+          {/* 드래그 핸들 */}
+          <div
+            className="flex cursor-grab items-center gap-2 border-b border-white/10 bg-white/5 px-3 py-2 active:cursor-grabbing"
+            onMouseDown={onHandleMouseDown}
+          >
+            <GripHorizontal className="h-3.5 w-3.5 shrink-0 text-white/25" />
+            <span className="flex-1 text-[10px] font-bold uppercase tracking-widest text-white/35">
+              배터리 예측
+            </span>
+            <span className={`text-[9px] ${confidenceLabel.color}`}>
+              {confidenceLabel.text}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpen(false)
+              }}
+              className="rounded-md p-0.5 text-white/25 transition hover:bg-white/10 hover:text-white/60"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          {/* 배터리 바 + 수치 */}
+          <div className="px-3 pb-1 pt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Battery
+                  className={`h-3.5 w-3.5 ${getBatteryColor(battery)}`}
+                />
+                <span className="text-[10px] text-white/40">현재 잔량</span>
+              </div>
+              <span
+                className={`font-mono text-sm font-bold tabular-nums ${getBatteryColor(battery)}`}
+              >
+                {battery.toFixed(0)}%
+              </span>
+            </div>
+            {/* 배터리 시각 바 */}
+            <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+                style={{ width: `${Math.min(battery, 100)}%` }}
+              />
+              {/* RTL 예비선 20% */}
+              <div
+                className="absolute top-0 h-full w-px bg-red-400/80"
+                style={{ left: "20%" }}
+              />
+            </div>
+            <div className="mt-0.5 flex justify-between">
+              <span className="text-[9px] text-red-400/60">RTL 20%</span>
+              <span className="text-[9px] text-white/20">100%</span>
+            </div>
+          </div>
+
+          {/* 소모율 */}
+          {drainRatePerMin !== null && (
+            <div className="border-t border-white/5 px-3 py-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <TrendingDown className="h-3 w-3 text-white/30" />
+                  <span className="text-[10px] text-white/40">소모율</span>
+                </div>
+                <span className="font-mono text-xs font-semibold tabular-nums text-white/70">
+                  {drainRatePerMin.toFixed(2)}%/분
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* 예측 시간 카드들 */}
+          <div className="grid grid-cols-2 gap-2 border-t border-white/5 px-3 py-2.5">
+            {/* 총 비행 가능 시간 */}
+            <div
+              className={`rounded-xl p-2.5 ${
+                remainingMinutes !== null && remainingMinutes <= 0
+                  ? "bg-red-500/15"
+                  : remainingMinutes !== null && remainingMinutes < 5
+                    ? "bg-amber-500/15"
+                    : "bg-white/5"
+              }`}
+            >
+              <div className="mb-1 flex items-center gap-1">
+                <Timer className="h-3 w-3 text-white/30" />
+                <span className="text-[9px] text-white/30">비행 가능</span>
+              </div>
+              <p
+                className={`font-mono text-xs font-bold tabular-nums leading-tight ${
+                  remainingMinutes === null
+                    ? "text-white/20"
+                    : remainingMinutes <= 0
+                      ? "text-red-400"
+                      : remainingMinutes < 5
+                        ? "text-amber-400"
+                        : "text-emerald-400"
+                }`}
+              >
+                {remainingMinutes === null
+                  ? "계산 중"
+                  : fmtMin(remainingMinutes)}
+              </p>
+              <p className="mt-0.5 text-[9px] text-white/20">RTL 20% 제외</p>
+            </div>
+
+            {/* RTL 까지 남은 시간 */}
+            <div
+              className={`rounded-xl p-2.5 ${
+                rtlUrgency === "danger"
+                  ? "bg-red-500/20"
+                  : rtlUrgency === "caution"
+                    ? "bg-amber-500/15"
+                    : "bg-white/5"
+              }`}
+            >
+              <div className="mb-1 flex items-center gap-1">
+                <PlaneLanding
+                  className={`h-3 w-3 ${
+                    rtlUrgency === "danger" ? "text-red-400" : "text-white/30"
+                  }`}
+                />
+                <span className="text-[9px] text-white/30">RTL 복귀</span>
+              </div>
+              <p
+                className={`font-mono text-xs font-bold tabular-nums leading-tight ${
+                  rtlSafeMinutes === null
+                    ? "text-white/20"
+                    : rtlUrgency === "danger"
+                      ? "text-red-400"
+                      : rtlUrgency === "caution"
+                        ? "text-amber-400"
+                        : "text-sky-300"
+                }`}
+              >
+                {rtlSafeMinutes === null ? "계산 중" : fmtMin(rtlSafeMinutes)}
+              </p>
+              <p className="mt-0.5 text-[9px] text-white/20">귀환 권장 시점</p>
+            </div>
+          </div>
+
+          {/* 위험/경고 배너 */}
+          {battery <= 20 && (
+            <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/15 px-2.5 py-2">
+              <AlertOctagon className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-400" />
+              <span className="text-[10px] font-bold text-red-300">
+                즉시 RTL — 배터리 위험
+              </span>
+            </div>
+          )}
+          {battery > 20 && battery <= 35 && (
+            <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/15 px-2.5 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <span className="text-[10px] font-semibold text-amber-300">
+                귀환 준비 — 복귀 경로 확인
+              </span>
+            </div>
+          )}
+          {rtlUrgency === "caution" && battery > 35 && (
+            <div className="mx-3 mb-3 flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-2.5 py-2">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+              <span className="text-[10px] font-semibold text-amber-300">
+                5분 내 귀환 시작 권장
+              </span>
+            </div>
+          )}
+
+          {/* 샘플 수 / 데이터 품질 */}
+          <div className="border-t border-white/5 px-3 py-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] text-white/20">데이터 샘플</span>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`h-1 w-3 rounded-full transition-all ${
+                      i < Math.ceil((sampleCount / 24) * 5)
+                        ? confidence === "high"
+                          ? "bg-emerald-500"
+                          : confidence === "medium"
+                            ? "bg-amber-500"
+                            : "bg-white/30"
+                        : "bg-white/10"
+                    }`}
+                  />
+                ))}
+                <span className="ml-1 text-[9px] text-white/20">
+                  {sampleCount}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 토글 버튼 */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={`flex items-center gap-2 rounded-full border ${borderColor} bg-slate-900/90 px-3 py-1.5 text-xs font-semibold text-white/80 shadow-lg shadow-black/40 backdrop-blur-md transition-all hover:scale-[1.03] hover:bg-slate-800/90 active:scale-[0.97]`}
+        >
+          <Battery className={`h-4 w-4 ${getBatteryColor(battery)}`} />
+          <span>배터리 예측</span>
+          <span
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${badgeBg}`}
+          >
+            {battery.toFixed(0)}%
+          </span>
+          {remainingMinutes !== null && (
+            <span className="text-[10px] text-white/40">
+              {remainingMinutes <= 0
+                ? "⚠"
+                : `~${Math.floor(remainingMinutes)}분`}
+            </span>
+          )}
+          <span className="ml-0.5 text-[9px] text-white/25">
+            {open ? "▲" : "▼"}
+          </span>
+        </button>
+      </div>
     </div>
   )
 }
@@ -1184,6 +1594,13 @@ export function NaverMap({
     weatherData?.windSpeed,
   )
 
+  // ── 배터리 예측 훅 ─────────────────────────────────────────
+  const batteryPrediction = useBatteryPrediction(
+    droneStats?.battery,
+    droneStats?.speed,
+    isDroneConnected,
+  )
+
   useEffect(() => {
     if (!missionWaypoints || missionWaypoints.length === 0) {
       setMissionPlan(null)
@@ -1529,7 +1946,6 @@ export function NaverMap({
     }
   }, [flightPath])
 
-  // ── 미션 지도 렌더링 ── ★ strokeStyle 제거 → 실선으로 변경
   useEffect(() => {
     const naver = (window as any).naver
     if (!naver || !mapInstance.current) return
@@ -1544,7 +1960,6 @@ export function NaverMap({
     const wps = missionPlan.waypoints
     const allLatLngs = wps.map((wp) => new naver.maps.LatLng(wp.lat, wp.lng))
 
-    // ★ 실선으로 변경: strokeStyle 삭제, strokeWeight/Opacity 상향
     missionPolylineRef.current = new naver.maps.Polyline({
       map: mapInstance.current,
       path: allLatLngs,
@@ -1680,7 +2095,7 @@ export function NaverMap({
         />
       </div>
 
-      {/* ── 팝오버 1: 비행 정보 (HUD + 체크리스트 + 배터리가이드 + 기상 통합) */}
+      {/* ── 팝오버 1: 비행 정보 */}
       <PopoverPanel
         icon={<Battery className="h-4 w-4" />}
         label="비행 정보"
@@ -1695,7 +2110,6 @@ export function NaverMap({
       >
         {isDroneConnected && droneStats ? (
           <div>
-            {/* Armed 상태 */}
             {droneStats.armed != null && (
               <div
                 className={`border-white/8 flex items-center gap-2 border-b px-3 py-2 text-[10px] font-bold ${droneStats.armed ? "text-emerald-400" : "text-slate-500"}`}
@@ -1706,7 +2120,6 @@ export function NaverMap({
                 {droneStats.armed ? "ARMED" : "DISARMED"}
               </div>
             )}
-            {/* 수치 행 */}
             <div className="divide-y divide-white/5">
               {droneStats.battery != null && (
                 <div className="flex items-center gap-2.5 px-3 py-2.5">
@@ -1790,7 +2203,6 @@ export function NaverMap({
                 </div>
               )}
             </div>
-            {/* 위험 배너 */}
             {droneStats.battery != null && droneStats.battery <= 20 && (
               <div className="mx-3 mb-2 mt-1 flex items-center gap-2 rounded-lg bg-red-500/15 px-2.5 py-2">
                 <PlaneLanding className="h-3.5 w-3.5 shrink-0 animate-pulse text-red-400" />
@@ -1807,7 +2219,6 @@ export function NaverMap({
                 </span>
               </div>
             )}
-            {/* 기상 정보 */}
             {weatherData && (
               <div className="border-white/8 grid grid-cols-3 gap-2 border-t px-3 py-2.5 text-center">
                 <div>
@@ -1836,7 +2247,6 @@ export function NaverMap({
             )}
           </div>
         ) : (
-          /* 미연결 시 체크리스트 */
           <div className="space-y-2 px-3 py-3">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-white/30">
               비행 전 체크리스트
@@ -1864,7 +2274,7 @@ export function NaverMap({
         )}
       </PopoverPanel>
 
-      {/* ── 팝오버 2: 미션 플랜 (미션 있을 때만) ───────────── */}
+      {/* ── 팝오버 2: 미션 플랜 */}
       {missionPlan && (
         <PopoverPanel
           icon={<Route className="h-4 w-4 text-blue-400" />}
@@ -1882,7 +2292,16 @@ export function NaverMap({
         </PopoverPanel>
       )}
 
-      {/* ── 좌하단: 추적 버튼 + 비행 시간 ──────────────────── */}
+      {/* ── 우측 상단: 배터리 예측 패널 (기체 연결 시에만) ── */}
+      <BatteryPredictionPanel
+        battery={droneStats?.battery}
+        speed={droneStats?.speed}
+        altitude={droneStats?.altitude}
+        prediction={batteryPrediction}
+        connected={isDroneConnected}
+      />
+
+      {/* ── 좌하단: 추적 버튼 + 비행 시간 */}
       {isDroneConnected && (
         <div className="absolute bottom-4 left-3 z-50 flex flex-col items-start gap-2">
           <button
@@ -1902,6 +2321,7 @@ export function NaverMap({
           />
         </div>
       )}
+
       {/* 전체화면 버튼 */}
       <button
         onClick={toggleFullscreen}
