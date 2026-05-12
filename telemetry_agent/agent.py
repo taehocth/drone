@@ -48,6 +48,12 @@ DRONE_LIST = [
         "lte_connection": "tcp:3.36.81.238:52066",
         "lte_ip":         "3.36.81.238:52066",
     },
+    {
+        "drone_id":       "drone-004",
+        "vehicle_name":   "drone-004",
+        "lte_connection": "tcp:220.89.185.198:57600",
+        "lte_ip":         "220.89.185.198:57600",
+    },
 ]
 
 IMPORTANT_PARAMS = {
@@ -200,9 +206,6 @@ class DroneAgent:
                 "message": f"드론 연결됨 — sysid={self.sysid}",
             })
 
-            # ★ 수정 1: 연결 직후 미션 다운로드 시도
-            # Arming 전이라도 QGC에 업로드된 미션을 바로 가져옴
-            # → DM4_2, DM3도 연결만 되면 미션 경로가 지도에 표시됨
             if not self._mission_download_done:
                 print(f"[{self.drone_id}] 연결 직후 미션 다운로드 시도")
                 threading.Thread(
@@ -543,12 +546,8 @@ class DroneAgent:
 
             armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
-            # ★ 수정 2: Disarm 시 미션 캐시 유지
-            # 기존: Disarm되면 미션을 지워버려서 DM4_2, DM3 전환 시 미션이 사라졌음
-            # 변경: 미션은 유지하고 download_done만 리셋 → 다음 Arming 때 새 미션으로 갱신됨
             if not armed and self._was_armed:
                 self._mission_download_done = False
-                # self._mission_waypoints = []  ← 삭제: 미션 유지
                 print(f"[{self.drone_id}] Disarmed — 미션 캐시 유지 (wp={len(self._mission_waypoints)}개)")
 
             if armed and not self._was_armed and not self._mission_download_done:
@@ -788,8 +787,6 @@ class DroneAgent:
                 print(f"[{self.drone_id}] Retry in {LTE_RETRY_SEC:.0f}s...")
 
             # 재연결 시 캐시 초기화
-            # ★ 참고: 미션(_mission_waypoints)은 여기서도 초기화됨
-            # 완전히 재연결되는 경우이므로 새로 다운로드하는 것이 맞음
             with self._lock:
                 self._cache = {
                     "sysid":    None,
