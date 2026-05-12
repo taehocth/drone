@@ -79,20 +79,27 @@ const DRONE_TARGETS: DroneTarget[] = [
     label: "DM4_1",
     port: 51067,
     lteIp: "3.36.81.238:51067",
-    keywords: ["DM4_1", "dm4_1", "중왕항", "중왕", "1번"],
+    keywords: ["DM4_1", "dm4_1", "중왕항", "중왕"],
   },
   {
     label: "DM4_2",
     port: 51568,
     lteIp: "3.36.81.238:51568",
-    keywords: ["DM4_2", "dm4_2", "기은리", "기은", "2번"],
+    keywords: ["DM4_2", "dm4_2", "기은리", "기은"],
+  },  
+  {
+    label: "DM4_6",
+    port: 51565,
+    lteIp: "220.89.185.198",
+    keywords: ["DM4_6", "dm4_6", "원산도", "보령"],
   },
   {
     label: "DM3",
     port: 52066,
     lteIp: "3.36.81.238:52066",
-    keywords: ["DM3", "dm3", "삼길포항", "삼길포", "3번"],
+    keywords: ["DM3", "dm3", "삼길포항", "삼길포"],
   },
+  
 ]
 
 // 기체 데이터가 이 시간(ms) 이상 수신 안되면 오프라인으로 판단
@@ -572,7 +579,8 @@ const DroneSimulation: React.FC<DroneSimulationProps> = ({
   const drone0 = useDroneWs(DRONE_TARGETS[0])
   const drone1 = useDroneWs(DRONE_TARGETS[1])
   const drone2 = useDroneWs(DRONE_TARGETS[2])
-  const allStates = [drone0, drone1, drone2]
+  const drone3 = useDroneWs(DRONE_TARGETS[3])
+  const allStates = [drone0, drone1, drone2, drone3]
 
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   const selectedState = selectedIdx !== null ? allStates[selectedIdx] : null
