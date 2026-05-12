@@ -89,8 +89,8 @@ const DRONE_TARGETS: DroneTarget[] = [
   },  
   {
     label: "DM4_6",
-    port: 51565,
-    lteIp: "220.89.185.198:57600",
+    port: 52565,
+    lteIp: "220.89.185.198:52565",  // 51565 → 52565
     keywords: ["DM4_6", "dm4_6", "원산도", "보령"],
   },
   {

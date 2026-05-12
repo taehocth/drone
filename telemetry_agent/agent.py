@@ -48,12 +48,12 @@ DRONE_LIST = [
         "lte_connection": "tcp:3.36.81.238:52066",
         "lte_ip":         "3.36.81.238:52066",
     },
-    {
-        "drone_id":       "drone-004",
-        "vehicle_name":   "drone-004",
-        "lte_connection": "tcp:220.89.185.198:57600",
-        "lte_ip":         "220.89.185.198:57600",
-    },
+{
+    "drone_id":       "drone-004",
+    "vehicle_name":   "drone-004",
+    "lte_connection": "tcp:220.89.185.198:52565",  # 57600 → 52565
+    "lte_ip":         "220.89.185.198:52565",
+},
 ]
 
 IMPORTANT_PARAMS = {
