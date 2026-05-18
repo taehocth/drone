@@ -45,3 +45,4 @@ pandas==2.2.3
 pyulog==1.2.2
 google-genai
 websockets>=12.0
+torch==2.12.0
