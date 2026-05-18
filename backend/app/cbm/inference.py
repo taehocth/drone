@@ -305,14 +305,14 @@ class InferenceEngine:
 
         # ── 3. 마지막 행이 실제값(y_true)
         y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
-        x_seq_norm  = x_norm[:-1]   # (19, 27) — 마지막 행 제외한 입력
+        x_seq_norm  = x_norm    # (19, 27) — 마지막 행 제외한 입력
 
         # 입력 텐서: (1, 27, 19) — (batch, features, win_s-1)
         # ※ 학습 시 win_s=20 이지만 마지막 행이 정답이므로 실제 입력은 win_s-1
         #   → 학습 코드와 동일한 방식 (X=seq[:-1], Y=seq[-1])
         x_tensor = torch.tensor(
             x_seq_norm.T,       # (27, 19)
-            dtype=torch.float32,
+             dtype=torch.float32,
         ).unsqueeze(0).to(self._device)   # (1, 27, 19)
 
         # ── 4. 모델 추론
