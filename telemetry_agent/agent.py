@@ -48,12 +48,12 @@ DRONE_LIST = [
         "lte_connection": "tcp:3.36.81.238:52066",
         "lte_ip":         "3.36.81.238:52066",
     },
-{
-    "drone_id":       "drone-004",
-    "vehicle_name":   "drone-004",
-    "lte_connection": "tcp:220.89.185.198:52565",  # 57600 → 52565
-    "lte_ip":         "220.89.185.198:52565",
-},
+    {
+        "drone_id":       "drone-004",
+        "vehicle_name":   "drone-004",
+        "lte_connection": "tcp:220.89.185.198:52565",
+        "lte_ip":         "220.89.185.198:52565",
+    },
 ]
 
 IMPORTANT_PARAMS = {
@@ -113,20 +113,30 @@ class DroneAgent:
         self.running = True
 
         self._cache: Dict[str, Any] = {
-            "sysid":    None,
-            "position": None,
-            "velocity": None,
-            "attitude": None,
-            "battery":  None,
-            "gps":      None,
+            "sysid":        None,
+            "position":     None,
+            "velocity":     None,
+            "attitude":     None,
+            "battery":      None,
+            "gps":          None,
+            # ★ CNN-LSTM 추가 피처
+            "att_target":   None,   # ATTITUDE_TARGET  → att_cmd (yaw/pitch/roll)
+            "raw_imu":      None,   # RAW_IMU          → sensor_gyro / sensor_accel
+            "ekf_bias":     None,   # EKF_STATUS_REPORT→ esti_gyro_bias / esti_accel_bias
+            "servo_output": None,   # SERVO_OUTPUT_RAW → pwm_cmd 1~6
         }
 
         self._last_update: Dict[str, float] = {
-            "position": 0.0,
-            "velocity": 0.0,
-            "attitude": 0.0,
-            "battery":  0.0,
-            "gps":      0.0,
+            "position":     0.0,
+            "velocity":     0.0,
+            "attitude":     0.0,
+            "battery":      0.0,
+            "gps":          0.0,
+            # ★ CNN-LSTM 추가 피처
+            "att_target":   0.0,
+            "raw_imu":      0.0,
+            "ekf_bias":     0.0,
+            "servo_output": 0.0,
         }
 
         self._last_heartbeat_ts: float = 0.0
@@ -526,6 +536,93 @@ class DroneAgent:
                 except Exception:
                     pass
 
+            # ★ ─────────────────────────────────────────────
+            # CNN-LSTM 추가 메시지 파싱
+            # ─────────────────────────────────────────────────
+
+            elif t == "ATTITUDE_TARGET":
+                # att_cmd (자세 명령): yaw/pitch/roll
+                # q[0..3] 쿼터니언 → roll/pitch/yaw 변환
+                try:
+                    q = msg.q  # [w, x, y, z]
+                    if q is not None and len(q) == 4:
+                        w, x, y, z = float(q[0]), float(q[1]), float(q[2]), float(q[3])
+                        # 쿼터니언 → 오일러각 변환
+                        roll_cmd  =  math.atan2(2*(w*x + y*z), 1 - 2*(x*x + y*y))
+                        pitch_cmd =  math.asin( max(-1.0, min(1.0, 2*(w*y - z*x))) )
+                        yaw_cmd   =  math.atan2(2*(w*z + x*y), 1 - 2*(y*y + z*z))
+                    else:
+                        roll_cmd = pitch_cmd = yaw_cmd = None
+
+                    self._cache["att_target"] = {
+                        "roll":  roll_cmd,
+                        "pitch": pitch_cmd,
+                        "yaw":   yaw_cmd,
+                        # 추가: body rate (rad/s)
+                        "body_roll_rate":  float(msg.body_roll_rate)  if getattr(msg, "body_roll_rate",  None) is not None else None,
+                        "body_pitch_rate": float(msg.body_pitch_rate) if getattr(msg, "body_pitch_rate", None) is not None else None,
+                        "body_yaw_rate":   float(msg.body_yaw_rate)   if getattr(msg, "body_yaw_rate",   None) is not None else None,
+                    }
+                    self._last_update["att_target"] = ts
+                except Exception as e:
+                    print(f"[{self.drone_id}] ATTITUDE_TARGET parse error: {e}")
+
+            elif t == "RAW_IMU":
+                # sensor_gyro (xgyro/ygyro/zgyro) → rad/s 변환 (단위: mrad/s)
+                # sensor_accel (xacc/yacc/zacc)   → m/s² 변환 (단위: mg)
+                try:
+                    # gyro: mrad/s → rad/s
+                    xg = (float(msg.xgyro) / 1000.0) if getattr(msg, "xgyro", None) is not None else None
+                    yg = (float(msg.ygyro) / 1000.0) if getattr(msg, "ygyro", None) is not None else None
+                    zg = (float(msg.zgyro) / 1000.0) if getattr(msg, "zgyro", None) is not None else None
+                    # accel: mg → m/s² (1g = 9.80665 m/s²)
+                    xa = (float(msg.xacc) * 9.80665 / 1000.0) if getattr(msg, "xacc", None) is not None else None
+                    ya = (float(msg.yacc) * 9.80665 / 1000.0) if getattr(msg, "yacc", None) is not None else None
+                    za = (float(msg.zacc) * 9.80665 / 1000.0) if getattr(msg, "zacc", None) is not None else None
+
+                    self._cache["raw_imu"] = {
+                        "gyro_x": xg, "gyro_y": yg, "gyro_z": zg,
+                        "accel_x": xa, "accel_y": ya, "accel_z": za,
+                    }
+                    self._last_update["raw_imu"] = ts
+                except Exception as e:
+                    print(f"[{self.drone_id}] RAW_IMU parse error: {e}")
+
+            elif t == "EKF_STATUS_REPORT":
+                # esti_gyro_bias / esti_accel_bias
+                # EKF_STATUS_REPORT에는 velocity/pos variance가 있으나
+                # bias 값은 직접 제공되지 않으므로 variance를 proxy로 활용
+                try:
+                    self._cache["ekf_bias"] = {
+                        "velocity_variance":  float(msg.velocity_variance)  if getattr(msg, "velocity_variance",  None) is not None else None,
+                        "pos_horiz_variance": float(msg.pos_horiz_variance) if getattr(msg, "pos_horiz_variance", None) is not None else None,
+                        "pos_vert_variance":  float(msg.pos_vert_variance)  if getattr(msg, "pos_vert_variance",  None) is not None else None,
+                        "compass_variance":   float(msg.compass_variance)   if getattr(msg, "compass_variance",   None) is not None else None,
+                        "terrain_alt_variance": float(msg.terrain_alt_variance) if getattr(msg, "terrain_alt_variance", None) is not None else None,
+                        # EKF flags
+                        "flags": int(msg.flags) if getattr(msg, "flags", None) is not None else None,
+                    }
+                    self._last_update["ekf_bias"] = ts
+                except Exception as e:
+                    print(f"[{self.drone_id}] EKF_STATUS_REPORT parse error: {e}")
+
+            elif t == "SERVO_OUTPUT_RAW":
+                # pwm_cmd 1~6 (모터 PWM 출력, 단위: μs, 일반적으로 1000~2000)
+                try:
+                    self._cache["servo_output"] = {
+                        "pwm1": int(msg.servo1_raw) if getattr(msg, "servo1_raw", None) is not None else None,
+                        "pwm2": int(msg.servo2_raw) if getattr(msg, "servo2_raw", None) is not None else None,
+                        "pwm3": int(msg.servo3_raw) if getattr(msg, "servo3_raw", None) is not None else None,
+                        "pwm4": int(msg.servo4_raw) if getattr(msg, "servo4_raw", None) is not None else None,
+                        "pwm5": int(msg.servo5_raw) if getattr(msg, "servo5_raw", None) is not None else None,
+                        "pwm6": int(msg.servo6_raw) if getattr(msg, "servo6_raw", None) is not None else None,
+                    }
+                    self._last_update["servo_output"] = ts
+                except Exception as e:
+                    print(f"[{self.drone_id}] SERVO_OUTPUT_RAW parse error: {e}")
+
+            # ★ ─────────────────────────────────────────────
+
         # lock 바깥 이벤트 처리
 
         if t == "HEARTBEAT":
@@ -718,6 +815,11 @@ class DroneAgent:
                 "gps":          self._cache.get("gps"),
                 "online":       True,
                 "armed":        self._was_armed,
+                # ★ CNN-LSTM 추가 피처
+                "att_target":   self._cache.get("att_target"),    # att_cmd (yaw/pitch/roll)
+                "raw_imu":      self._cache.get("raw_imu"),       # sensor_gyro / sensor_accel
+                "ekf_bias":     self._cache.get("ekf_bias"),      # esti_gyro_bias / esti_accel_bias
+                "servo_output": self._cache.get("servo_output"),  # pwm_cmd 1~6
             }
             snap["_age_sec"] = {
                 k: (now_ts() - v) if v else None
@@ -789,19 +891,29 @@ class DroneAgent:
             # 재연결 시 캐시 초기화
             with self._lock:
                 self._cache = {
-                    "sysid":    None,
-                    "position": None,
-                    "velocity": None,
-                    "attitude": None,
-                    "battery":  None,
-                    "gps":      None,
+                    "sysid":        None,
+                    "position":     None,
+                    "velocity":     None,
+                    "attitude":     None,
+                    "battery":      None,
+                    "gps":          None,
+                    # ★ CNN-LSTM 추가 피처
+                    "att_target":   None,
+                    "raw_imu":      None,
+                    "ekf_bias":     None,
+                    "servo_output": None,
                 }
                 self._last_update = {
-                    "position": 0.0,
-                    "velocity": 0.0,
-                    "attitude": 0.0,
-                    "battery":  0.0,
-                    "gps":      0.0,
+                    "position":     0.0,
+                    "velocity":     0.0,
+                    "attitude":     0.0,
+                    "battery":      0.0,
+                    "gps":          0.0,
+                    # ★ CNN-LSTM 추가 피처
+                    "att_target":   0.0,
+                    "raw_imu":      0.0,
+                    "ekf_bias":     0.0,
+                    "servo_output": 0.0,
                 }
 
             with self._mission_lock:
