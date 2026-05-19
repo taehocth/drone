@@ -28,8 +28,8 @@ from app.cbm.collector import get_window, reset_window
 
 # ── 모델 / pkl 파일 경로 ────────────────────────────────
 _BASE = Path(__file__).parent / "models"
-MODEL_PATH = _BASE / "quadNormal_all_trainedNet_epoch5.pth"
-PKL_PATH   = _BASE / "quadNormal_datas_all.pkl"
+MODEL_PATH = _BASE / "quadNormal_retrained_epoch50.pth"
+PKL_PATH   = _BASE / "quadNormal_retrained_stats.pkl"
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
 DETECT_FAIL_CNT = 3        # 연속 임계 초과 횟수 → 이상 판정
