@@ -825,6 +825,7 @@ class DroneAgent:
                 k: (now_ts() - v) if v else None
                 for k, v in self._last_update.items()
             }
+            print(f"[{self.drone_id}] raw_imu={snap.get('raw_imu')} | att_target={snap.get('att_target')} | servo={snap.get('servo_output')}")
 
         with self._mission_lock:
             snap["mission_waypoints"] = list(self._mission_waypoints)

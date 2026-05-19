@@ -108,13 +108,13 @@ def _extract_features(snap: dict) -> Optional[List[float]]:
             _f(ekf_bias.get("terrain_alt_variance")),
             _f(ekf_bias.get("flags")),
             # 17~19 sensor_gyro (x/y/z) ← RAW_IMU
-            _f(raw_imu.get("gyro_x")),
-            _f(raw_imu.get("gyro_y")),
-            _f(raw_imu.get("gyro_z")),
+            _f(raw_imu.get("gyro_x") if raw_imu else att_target.get("body_roll_rate")),
+            _f(raw_imu.get("gyro_y") if raw_imu else att_target.get("body_pitch_rate")),
+            _f(raw_imu.get("gyro_z") if raw_imu else att_target.get("body_yaw_rate")),  
             # 20~22 sensor_accel (x/y/z) ← RAW_IMU
-            _f(raw_imu.get("accel_x")),
-            _f(raw_imu.get("accel_y")),
-            _f(raw_imu.get("accel_z")),
+            _f(raw_imu.get("accel_x") if raw_imu else attitude.get("roll")),
+            _f(raw_imu.get("accel_y") if raw_imu else attitude.get("pitch")),
+            _f(raw_imu.get("accel_z") if raw_imu else attitude.get("roll")),
             # 23~26 pwm_cmd 1~4 ← SERVO_OUTPUT_RAW
             _f(servo_output.get("pwm1")),
             _f(servo_output.get("pwm2")),
