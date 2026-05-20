@@ -26,19 +26,18 @@ SERVER_URL = "https://drone-5-2qlc.onrender.com/api/v1/qgc/telemetry/push"
 RESET_URL  = "https://drone-5-2qlc.onrender.com/api/v1/cbm/reset/drone-test"
 DRONE_ID   = "drone-test"
 
-# 테스트할 고장 파일 목록 (원하는 파일로 변경 가능)
 FAILURE_FILES = [
     r"C:\Users\cth99\OneDrive\바탕 화면\이상탐지 LLM 모델\Final_python\data_csvFile\Failure\2_1_gyro_failure.csv",
     r"C:\Users\cth99\OneDrive\바탕 화면\이상탐지 LLM 모델\Final_python\data_csvFile\Failure\1_1_motor_failure.csv",
 ]
 
-PUSH_INTERVAL = 0.1   # 초 (0.1 = 10Hz, agent.py와 동일)
-MAX_ROWS      = 50   # 파일당 최대 push 행 수
+PUSH_INTERVAL = 0.1   # 초
+MAX_ROWS      = 500   # 시작 행부터 최대 push 수
+START_ROW     = 2800  # 고장 구간 시작 행
 
 
 # ── 메인 ──────────────────────────────────────────────
 def push_row(row, idx):
-    """CSV 한 행을 서버로 push"""
     payload = {
         "drone_id":  DRONE_ID,
         "sysid":     1,
@@ -95,7 +94,6 @@ def push_row(row, idx):
 
 
 def reset_session():
-    """드론 세션 초기화"""
     try:
         res = requests.post(RESET_URL, timeout=5)
         print(f"✅ 세션 초기화 완료 (status={res.status_code})")
@@ -109,6 +107,7 @@ if __name__ == "__main__":
     print("=" * 55)
     print(f" 서버: {SERVER_URL}")
     print(f" 드론 ID: {DRONE_ID}")
+    print(f" 시작 행: {START_ROW} / 최대 행: {MAX_ROWS}")
     print()
     print("브라우저 콘솔에 아래 코드를 먼저 실행하세요:")
     print("-" * 55)
@@ -123,12 +122,10 @@ if __name__ == "__main__":
         print(f"파일: {file_path.split(chr(92))[-1]}")
         print(f"{'=' * 55}")
 
-        # 세션 초기화
         print("세션 초기화 중...")
         reset_session()
         time.sleep(1)
 
-        # CSV 로드
         try:
             df = pd.read_csv(file_path, header=None)
             print(f"데이터 로드 완료: {len(df)}행 × {df.shape[1]}열")
@@ -136,25 +133,27 @@ if __name__ == "__main__":
             print(f"❌ 파일 로드 실패: {e}")
             continue
 
-        # Push 시작
-        print(f"Push 시작 (최대 {MAX_ROWS}행, {PUSH_INTERVAL}초 간격)...")
+        print(f"Push 시작 ({START_ROW}행부터 {MAX_ROWS}개, {PUSH_INTERVAL}초 간격)...")
         print("알람 발생 시 터미널에도 표시됩니다.\n")
 
-        alert_detected = False
+        push_count = 0
         for i, row in df.iterrows():
-            if i >= MAX_ROWS:
+            if i < START_ROW:
+                continue
+            if push_count >= MAX_ROWS:
                 break
 
             try:
                 status = push_row(row, i)
-                if i % 20 == 0:
-                    print(f"  [{i:3d}/{min(MAX_ROWS, len(df))}] push 완료 (status={status})")
+                push_count += 1
+                if push_count % 20 == 0:
+                    print(f"  [{push_count:3d}/{MAX_ROWS}] row={i} push 완료 (status={status})")
             except Exception as e:
                 print(f"  [{i}] push 실패: {e}")
 
             time.sleep(PUSH_INTERVAL)
 
-        print(f"\n✅ {file_path.split(chr(92))[-1]} 테스트 완료!")
+        print(f"\n✅ {file_path.split(chr(92))[-1]} 테스트 완료! (총 {push_count}개 push)")
         print("브라우저 콘솔에서 알람 확인하세요.")
 
         next_file = input("\n다음 파일 테스트할까요? (y/n): ")
