@@ -33,7 +33,7 @@ FAILURE_FILES = [
 ]
 
 PUSH_INTERVAL = 0.1   # 초 (0.1 = 10Hz, agent.py와 동일)
-MAX_ROWS      = 300   # 파일당 최대 push 행 수
+MAX_ROWS      = 3174   # 파일당 최대 push 행 수
 
 
 # ── 메인 ──────────────────────────────────────────────
