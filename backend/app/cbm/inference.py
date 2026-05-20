@@ -33,8 +33,8 @@ PKL_PATH   = _BASE / "quadNormal_retrained_stats.pkl"
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
 DETECT_FAIL_CNT = 3        # 연속 임계 초과 횟수 → 이상 판정
-CUSUM_THRESHOLD = 3.0     # CUSUM 누적합 임계값
-CUSUM_DRIFT     = 0.01     # CUSUM drift (bias)
+CUSUM_THRESHOLD = 0.5    # CUSUM 누적합 임계값
+CUSUM_DRIFT     = 0.001     # CUSUM drift (bias)
 
 # ── 피처 이름 (Failure_notice.txt 순서와 동일) ──────────
 FEATURE_NAMES = [
@@ -210,7 +210,7 @@ class InferenceEngine:
             # ── threshold = RMSE + sigma (보고서 기준)
             # rmse_train 과 sig 길이가 다를 수 있으므로 min 길이 기준
             min_len    = min(len(rmse_train), len(sig))
-            thresholds = rmse_train[:min_len] * 0.3
+            thresholds = rmse_train[:min_len] * 0.05
 
             self._model      = model
             self._device     = device
