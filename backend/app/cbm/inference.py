@@ -23,7 +23,7 @@ from app.cbm.collector import get_window, reset_window
 
 # ── 모델 / pkl 파일 경로 ────────────────────────────────
 _BASE = Path(__file__).parent / "models"
-MODEL_PATH = _BASE / "quadNormal_retrained_epoch50.pth"
+MODEL_PATH = _BASE / "quadNormal_best_model.pth"
 PKL_PATH   = _BASE / "quadNormal_retrained_stats.pkl"
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────

@@ -2,15 +2,16 @@
 cnnlstm_retrain.py
 
 quadNormal_sortie1~4.csv 를 사용해서
-CNN-LSTM 모델을 epoch 50으로 재학습합니다.
+CNN-LSTM 모델을 Early Stopping으로 재학습합니다.
+Test Loss가 개선되지 않으면 자동 중단하고 최적 모델을 저장합니다.
 
 실행 방법:
     cd backend/app/cbm/train
     python cnnlstm_retrain.py
 
 결과물:
-    trainResult/quadNormal_retrained_epoch50.pth  ← 서버에 올릴 모델
-    pkl_files/quadNormal_retrained_stats.pkl       ← 서버에 올릴 통계
+    trainResult/quadNormal_best_model.pth  ← 서버에 올릴 모델
+    pkl_files/quadNormal_retrained_stats.pkl
 """
 
 import os
@@ -31,12 +32,14 @@ from torch.utils.data import Dataset, DataLoader
 # ══════════════════════════════════════════════
 DATA_DIR   = "data_csvFile/quad_normal"
 PKL_PATH   = "pkl_files/quadNormal_retrained_stats.pkl"
-SAVE_PATH  = "trainResult/quadNormal_retrained_epoch50.pth"
+SAVE_PATH  = "trainResult/quadNormal_best_model.pth"
+TEMP_PATH  = "trainResult/quadNormal_best_model_temp.pth"
 
-WIN_S      = 20
-NUM_EPOCHS = 50
-BATCH_SIZE = 64
-LR         = 0.001
+WIN_S               = 20
+NUM_EPOCHS          = 100   # 넉넉하게 (Early Stopping이 멈춰줌)
+BATCH_SIZE          = 64
+LR                  = 0.001
+EARLY_STOP_PATIENCE = 10    # Test Loss가 10번 연속 개선 안 되면 중단
 
 
 # ══════════════════════════════════════════════
@@ -47,7 +50,7 @@ def load_csv(path):
 
 def convert_yawSign(X):
     X = X.copy()
-    for col in [5, 8]:  # att_cmd_yaw=5, att_state_yaw=8
+    for col in [5, 8]:
         sign = X[0, col] >= 0
         for j in range(1, X.shape[0]):
             if not sign and X[j, col] > 0:
@@ -69,11 +72,8 @@ def inverse_normalize(Y_norm, mu, sig):
     return Y_norm * sig.squeeze() + mu.squeeze()
 
 def compute_rmse(preds, targets):
-    rmse_list = []
-    for i in range(preds.shape[1]):
-        rmse = np.sqrt(np.mean((preds[:, i] - targets[:, i]) ** 2))
-        rmse_list.append(rmse)
-    return rmse_list
+    return [float(np.sqrt(np.mean((preds[:, i] - targets[:, i]) ** 2)))
+            for i in range(preds.shape[1])]
 
 
 # ══════════════════════════════════════════════
@@ -99,7 +99,7 @@ class CNNLSTM(nn.Module):
                  filter_size=(3, 1), num_filters=32, lstm_hidden=128):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(1, num_filters,       kernel_size=filter_size, padding='same'),
+            nn.Conv2d(1, num_filters, kernel_size=filter_size, padding='same'),
             nn.ReLU(),
             nn.Conv2d(num_filters, num_filters*2, kernel_size=filter_size, padding='same'),
             nn.ReLU(),
@@ -136,11 +136,8 @@ if __name__ == "__main__":
         n     = len(data)
         split = int(0.9 * n)
 
-        train_data = data[:split]
-        test_data  = data[split:]
-
-        for d, Xl, Yl in [(train_data, XTrain, YTrain),
-                           (test_data,  XTest,  YTest)]:
+        for d, Xl, Yl in [(data[:split], XTrain, YTrain),
+                           (data[split:], XTest,  YTest)]:
             for k in range(len(d) - WIN_S):
                 seg = convert_yawSign(d[k:k+WIN_S+1])
                 Xl.append(seg[:WIN_S][..., np.newaxis])
@@ -158,14 +155,8 @@ if __name__ == "__main__":
     XTest,  YTest  = normalize(XTest,  YTest,  mu, sig)
 
     # ── 3. DataLoader ───────────────────────────
-    train_loader = DataLoader(
-        SequenceDataset(XTrain, YTrain),
-        batch_size=BATCH_SIZE, shuffle=True
-    )
-    test_loader = DataLoader(
-        SequenceDataset(XTest, YTest),
-        batch_size=32, shuffle=False
-    )
+    train_loader = DataLoader(SequenceDataset(XTrain, YTrain), batch_size=BATCH_SIZE, shuffle=True)
+    test_loader  = DataLoader(SequenceDataset(XTest,  YTest),  batch_size=32, shuffle=False)
 
     # ── 4. 모델 초기화 ──────────────────────────
     num_features  = XTrain[0].shape[1]
@@ -177,11 +168,19 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=LR)
     criterion = nn.MSELoss()
 
-    # ── 5. 학습 ─────────────────────────────────
-    print(f"\n[학습] epoch={NUM_EPOCHS}, batch={BATCH_SIZE}, lr={LR}")
+    # ── 5. 학습 (Early Stopping) ─────────────────
+    print(f"\n[학습] max_epoch={NUM_EPOCHS}, patience={EARLY_STOP_PATIENCE}, batch={BATCH_SIZE}")
+    print("Test Loss가 개선되지 않으면 자동 중단됩니다.\n")
+
     train_losses, test_losses = [], []
+    best_test_loss   = float('inf')
+    best_epoch       = 0
+    patience_counter = 0
+
+    os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)
 
     for epoch in range(NUM_EPOCHS):
+        # Train
         model.train()
         train_loss = 0
         for Xb, Yb in train_loader:
@@ -193,6 +192,7 @@ if __name__ == "__main__":
             train_loss += loss.item() * Xb.size(0)
         train_loss /= len(train_loader.dataset)
 
+        # Test
         model.eval()
         test_loss = 0
         with torch.no_grad():
@@ -206,11 +206,29 @@ if __name__ == "__main__":
         test_losses.append(test_loss)
 
         print(f"  Epoch {epoch+1:3d}/{NUM_EPOCHS} "
-              f"| Train: {train_loss:.6f} | Test: {test_loss:.6f}")
+              f"| Train: {train_loss:.6f} | Test: {test_loss:.6f}", end="")
 
-    # ── 6. RMSE 계산 (Train 기준) ───────────────
-    print("\n[RMSE] 계산 중...")
+        # Early Stopping 체크
+        if test_loss < best_test_loss:
+            best_test_loss   = test_loss
+            best_epoch       = epoch + 1
+            patience_counter = 0
+            torch.save(model.state_dict(), TEMP_PATH)
+            print(f"  ✅ Best! (epoch={best_epoch})")
+        else:
+            patience_counter += 1
+            print(f"  patience={patience_counter}/{EARLY_STOP_PATIENCE}")
+            if patience_counter >= EARLY_STOP_PATIENCE:
+                print(f"\n🛑 Early Stopping! Best epoch={best_epoch}, Test Loss={best_test_loss:.6f}")
+                break
+
+    # ── 6. 최적 모델 복원 ────────────────────────
+    print(f"\n[모델] Best epoch={best_epoch} 모델 복원 중...")
+    model.load_state_dict(torch.load(TEMP_PATH, map_location=device))
     model.eval()
+
+    # ── 7. RMSE 계산 ─────────────────────────────
+    print("[RMSE] 계산 중...")
     preds_norm, targets_norm = [], []
     with torch.no_grad():
         for Xb, Yb in train_loader:
@@ -219,7 +237,6 @@ if __name__ == "__main__":
 
     preds_norm   = np.concatenate(preds_norm)
     targets_norm = np.concatenate(targets_norm)
-
     preds   = inverse_normalize(preds_norm,   mu.squeeze(), sig.squeeze())
     targets = inverse_normalize(targets_norm, mu.squeeze(), sig.squeeze())
 
@@ -228,9 +245,8 @@ if __name__ == "__main__":
     for i, r in enumerate(rmse_list):
         print(f"  Feature {i:2d}: {r:.6f}")
 
-    # ── 7. 저장 ─────────────────────────────────
-    os.makedirs(os.path.dirname(SAVE_PATH),  exist_ok=True)
-    os.makedirs(os.path.dirname(PKL_PATH),   exist_ok=True)
+    # ── 8. 저장 ──────────────────────────────────
+    os.makedirs(os.path.dirname(PKL_PATH), exist_ok=True)
 
     torch.save({
         'model_state_dict': model.state_dict(),
@@ -249,19 +265,20 @@ if __name__ == "__main__":
         }, f)
 
     print(f"\n✅ 저장 완료!")
-    print(f"  모델 : {SAVE_PATH}")
+    print(f"  모델 : {SAVE_PATH}  (Best epoch={best_epoch})")
     print(f"  통계 : {PKL_PATH}")
 
-    # ── 8. Loss 그래프 ──────────────────────────
+    # ── 9. Loss 그래프 ───────────────────────────
     plt.figure(figsize=(10, 4))
     plt.plot(train_losses, label='Train Loss')
     plt.plot(test_losses,  label='Test Loss')
+    plt.axvline(x=best_epoch-1, color='r', linestyle='--', label=f'Best epoch={best_epoch}')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('CNN-LSTM 재학습 Loss')
+    plt.title(f'CNN-LSTM Early Stopping (Best epoch={best_epoch})')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('trainResult/loss_curve.png')
+    plt.savefig('trainResult/loss_curve_early_stop.png')
     plt.show()
-    print("  그래프: trainResult/loss_curve.png")
+    print("  그래프: trainResult/loss_curve_early_stop.png")
