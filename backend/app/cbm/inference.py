@@ -250,7 +250,7 @@ class InferenceEngine:
 
         # 입력: (1, 27, 20)
         x_tensor = torch.tensor(
-            x_norm.T, dtype=torch.float32
+            x_norm, dtype=torch.float32
         ).unsqueeze(0).to(self._device)
 
         with torch.no_grad():
