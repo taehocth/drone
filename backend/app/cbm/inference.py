@@ -242,7 +242,9 @@ class InferenceEngine:
         state = self._get_state(drone_id)
 
         window_fixed = self._fix_yaw(window)
-        x_norm       = self._normalize(window_fixed)  # (20, 27)
+        x_norm       = self._normalize(window_fixed)
+        print(f"[inference] window shape: {window.shape}, x_norm shape: {x_norm.shape}")
+          # (20, 27)
 
         y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
 
