@@ -122,6 +122,7 @@ def _extract_features(snap: dict) -> Optional[List[float]]:
             _f(servo_output.get("pwm4")),
         ]
 
+        print(f"[collector] 피처 수: {len(features)}, raw_imu: {bool(raw_imu)}, servo: {bool(servo_output)}")
         return features  # len == 27
 
     except Exception as e:
