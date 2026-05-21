@@ -2,15 +2,20 @@
 app/cbm/inference.py
 
 역할:
-  1. 서버 시작 시 CNN-LSTM 모델 + 정규화 통계(mu, sig) 1회 로드
+  1. 서버 시작 시 drone_id별 CNN-LSTM 모델 + 정규화 통계 로드
   2. collector.py 의 슬라이딩 윈도우(20, 27)를 받아 추론
   3. 드론별 상태 유지형 CUSUM + fail count 로 이상 탐지
   4. 탐지 결과를 evaluator.py 가 사용할 수 있는 형태로 반환
+
+기체별 모델:
+  drone-001 (DM4_1) → models/DM4_1/DM4_1_best_model.pth
+  drone-002 (DM4_2) → models/DM4_2/DM4_2_best_model.pth
+  drone-003 (DM3)   → models/DM3/DM3_best_model.pth
+  drone-004 (DM4_6) → models/quadNormal_best_model.pth (기본 모델)
 """
 
 from __future__ import annotations
 
-import os
 import pickle
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -21,18 +26,23 @@ import torch.nn as nn
 
 from app.cbm.collector import get_window, reset_window
 
-# ── 모델 / pkl 파일 경로 ────────────────────────────────
+# ── 모델 기본 경로 ──────────────────────────────────────
 _BASE = Path(__file__).parent / "models"
-MODEL_PATH = _BASE / "quadNormal_best_model.pth"
-PKL_PATH   = _BASE / "quadNormal_retrained_stats.pkl"
+
+# ── 기체별 모델 경로 매핑 ───────────────────────────────
+DRONE_MODEL_MAP = {
+    "drone-001": (_BASE / "DM4_1" / "DM4_1_best_model.pth", _BASE / "DM4_1" / "DM4_1_stats.pkl"),
+    "drone-002": (_BASE / "DM4_2" / "DM4_2_best_model.pth", _BASE / "DM4_2" / "DM4_2_stats.pkl"),
+    "drone-003": (_BASE / "DM3"   / "DM3_best_model.pth",   _BASE / "DM3"   / "DM3_stats.pkl"),
+    "drone-004": (_BASE / "quadNormal_best_model.pth",       _BASE / "quadNormal_retrained_stats.pkl"),
+}
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
-DETECT_FAIL_CNT = 5        # 연속 임계 초과 횟수 → 이상 판정
-CUSUM_THRESHOLD = 10.0     # CUSUM 누적합 임계값
-CUSUM_DRIFT     = 0.03     # CUSUM drift (bias)
+DETECT_FAIL_CNT = 5
+CUSUM_THRESHOLD = 10.0
+CUSUM_DRIFT     = 0.03
 
 # ── 피처별 fail count 임계값 (detectFailure.py 원본 기준) ──
-# 지정되지 않은 피처는 RMSE + sigma 자동 계산값 사용
 FAIL_THRESHOLDS_OVERRIDE = {
     0:  0.4,    # volt
     1:  0.05,   # current
@@ -92,6 +102,9 @@ FEATURE_MESSAGES = {
 }
 
 
+# ════════════════════════════════════════════════════════
+# CNN-LSTM 모델
+# ════════════════════════════════════════════════════════
 class CNNLSTM(nn.Module):
     def __init__(self, win_s, num_features, output_dim,
                  filter_size=(3, 1), num_filters=32, lstm_hidden=128):
@@ -115,6 +128,9 @@ class CNNLSTM(nn.Module):
         return self.fc(hn[-1])
 
 
+# ════════════════════════════════════════════════════════
+# 드론별 상태
+# ════════════════════════════════════════════════════════
 class _DroneState:
     def __init__(self, num_features, rmse_train):
         self.n = num_features
@@ -129,89 +145,93 @@ class _DroneState:
         self.S[:]            = 0.0
 
 
+# ════════════════════════════════════════════════════════
+# 단일 모델 컨테이너
+# ════════════════════════════════════════════════════════
+class _ModelBundle:
+    def __init__(self, model, device, mu, sig, win_s, n_feat, n_out, rmse_train, thresholds):
+        self.model      = model
+        self.device     = device
+        self.mu         = mu
+        self.sig        = sig
+        self.win_s      = win_s
+        self.n_feat     = n_feat
+        self.n_out      = n_out
+        self.rmse_train = rmse_train
+        self.thresholds = thresholds
+
+
+def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_ModelBundle]:
+    if not model_path.exists():
+        print(f"[inference] ❌ 모델 파일 없음: {model_path}")
+        return None
+    if not pkl_path.exists():
+        print(f"[inference] ❌ pkl 파일 없음: {pkl_path}")
+        return None
+
+    try:
+        with open(pkl_path, "rb") as f:
+            stats = pickle.load(f)
+
+        mu  = np.array(stats["mu"]).squeeze()
+        sig = np.array(stats["sig"]).squeeze()
+        sig[sig == 0] = 1e-7
+        win_s  = int(stats["win_s"])
+        n_feat = mu.shape[0]
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        ckpt   = torch.load(model_path, map_location=device, weights_only=False)
+
+        n_out = ckpt["model_state_dict"]["fc.weight"].shape[0]
+        model = CNNLSTM(win_s=win_s, num_features=n_feat, output_dim=n_out).to(device)
+        model.load_state_dict(ckpt["model_state_dict"])
+        model.eval()
+
+        rmse_train = np.array(ckpt["rmse_train_list"], dtype=np.float32)
+        min_len    = min(len(rmse_train), len(sig))
+        thresholds = rmse_train[:min_len] + sig[:min_len]
+        for feat_idx, override_val in FAIL_THRESHOLDS_OVERRIDE.items():
+            if feat_idx < min_len:
+                thresholds[feat_idx] = override_val
+
+        print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out}")
+        return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out, rmse_train, thresholds)
+
+    except Exception as e:
+        print(f"[inference] ❌ [{label}] 로드 실패: {e}")
+        return None
+
+
+# ════════════════════════════════════════════════════════
+# 추론 엔진 (싱글턴)
+# ════════════════════════════════════════════════════════
 class InferenceEngine:
     def __init__(self):
-        self._ready   = False
-        self._model   = None
-        self._device  = None
-        self._mu      = None
-        self._sig     = None
-        self._win_s   = None
-        self._n_feat  = None
-        self._n_out   = None
-        self._thresholds = None
-        self._rmse_train = None
+        self._bundles: Dict[str, _ModelBundle] = {}
         self._drone_states: Dict[str, _DroneState] = {}
-        self._load()
+        self._load_all()
 
-    def _load(self):
-        if not MODEL_PATH.exists():
-            print(f"[inference] ❌ 모델 파일 없음: {MODEL_PATH}")
-            return
-        if not PKL_PATH.exists():
-            print(f"[inference] ❌ pkl 파일 없음: {PKL_PATH}")
-            return
+    def _load_all(self):
+        for drone_id, (model_path, pkl_path) in DRONE_MODEL_MAP.items():
+            bundle = _load_bundle(model_path, pkl_path, drone_id)
+            if bundle:
+                self._bundles[drone_id] = bundle
 
-        try:
-            with open(PKL_PATH, "rb") as f:
-                stats = pickle.load(f)
-
-            mu  = np.array(stats["mu"]).squeeze()
-            sig = np.array(stats["sig"]).squeeze()
-            sig[sig == 0] = 1e-7
-            win_s  = int(stats["win_s"])
-            n_feat = mu.shape[0]
-
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            ckpt   = torch.load(MODEL_PATH, map_location=device, weights_only=False)
-
-            n_out = ckpt["model_state_dict"]["fc.weight"].shape[0]
-            model = CNNLSTM(win_s=win_s, num_features=n_feat, output_dim=n_out).to(device)
-            model.load_state_dict(ckpt["model_state_dict"])
-            model.eval()
-
-            rmse_train = np.array(ckpt["rmse_train_list"], dtype=np.float32)
-
-            # ── 피처별 임계값: 원본 값 우선, 나머지는 RMSE+sigma ──
-            min_len    = min(len(rmse_train), len(sig))
-            thresholds = rmse_train[:min_len] + sig[:min_len]
-            for feat_idx, override_val in FAIL_THRESHOLDS_OVERRIDE.items():
-                if feat_idx < min_len:
-                    thresholds[feat_idx] = override_val
-
-            self._model      = model
-            self._device     = device
-            self._mu         = mu
-            self._sig        = sig
-            self._win_s      = win_s
-            self._n_feat     = n_feat
-            self._n_out      = n_out
-            self._thresholds = thresholds
-            self._rmse_train = rmse_train
-            self._ready      = True
-
-            print(f"[inference] ✅ 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out} device={device}")
-
-        except Exception as e:
-            print(f"[inference] ❌ 로드 실패: {e}")
+    def _get_bundle(self, drone_id: str) -> Optional[_ModelBundle]:
+        """drone_id에 맞는 모델 반환, 없으면 None"""
+        return self._bundles.get(drone_id)
 
     @property
-    def ready(self):
-        return self._ready
+    def ready(self) -> bool:
+        return bool(self._bundles)
 
-    def _get_state(self, drone_id):
+    def _get_state(self, drone_id: str, bundle: _ModelBundle) -> _DroneState:
         if drone_id not in self._drone_states:
             self._drone_states[drone_id] = _DroneState(
-                num_features=self._n_feat,
-                rmse_train=self._rmse_train.tolist(),
+                num_features=bundle.n_feat,
+                rmse_train=bundle.rmse_train.tolist(),
             )
         return self._drone_states[drone_id]
-
-    def _normalize(self, x):
-        return (x - self._mu) / self._sig
-
-    def _inverse_normalize(self, y_norm):
-        return y_norm * self._sig[:self._n_out] + self._mu[:self._n_out]
 
     @staticmethod
     def _fix_yaw(X):
@@ -232,37 +252,33 @@ class InferenceEngine:
         return X
 
     def run(self, drone_id: str) -> List[dict]:
-        if not self._ready:
+        bundle = self._get_bundle(drone_id)
+        if bundle is None:
             return []
 
         window = get_window(drone_id)
         if window is None:
             return []
 
-        state = self._get_state(drone_id)
+        state = self._get_state(drone_id, bundle)
 
         window_fixed = self._fix_yaw(window)
-        x_norm       = self._normalize(window_fixed)
-          # (20, 27)
+        x_norm       = (window_fixed - bundle.mu) / bundle.sig  # (20, 27)
 
         y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
-
-        # 입력: (1, 27, 20)
-        x_tensor = torch.tensor(
-            x_norm, dtype=torch.float32
-        ).unsqueeze(0).to(self._device)
+        x_tensor    = torch.tensor(x_norm, dtype=torch.float32).unsqueeze(0).to(bundle.device)
 
         with torch.no_grad():
-            y_pred_norm = self._model(x_tensor).squeeze(0).cpu()
+            y_pred_norm = bundle.model(x_tensor).squeeze(0).cpu()
 
-        y_pred   = self._inverse_normalize(y_pred_norm.numpy())
-        y_true   = self._inverse_normalize(y_true_norm.numpy())
+        y_pred   = y_pred_norm.numpy() * bundle.sig[:bundle.n_out] + bundle.mu[:bundle.n_out]
+        y_true   = y_true_norm.numpy() * bundle.sig[:bundle.n_out] + bundle.mu[:bundle.n_out]
         err      = np.abs(y_pred - y_true)
         err_norm = np.abs(y_pred_norm.numpy() - y_true_norm.numpy())
 
         alerts = []
-        n = min(self._n_out, self._n_feat)
-        thresholds = self._thresholds[:n]
+        n = min(bundle.n_out, bundle.n_feat)
+        thresholds = bundle.thresholds[:n]
 
         # ── fail count (점진적 이상) ──────────────────────
         for j in range(n):
@@ -293,7 +309,7 @@ class InferenceEngine:
 
         # ── CUSUM (순간적 이상) ───────────────────────────
         err_norm_arr = err_norm[:n].reshape(1, n)
-        mu0          = self._rmse_train[:n]
+        mu0          = bundle.rmse_train[:n]
         state.S      = np.maximum(0, state.S + (err_norm_arr - mu0 - CUSUM_DRIFT))
         cusum_flags  = (state.S > CUSUM_THRESHOLD).squeeze(0)
 
@@ -327,18 +343,25 @@ class InferenceEngine:
             state.reset()
 
     def get_cusum_values(self, drone_id: str) -> Optional[dict]:
-        state = self._drone_states.get(drone_id)
-        if state is None:
+        state  = self._drone_states.get(drone_id)
+        bundle = self._get_bundle(drone_id)
+        if state is None or bundle is None:
             return None
-        return {FEATURE_NAMES[i]: float(state.S[0, i]) for i in range(min(self._n_out, len(FEATURE_NAMES)))}
+        return {FEATURE_NAMES[i]: float(state.S[0, i])
+                for i in range(min(bundle.n_out, len(FEATURE_NAMES)))}
 
     def get_fail_counts(self, drone_id: str) -> Optional[dict]:
-        state = self._drone_states.get(drone_id)
-        if state is None:
+        state  = self._drone_states.get(drone_id)
+        bundle = self._get_bundle(drone_id)
+        if state is None or bundle is None:
             return None
-        return {FEATURE_NAMES[i]: int(state.fail_cnt[i]) for i in range(min(self._n_out, len(FEATURE_NAMES)))}
+        return {FEATURE_NAMES[i]: int(state.fail_cnt[i])
+                for i in range(min(bundle.n_out, len(FEATURE_NAMES)))}
 
 
+# ════════════════════════════════════════════════════════
+# 싱글턴 접근자
+# ════════════════════════════════════════════════════════
 _engine: Optional[InferenceEngine] = None
 
 def get_inference_engine() -> InferenceEngine:
