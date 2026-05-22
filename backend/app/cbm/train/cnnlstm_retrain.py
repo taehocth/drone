@@ -30,15 +30,15 @@ from torch.utils.data import Dataset, DataLoader
 # ══════════════════════════════════════════════
 # 파라미터 설정
 # ══════════════════════════════════════════════
-DATA_DIR   = "csv_output/DM3"
-PKL_PATH   = "pkl_files/DM3_stats.pkl"
-SAVE_PATH  = "trainResult/DM3_best_model.pth"
+DATA_DIR  = "csv_output/DM4_1"
+PKL_PATH  = "pkl_files/DM4_1_stats.pkl"
+SAVE_PATH = "trainResult/DM4_1_best_model.pth"
 TEMP_PATH  = "trainResult/quadNormal_best_model_temp.pth"
 
 WIN_S               = 20
 NUM_EPOCHS          = 100   # 넉넉하게 (Early Stopping이 멈춰줌)
-BATCH_SIZE          = 64
-LR                  = 0.001
+BATCH_SIZE          = 256
+LR                  = 0.0005
 EARLY_STOP_PATIENCE = 10    # Test Loss가 10번 연속 개선 안 되면 중단
 
 
