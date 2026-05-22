@@ -57,3 +57,6 @@ temp/
 *.swp
 *.swo
 *.bak
+backend/app/cbm/train/ulog_files/
+
+backend/app/cbm/train/csv_output/
