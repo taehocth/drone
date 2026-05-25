@@ -2779,6 +2779,7 @@ export function UavDashboard() {
                 <div className="p-4">
                   <RealtimeCBMStatusCard
                     connected={droneConnected && !isDroneOffline}
+                    droneId={selectedDroneId}
                     droneData={
                       droneData && !isDroneOffline
                         ? {
