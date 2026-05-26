@@ -230,9 +230,23 @@ export function RealtimeCBMStatusCard({
         }
       }
       ws.onerror = () => ws.close()
+      const lastAlertRef = useRef<CbmWsPayload | null>(null)
+      const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
       ws.onmessage = (e) => {
         try {
-          setCbmPayload(JSON.parse(e.data))
+          const payload = JSON.parse(e.data)
+          if (payload.has_alert) {
+            lastAlertRef.current = payload
+            if (alertTimerRef.current) clearTimeout(alertTimerRef.current)
+            alertTimerRef.current = setTimeout(() => {
+              lastAlertRef.current = null
+              setCbmPayload(payload)
+            }, 10000)
+            setCbmPayload(payload)
+          } else if (!lastAlertRef.current) {
+            setCbmPayload(payload)
+          }
         } catch {}
       }
     }

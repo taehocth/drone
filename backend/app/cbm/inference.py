@@ -38,7 +38,7 @@ DRONE_MODEL_MAP = {
 }
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
-DETECT_FAIL_CNT = 5
+DETECT_FAIL_CNT = 10
 CUSUM_THRESHOLD = 10.0
 CUSUM_DRIFT     = 0.03
 
