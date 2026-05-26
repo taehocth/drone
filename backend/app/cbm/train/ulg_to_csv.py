@@ -37,7 +37,7 @@ from pyulog import ULog
 # ── 설정 ──────────────────────────────────────────────
 ULOG_DIR   = "ulog_files"   # ulog 파일이 있는 폴더
 OUTPUT_DIR = "csv_output"   # 변환된 CSV 저장 폴더
-DRONE_IDS  = ["DM4_1"]  # 기체 ID
+DRONE_IDS  = ["DM4_6"]  # 기체 ID
 
 
 # ── 헬퍼 함수 ─────────────────────────────────────────

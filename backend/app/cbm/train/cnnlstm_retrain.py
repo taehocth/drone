@@ -30,9 +30,9 @@ from torch.utils.data import Dataset, DataLoader
 # ══════════════════════════════════════════════
 # 파라미터 설정
 # ══════════════════════════════════════════════
-DATA_DIR  = "csv_output/DM4_1"
-PKL_PATH  = "pkl_files/DM4_1_stats.pkl"
-SAVE_PATH = "trainResult/DM4_1_best_model.pth"
+DATA_DIR  = "csv_output/DM4_6"
+PKL_PATH  = "pkl_files/DM4_6_stats.pkl"
+SAVE_PATH = "trainResult/DM4_6_best_model.pth"
 TEMP_PATH  = "trainResult/quadNormal_best_model_temp.pth"
 
 WIN_S               = 20

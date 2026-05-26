@@ -34,7 +34,7 @@ DRONE_MODEL_MAP = {
     "drone-001": (_BASE / "DM4_1" / "DM4_1_best_model.pth", _BASE / "DM4_1" / "DM4_1_stats.pkl"),
     "drone-002": (_BASE / "DM4_2" / "DM4_2_best_model.pth", _BASE / "DM4_2" / "DM4_2_stats.pkl"),
     "drone-003": (_BASE / "DM3"   / "DM3_best_model.pth",   _BASE / "DM3"   / "DM3_stats.pkl"),
-    "drone-004": (_BASE / "quadNormal_best_model.pth",       _BASE / "quadNormal_retrained_stats.pkl"),
+    "drone-004": (_BASE / "DM4_6" / "DM4_6_best_model.pth", _BASE / "DM4_6" / "DM4_6_stats.pkl"),
 }
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
