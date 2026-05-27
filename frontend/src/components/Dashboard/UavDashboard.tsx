@@ -75,7 +75,7 @@ const DEFAULT_MAP_OPTIONS = {
   center: { lat: 36.7881, lng: 126.4664 },
 }
 
-const DRONE_IDS = ["drone-001", "drone-002", "drone-003", "drone-004"]
+const DRONE_IDS = ["drone-001", "drone-002", "drone-004", "drone-003"]
 
 // ==========================
 // Web Notification 훅
@@ -1773,7 +1773,7 @@ const getSpeedLevel = (
         ? "caution"
         : "safe"
 
-const DRONE_LABELS = ["DM4_1", "DM4_2", "DM3", "DM4_6"]
+const DRONE_LABELS = ["DM4_1", "DM4_2", "DM4_6", "DM3"]
 const INITIAL_DRONE_WS_STATE: DroneWsState = {
   wsConnected: false,
   droneActive: false,
