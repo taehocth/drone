@@ -16,7 +16,6 @@ import {
   Radio,
 } from "lucide-react"
 
-// ── 타입 ────────────────────────────────────────────────────
 interface RuleSystem {
   system: string
   level: "safe" | "warning" | "danger"
@@ -47,7 +46,7 @@ interface CbmWsPayload {
 
 interface RealtimeCBMStatusCardProps {
   connected: boolean
-  droneId?: string // ← drone_id (선택한 기체 ID)
+  droneId?: string
   droneData?: {
     battery?: number
     altitude?: number
@@ -57,13 +56,12 @@ interface RealtimeCBMStatusCardProps {
   }
 }
 
-// ── 상수 ────────────────────────────────────────────────────
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1"
 
 const WS_RECONNECT_DELAY_MS = 5000
+const ALERT_HOLD_MS = 10000 // 알람 유지 시간 (10초)
 
-// ── 규칙 기반 시스템 계산 ────────────────────────────────────
 function calcRuleSystems(
   connected: boolean,
   droneData?: RealtimeCBMStatusCardProps["droneData"],
@@ -87,7 +85,6 @@ function calcRuleSystems(
 
   const systems: RuleSystem[] = []
 
-  // 배터리
   if (typeof droneData.battery === "number") {
     const b = droneData.battery
     systems.push(
@@ -109,7 +106,6 @@ function calcRuleSystems(
     systems.push({ system: "Battery", level: "warning", msg: "데이터 없음" })
   }
 
-  // ESC (속도)
   if (typeof droneData.speed === "number") {
     const s = droneData.speed
     systems.push(
@@ -131,7 +127,6 @@ function calcRuleSystems(
     systems.push({ system: "ESC", level: "warning", msg: "데이터 없음" })
   }
 
-  // FCC (고도)
   if (typeof droneData.altitude === "number") {
     const a = droneData.altitude
     systems.push(
@@ -145,7 +140,6 @@ function calcRuleSystems(
     systems.push({ system: "FCC", level: "warning", msg: "데이터 없음" })
   }
 
-  // GNSS
   const { gpsFixType: fixType, gpsSatellites: sats } = droneData
   if (sats != null) {
     systems.push(
@@ -172,7 +166,6 @@ function calcRuleSystems(
   return systems
 }
 
-// ── AI 탐지 섹션 레벨 집계 ──────────────────────────────────
 function aiOverallLevel(
   alerts: AiAlert[],
   modelReady: boolean,
@@ -185,7 +178,6 @@ function aiOverallLevel(
   return "safe"
 }
 
-// ── 메인 컴포넌트 ────────────────────────────────────────────
 export function RealtimeCBMStatusCard({
   connected,
   droneId,
@@ -193,20 +185,24 @@ export function RealtimeCBMStatusCard({
 }: RealtimeCBMStatusCardProps) {
   const ruleSystems = calcRuleSystems(connected, droneData)
 
-  // AI WebSocket 상태
+  // ── useRef는 반드시 컴포넌트 최상단에서 선언 ──
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastAlertRef = useRef<CbmWsPayload | null>(null) // ← 최상단으로 이동
+  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null) // ← 최상단으로 이동
+
   const [wsConnected, setWsConnected] = useState(false)
   const [cbmPayload, setCbmPayload] = useState<CbmWsPayload | null>(null)
   const [aiExpanded, setAiExpanded] = useState(true)
 
-  // ── WebSocket 연결 ──────────────────────────────────────
   useEffect(() => {
     if (!connected || !droneId) {
       wsRef.current?.close()
       wsRef.current = null
       setCbmPayload(null)
       setWsConnected(false)
+      lastAlertRef.current = null
+      if (alertTimerRef.current) clearTimeout(alertTimerRef.current)
       return
     }
 
@@ -230,22 +226,22 @@ export function RealtimeCBMStatusCard({
         }
       }
       ws.onerror = () => ws.close()
-      const lastAlertRef = useRef<CbmWsPayload | null>(null)
-      const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
       ws.onmessage = (e) => {
         try {
-          const payload = JSON.parse(e.data)
+          const payload: CbmWsPayload = JSON.parse(e.data)
           if (payload.has_alert) {
+            // 이상 감지 시 10초간 알람 유지
             lastAlertRef.current = payload
             if (alertTimerRef.current) clearTimeout(alertTimerRef.current)
             alertTimerRef.current = setTimeout(() => {
               lastAlertRef.current = null
+            }, ALERT_HOLD_MS)
+            setCbmPayload(payload)
+          } else {
+            // 정상 신호: 알람 유지 중이면 마지막 알람 상태 유지
+            if (!lastAlertRef.current) {
               setCbmPayload(payload)
-            }, 10000)
-            setCbmPayload(payload)
-          } else if (!lastAlertRef.current) {
-            setCbmPayload(payload)
+            }
           }
         } catch {}
       }
@@ -254,12 +250,12 @@ export function RealtimeCBMStatusCard({
     connect()
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current)
+      if (alertTimerRef.current) clearTimeout(alertTimerRef.current)
       wsRef.current?.close()
       wsRef.current = null
     }
   }, [connected, droneId])
 
-  // ── 렌더 헬퍼 ──────────────────────────────────────────
   const ruleIcon: Record<string, JSX.Element> = {
     Battery: <Battery className="h-4 w-4 text-amber-500" />,
     ESC: <Zap className="h-4 w-4 text-rose-500" />,
@@ -280,14 +276,11 @@ export function RealtimeCBMStatusCard({
     off: "bg-slate-50/60  border-slate-200/60  text-slate-500",
   }
 
-  // AI 섹션 상태
   const modelReady = cbmPayload?.model_ready ?? false
   const windowSize = cbmPayload?.window_size ?? 0
-  const hasAlert = cbmPayload?.has_alert ?? false
   const aiAlerts = cbmPayload?.systems ?? []
   const aiLevel = aiOverallLevel(aiAlerts, modelReady, windowSize)
 
-  // 시스템별 그룹핑 (중복 제거)
   const alertBySystem = aiAlerts.reduce<Record<string, AiAlert[]>>((acc, a) => {
     if (!acc[a.system]) acc[a.system] = []
     acc[a.system].push(a)
@@ -335,7 +328,6 @@ export function RealtimeCBMStatusCard({
 
         {/* ── AI 이상 탐지 섹션 ── */}
         <div className="space-y-2">
-          {/* 헤더 */}
           <button
             type="button"
             onClick={() => setAiExpanded((v) => !v)}
@@ -346,7 +338,6 @@ export function RealtimeCBMStatusCard({
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 AI 이상 탐지 (CNN-LSTM)
               </p>
-              {/* WebSocket 연결 표시 */}
               {connected &&
                 droneId &&
                 (wsConnected ? (
@@ -364,17 +355,14 @@ export function RealtimeCBMStatusCard({
 
           {aiExpanded && (
             <div className="space-y-2">
-              {/* 미연결 */}
               {(!connected || !droneId) && (
                 <div className="rounded-xl border border-slate-200/60 bg-slate-50/60 px-3 py-2 text-xs text-slate-400">
                   기체 연결 후 AI 탐지가 시작됩니다
                 </div>
               )}
 
-              {/* 연결됨 */}
               {connected && droneId && (
                 <>
-                  {/* 모델 상태 바 */}
                   <div
                     className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs ${aiLevelTone[aiLevel]}`}
                   >
@@ -383,15 +371,10 @@ export function RealtimeCBMStatusCard({
                       <span className="font-medium">{droneId} 모델</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {/* 윈도우 진행 바 */}
                       <div className="flex items-center gap-1">
                         <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200/60">
                           <div
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              windowSize >= 20
-                                ? "bg-emerald-500"
-                                : "bg-amber-400"
-                            }`}
+                            className={`h-full rounded-full transition-all duration-300 ${windowSize >= 20 ? "bg-emerald-500" : "bg-amber-400"}`}
                             style={{ width: `${(windowSize / 20) * 100}%` }}
                           />
                         </div>
@@ -411,7 +394,6 @@ export function RealtimeCBMStatusCard({
                     </div>
                   </div>
 
-                  {/* 이상 없음 */}
                   {aiLevel === "safe" && (
                     <div className="flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-700">
                       <CheckCircle className="h-4 w-4 shrink-0" />
@@ -419,7 +401,6 @@ export function RealtimeCBMStatusCard({
                     </div>
                   )}
 
-                  {/* 이상 항목 목록 */}
                   {(aiLevel === "warning" || aiLevel === "danger") &&
                     Object.entries(alertBySystem).map(([sysName, alerts]) => (
                       <div
@@ -430,22 +411,16 @@ export function RealtimeCBMStatusCard({
                             : "border-amber-200/70 bg-amber-50/60"
                         }`}
                       >
-                        {/* 시스템 이름 */}
                         <div className="mb-1.5 flex items-center gap-1.5">
                           {systemIconMap[sysName] ?? (
                             <AlertTriangle className="h-4 w-4 text-slate-400" />
                           )}
                           <span
-                            className={`font-semibold ${
-                              alerts.some((a) => a.level === "danger")
-                                ? "text-rose-700"
-                                : "text-amber-700"
-                            }`}
+                            className={`font-semibold ${alerts.some((a) => a.level === "danger") ? "text-rose-700" : "text-amber-700"}`}
                           >
                             {sysName}
                           </span>
                         </div>
-                        {/* 피처별 상세 */}
                         <div className="space-y-1">
                           {alerts.map((a, i) => (
                             <div
@@ -454,11 +429,7 @@ export function RealtimeCBMStatusCard({
                             >
                               <span className="text-slate-600">{a.msg}</span>
                               <span
-                                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                                  a.level === "danger"
-                                    ? "bg-rose-100 text-rose-700"
-                                    : "bg-amber-100 text-amber-700"
-                                }`}
+                                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${a.level === "danger" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
                               >
                                 {a.method === "cusum" ? "CUSUM" : "연속 초과"}
                               </span>
