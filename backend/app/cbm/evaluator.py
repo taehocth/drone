@@ -5,14 +5,7 @@ app/cbm/evaluator.py
   1. 규칙 기반 이상 탐지 (전압/온도/GPS 등 즉각 반응)
   2. CNN-LSTM 추론 결과 통합
   3. 두 결과를 source 필드로 구분하여 합산 반환
-
-사용 예시 (cbm_ws.py):
-    from app.cbm.collector import get_latest_telemetry, update_window
-    from app.cbm.evaluator import evaluate_cbm_state
-
-    update_window(drone_id)
-    data    = get_latest_telemetry()
-    results = evaluate_cbm_state(data, drone_id=drone_id)
+  4. Failsafe 알고리즘 연동 (인지 → 판단 → 대처 3단계)
 """
 
 from __future__ import annotations
@@ -21,6 +14,7 @@ from typing import List, Optional
 
 from app.cbm.thresholds import BATTERY_LIMITS, ESC_LIMITS, FCC_LIMITS, GNSS_LIMITS
 from app.cbm.inference import get_inference_engine
+from app.cbm.failsafe import evaluate_failsafe
 
 
 # ════════════════════════════════════════════════════════
@@ -97,13 +91,13 @@ def _evaluate_rules(data) -> List[dict]:
 
     # ── HDOP ────────────────────────────────────────────
     hdop = getattr(data, "hdop", None)
-    if hdop is not None and hdop < 90:   # 99.9 기본값 제외
+    if hdop is not None and hdop < 90:
         if hdop >= GNSS_LIMITS["hdop_danger"]:
             _a("GNSS", "danger",  f"HDOP 높음 ({hdop:.2f})")
         elif hdop >= GNSS_LIMITS["hdop_warning"]:
             _a("GNSS", "warning", f"HDOP 상승 ({hdop:.2f})")
 
-    # ── 배터리 잔량 (추가) ──────────────────────────────
+    # ── 배터리 잔량 ──────────────────────────────────────
     pct = getattr(data, "battery_pct", None)
     if pct is not None and pct > 0:
         if pct <= 20:
@@ -138,22 +132,25 @@ def _evaluate_cnn_lstm(drone_id: str) -> List[dict]:
 def evaluate_cbm_state(
     data,
     drone_id: Optional[str] = None,
-) -> List[dict]:
+) -> dict:
     """
-    규칙 기반 + CNN-LSTM 결과를 통합하여 반환.
+    규칙 기반 + CNN-LSTM 결과를 통합하고
+    Failsafe 단계까지 판정하여 반환.
 
     Args:
         data:     collector.get_latest_telemetry() 반환값 (SimpleNamespace)
         drone_id: 드론 ID (CNN-LSTM 추론에 필요, None 이면 AI 탐지 스킵)
 
     Returns:
-        [
-          # 규칙 기반
-          {"system": "Battery", "level": "danger",  "source": "rule",     "msg": "..."},
-          # CNN-LSTM
-          {"system": "Gyro",    "level": "danger",  "source": "cnn_lstm", "method": "fail_count", "feature": "...", "msg": "..."},
-          {"system": "Motor",   "level": "warning", "source": "cnn_lstm", "method": "cusum",      "feature": "...", "msg": "..."},
-        ]
+        {
+            "alerts": [...],       # 기존 이상 탐지 alerts
+            "failsafe": {
+                "level":       "normal" | "monitor" | "rtl" | "land",
+                "total_score": int,
+                "details":     [...],
+                "action_msg":  str,
+            }
+        }
     """
     # ── 1. 규칙 기반
     rule_alerts = _evaluate_rules(data)
@@ -161,18 +158,14 @@ def evaluate_cbm_state(
     # ── 2. CNN-LSTM
     ai_alerts = _evaluate_cnn_lstm(drone_id) if drone_id else []
 
-    # ── 3. 중복 제거
-    #   같은 system + level 이 rule 과 cnn_lstm 양쪽에 있으면
-    #   rule 을 우선하고 cnn_lstm 은 method/feature 정보만 추가
+    # ── 3. 중복 제거 (rule 우선)
     merged: List[dict] = list(rule_alerts)
-
     rule_keys = {(a["system"], a["level"]) for a in rule_alerts}
 
     for ai in ai_alerts:
         key = (ai["system"], ai["level"])
         if key not in rule_keys:
             merged.append(ai)
-        # 이미 rule 에서 잡힌 경우: cnn_lstm 결과는 추가 정보로만 로깅
         else:
             print(
                 f"[evaluator] AI 중복 탐지 (rule 우선): "
@@ -184,4 +177,14 @@ def evaluate_cbm_state(
     level_order = {"danger": 0, "warning": 1}
     merged.sort(key=lambda a: level_order.get(a["level"], 2))
 
-    return merged
+    # ── 5. Failsafe 판정
+    failsafe_result = (
+        evaluate_failsafe(data, merged, drone_id)
+        if drone_id
+        else {"level": "normal", "total_score": 0, "details": [], "action_msg": "정상 — 이상 없음"}
+    )
+
+    return {
+        "alerts":   merged,
+        "failsafe": failsafe_result,
+    }
