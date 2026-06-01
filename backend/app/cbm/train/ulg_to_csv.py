@@ -37,7 +37,13 @@ from pyulog import ULog
 # ── 설정 ──────────────────────────────────────────────
 ULOG_DIR   = "ulog_files"   # ulog 파일이 있는 폴더
 OUTPUT_DIR = "csv_output"   # 변환된 CSV 저장 폴더
-DRONE_IDS  = ["DM4_6"]  # 기체 ID
+DRONE_IDS = ["DM4_1", "DM4_2", "DM3", "DM4_6"] # 기체 ID
+
+# ── 품질 필터 설정 ─────────────────────────────────────
+MIN_ROWS           = 500     # 최소 행 수 (너무 짧은 로그 제외)
+MIN_GPS_STD        = 0.0001  # GPS 변화량 최소값 (이동거리 너무 짧은 로그 제외)
+MAX_NULL_RATIO     = 0.05    # 결측치 허용 비율 (5% 초과 시 제외)
+MAX_GAP_SEC        = 5.0     # 타임스탬프 최대 허용 gap (초) - LTE 끊김 감지
 
 
 # ── 헬퍼 함수 ─────────────────────────────────────────
@@ -58,10 +64,38 @@ def resample(ts_ref, ts_src, values):
     return values[indices]
 
 
-def convert_ulg_to_df(ulg_path: str) -> pd.DataFrame:
+def check_quality(df, gyro_ts) -> tuple[bool, str]:
+    """
+    DataFrame 품질 검사.
+    반환: (통과 여부, 사유)
+    """
+    # 1. 최소 행 수 검사
+    if len(df) < MIN_ROWS:
+        return False, f"행 수 부족 ({len(df)}행 < {MIN_ROWS}행)"
+
+    # 2. 결측치 비율 검사
+    null_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
+    if null_ratio > MAX_NULL_RATIO:
+        return False, f"결측치 과다 ({null_ratio*100:.1f}% > {MAX_NULL_RATIO*100:.0f}%)"
+
+    # 3. GPS 이동거리 검사 (DM3 짧은 로그 제외)
+    gps_std = df['esti_gps_pos_north'].std() + df['esti_gps_pos_east'].std()
+    if gps_std < MIN_GPS_STD:
+        return False, f"이동거리 너무 짧음 (GPS std={gps_std:.6f} < {MIN_GPS_STD})"
+
+    # 4. 타임스탬프 gap 검사 (DM4_1 LTE 끊김 감지)
+    ts_diff = np.diff(gyro_ts) / 1e6  # microseconds → seconds
+    max_gap = ts_diff.max()
+    if max_gap > MAX_GAP_SEC:
+        return False, f"LTE 끊김 감지 (최대 gap={max_gap:.1f}초 > {MAX_GAP_SEC}초)"
+
+    return True, "OK"
+
+
+def convert_ulg_to_df(ulg_path: str):
     """
     ulog 파일 1개를 27컬럼 DataFrame으로 변환.
-    실패 시 None 반환.
+    실패 시 (None, 사유) 반환.
     """
     try:
         ulog = ULog(ulg_path)
@@ -84,8 +118,7 @@ def convert_ulg_to_df(ulg_path: str) -> pd.DataFrame:
                 'estimator_sensor_bias', 'sensor_gyro',
                 'sensor_accel', 'actuator_outputs'
             ]) if t is None]
-            print(f"  ⚠️ 필수 토픽 없음: {missing}")
-            return None
+            return None, f"필수 토픽 없음: {missing}"
 
         # 기준 타임스탬프: sensor_gyro
         ref_ts = gyro.data['timestamp']
@@ -129,11 +162,15 @@ def convert_ulg_to_df(ulg_path: str) -> pd.DataFrame:
             'pwm4':               resample(ref_ts, act.data['timestamp'],   act.data['output[3]']),
         })
 
-        return df
+        # 품질 검사
+        passed, reason = check_quality(df, ref_ts)
+        if not passed:
+            return None, reason
+
+        return df, "OK"
 
     except Exception as e:
-        print(f"  ❌ 변환 오류: {e}")
-        return None
+        return None, f"변환 오류: {e}"
 
 
 # ── 메인 ──────────────────────────────────────────────
@@ -145,9 +182,16 @@ if __name__ == "__main__":
     print(f" 출력 폴더: {OUTPUT_DIR}")
     print(f" 기체 IDs: {DRONE_IDS}")
     print()
+    print("── 품질 필터 설정 ──")
+    print(f" 최소 행 수:        {MIN_ROWS}행")
+    print(f" GPS 최소 이동:     {MIN_GPS_STD}")
+    print(f" 결측치 허용:       {MAX_NULL_RATIO*100:.0f}%")
+    print(f" LTE 끊김 감지 gap: {MAX_GAP_SEC}초")
+    print()
 
     total_success = 0
     total_fail    = 0
+    skip_reasons  = {}  # 제외 사유 집계
 
     for drone_id in DRONE_IDS:
         input_dir  = os.path.join(ULOG_DIR, drone_id)
@@ -173,22 +217,26 @@ if __name__ == "__main__":
 
             print(f"  변환 중: {fname} ...", end="")
 
-            df = convert_ulg_to_df(ulg_path)
-            if df is not None and len(df) > 100:
-                # 헤더 없이 저장 (학습 코드가 header=None으로 읽음)
+            df, reason = convert_ulg_to_df(ulg_path)
+            if df is not None:
                 df.to_csv(csv_path, index=False, header=False)
                 print(f" ✅ ({len(df)}행)")
                 success += 1
             else:
-                if df is not None:
-                    print(f" ⚠️ 데이터 너무 적음 ({len(df)}행) → 스킵")
+                print(f" ⚠️ 제외 → {reason}")
+                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
                 fail += 1
 
-        print(f"\n  [{drone_id}] 완료: 성공 {success}개 / 실패 {fail}개")
+        print(f"\n  [{drone_id}] 완료: 성공 {success}개 / 제외 {fail}개")
         total_success += success
         total_fail    += fail
 
     print(f"\n{'=' * 55}")
-    print(f" 전체 완료: 성공 {total_success}개 / 실패 {total_fail}개")
+    print(f" 전체 완료: 성공 {total_success}개 / 제외 {total_fail}개")
     print(f" 결과물 위치: {OUTPUT_DIR}/")
+    if skip_reasons:
+        print()
+        print(" ── 제외 사유 요약 ──")
+        for reason, count in sorted(skip_reasons.items(), key=lambda x: -x[1]):
+            print(f"  {count}개 → {reason}")
     print("=" * 55)
