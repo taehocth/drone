@@ -1,17 +1,16 @@
 """
 cnnlstm_retrain.py
 
-quadNormal_sortie1~4.csv 를 사용해서
+csv_output/ 하위 모든 기체 폴더의 CSV를 합쳐서
 CNN-LSTM 모델을 Early Stopping으로 재학습합니다.
-Test Loss가 개선되지 않으면 자동 중단하고 최적 모델을 저장합니다.
 
 실행 방법:
     cd backend/app/cbm/train
     python cnnlstm_retrain.py
 
 결과물:
-    trainResult/quadNormal_best_model.pth  ← 서버에 올릴 모델
-    pkl_files/quadNormal_retrained_stats.pkl
+    trainResult/UNIFIED_best_model.pth
+    pkl_files/UNIFIED_stats.pkl
 """
 
 import os
@@ -30,16 +29,16 @@ from torch.utils.data import Dataset, DataLoader
 # ══════════════════════════════════════════════
 # 파라미터 설정
 # ══════════════════════════════════════════════
-DATA_DIR  = "csv_output/DM4_6"
-PKL_PATH  = "pkl_files/DM4_6_stats.pkl"
-SAVE_PATH = "trainResult/DM4_6_best_model.pth"
-TEMP_PATH  = "trainResult/quadNormal_best_model_temp.pth"
+DATA_DIR  = "csv_output"                        # ← 전체 폴더 (하위 기체 폴더 자동 탐색)
+PKL_PATH  = "pkl_files/UNIFIED_stats.pkl"
+SAVE_PATH = "trainResult/UNIFIED_best_model.pth"
+TEMP_PATH = "trainResult/UNIFIED_best_model_temp.pth"
 
 WIN_S               = 20
-NUM_EPOCHS          = 100   # 넉넉하게 (Early Stopping이 멈춰줌)
+NUM_EPOCHS          = 100
 BATCH_SIZE          = 256
-LR                  = 0.0005
-EARLY_STOP_PATIENCE = 10    # Test Loss가 10번 연속 개선 안 되면 중단
+LR                  = 0.0001
+EARLY_STOP_PATIENCE = 15
 
 
 # ══════════════════════════════════════════════
@@ -122,11 +121,16 @@ class CNNLSTM(nn.Module):
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
 
-    # ── 1. 데이터 로드 ──────────────────────────
-    file_list = sorted(glob.glob(os.path.join(DATA_DIR, "*.csv")))
-    print(f"[데이터] 파일 수: {len(file_list)}")
-    for f in file_list:
-        print(f"  {os.path.basename(f)}")
+    # ── 1. 하위 폴더 전체 CSV 탐색 ──────────────
+    # csv_output/DM4_1/*.csv, csv_output/DM4_2/*.csv 등 모두 포함
+    file_list = sorted(glob.glob(os.path.join(DATA_DIR, "**", "*.csv"), recursive=True))
+    print(f"[데이터] 전체 CSV 파일 수: {len(file_list)}")
+
+    # 기체별 파일 수 출력
+    from collections import Counter
+    drone_counts = Counter(os.path.basename(os.path.dirname(f)) for f in file_list)
+    for drone, cnt in sorted(drone_counts.items()):
+        print(f"  {drone}: {cnt}개")
 
     XTrain, YTrain = [], []
     XTest,  YTest  = [], []
@@ -143,7 +147,7 @@ if __name__ == "__main__":
                 Xl.append(seg[:WIN_S][..., np.newaxis])
                 Yl.append(seg[WIN_S])
 
-    print(f"[데이터] Train: {len(XTrain)}개, Test: {len(XTest)}개")
+    print(f"\n[데이터] Train: {len(XTrain)}개, Test: {len(XTest)}개")
 
     # ── 2. 정규화 ───────────────────────────────
     XTrain_concat = np.concatenate(XTrain, axis=0)
@@ -180,7 +184,6 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)
 
     for epoch in range(NUM_EPOCHS):
-        # Train
         model.train()
         train_loss = 0
         for Xb, Yb in train_loader:
@@ -192,7 +195,6 @@ if __name__ == "__main__":
             train_loss += loss.item() * Xb.size(0)
         train_loss /= len(train_loader.dataset)
 
-        # Test
         model.eval()
         test_loss = 0
         with torch.no_grad():
@@ -208,7 +210,6 @@ if __name__ == "__main__":
         print(f"  Epoch {epoch+1:3d}/{NUM_EPOCHS} "
               f"| Train: {train_loss:.6f} | Test: {test_loss:.6f}", end="")
 
-        # Early Stopping 체크
         if test_loss < best_test_loss:
             best_test_loss   = test_loss
             best_epoch       = epoch + 1
@@ -267,6 +268,7 @@ if __name__ == "__main__":
     print(f"\n✅ 저장 완료!")
     print(f"  모델 : {SAVE_PATH}  (Best epoch={best_epoch})")
     print(f"  통계 : {PKL_PATH}")
+    print(f"  학습 데이터: {drone_counts}")
 
     # ── 9. Loss 그래프 ───────────────────────────
     plt.figure(figsize=(10, 4))
@@ -279,6 +281,6 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('trainResult/loss_curve_early_stop.png')
+    plt.savefig('trainResult/loss_curve_UNIFIED.png')
     plt.show()
-    print("  그래프: trainResult/loss_curve_early_stop.png")
+    print("  그래프: trainResult/loss_curve_UNIFIED.png")
