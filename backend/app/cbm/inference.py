@@ -1,17 +1,21 @@
 """
-app/cbm/inference.py
+app/cbm/inference.py  (11-feature 버전)
 
 역할:
   1. 서버 시작 시 drone_id별 CNN-LSTM 모델 + 정규화 통계 로드
-  2. collector.py 의 슬라이딩 윈도우(20, 27)를 받아 추론
+  2. collector.py 의 슬라이딩 윈도우(20, 11)를 받아 추론
   3. 드론별 상태 유지형 CUSUM + fail count 로 이상 탐지
   4. 탐지 결과를 evaluator.py 가 사용할 수 있는 형태로 반환
 
+[이번 수정의 핵심]
+  - 입력 차원 27 → 8 (collector / cnnlstm_retrain 와 동일한 AI_FEATURE_COLS 순서)
+  - yaw unwrap 대상 인덱스: (원본 5,8) → (새 2,5)
+  - FAIL_THRESHOLDS_OVERRIDE 를 새 11피처 인덱스로 재매핑
+  - FEATURE_NAMES / FEATURE_MESSAGES 를 새 11개 기준으로 정리
+  - CUSUM 단위 통일: 정규화 오차(err_norm) 기준이므로 mu0 도 '정규화 스케일'로 사용
+
 기체별 모델:
-  drone-001 (DM4_1) → models/DM4_1/DM4_1_best_model.pth
-  drone-002 (DM4_2) → models/DM4_2/DM4_2_best_model.pth
-  drone-003 (DM3)   → models/DM3/DM3_best_model.pth
-  drone-004 (DM4_6) → models/quadNormal_best_model.pth (기본 모델)
+  drone-001~004 → models/UNIFIED/UNIFIED_best_model.pth  (통합 모델)
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from app.cbm.collector import get_window, reset_window
+from app.cbm.collector import get_window, reset_window, AI_FEATURE_COLS
 
 # ── 모델 기본 경로 ──────────────────────────────────────
 _BASE = Path(__file__).parent / "models"
@@ -37,69 +41,45 @@ DRONE_MODEL_MAP = {
     "drone-004": (_BASE / "UNIFIED" / "UNIFIED_best_model.pth", _BASE / "UNIFIED" / "UNIFIED_stats.pkl"),
 }
 
-
 # ── 이상 탐지 파라미터 ──────────────────────────────────
 DETECT_FAIL_CNT = 10
 CUSUM_THRESHOLD = 10.0
 CUSUM_DRIFT     = 0.03
 
-# ── 피처별 fail count 임계값 (detectFailure.py 원본 기준) ──
-FAIL_THRESHOLDS_OVERRIDE = {
-    0:  0.4,    # volt
-    1:  0.05,   # current
-    11: 0.01,   # esti_gyro_bias_x
-    12: 0.01,   # esti_gyro_bias_y
-    13: 0.01,   # esti_gyro_bias_z
-    17: 0.3,    # sensor_gyro_x
-    18: 0.3,    # sensor_gyro_y
-    19: 0.3,    # sensor_gyro_z
-    20: 0.3,    # sensor_accel_x
-    21: 0.3,    # sensor_accel_y
-    22: 0.3,    # sensor_accel_z
-}
+# ── AI 새 인덱스(0~10) 기준 yaw unwrap 대상 ─────────────
+#   원본 5(att_cmd_yaw) → 새 2,  원본 8(att_state_yaw) → 새 5
+YAW_COLS_NEW = [AI_FEATURE_COLS.index(5), AI_FEATURE_COLS.index(8)]  # = [2, 5]
 
-# ── 피처 이름 ───────────────────────────────────────────
+# ── 피처 이름 (새 11개, AI_FEATURE_COLS 순서) ───────────
 FEATURE_NAMES = [
-    "volt", "current",
-    "esti_gps_pos_north", "esti_gps_pos_east", "esti_gps_pos_down",
-    "att_cmd_yaw", "att_cmd_pitch", "att_cmd_roll",
-    "att_state_yaw", "att_state_pitch", "att_state_roll",
-    "esti_gyro_bias_x", "esti_gyro_bias_y", "esti_gyro_bias_z",
-    "esti_accel_bias_x", "esti_accel_bias_y", "esti_accel_bias_z",
-    "sensor_gyro_x", "sensor_gyro_y", "sensor_gyro_z",
-    "sensor_accel_x", "sensor_accel_y", "sensor_accel_z",
-    "pwm1", "pwm2", "pwm3", "pwm4",
+    "volt",            # new0  (orig 0)
+    "current",         # new1  (orig 1)
+    "att_cmd_yaw",     # new2  (orig 5)
+    "att_cmd_pitch",   # new3  (orig 6)
+    "att_cmd_roll",    # new4  (orig 7)
+    "att_state_yaw",   # new5  (orig 8)
+    "att_state_pitch", # new6  (orig 9)
+    "att_state_roll",  # new7  (orig 10)
 ]
 
-# ── 피처별 이상 메시지 ───────────────────────────────────
+# ── 피처별 fail count 임계값 (새 인덱스 기준) ────────────
+#   원본 detectFailure.py: volt=0.4, current=0.05
+#   (gyro·EKF·accel override 는 AI 에서 제거됐으므로 삭제 → gyro 는 물리 임계로 감시)
+FAIL_THRESHOLDS_OVERRIDE = {
+    0: 0.4,    # volt
+    1: 0.05,   # current
+}
+
+# ── 피처별 이상 메시지 (새 11개) ─────────────────────────
 FEATURE_MESSAGES = {
-    "volt":               ("Power",  "전압 이상 감지"),
-    "current":            ("Power",  "전류 이상 감지"),
-    "esti_gps_pos_north": ("GPS",    "GPS North 위치 이상"),
-    "esti_gps_pos_east":  ("GPS",    "GPS East 위치 이상"),
-    "esti_gps_pos_down":  ("GPS",    "GPS Down 위치 이상"),
-    "att_cmd_yaw":        ("Flight", "Yaw 명령 이상"),
-    "att_cmd_pitch":      ("Flight", "Pitch 명령 이상"),
-    "att_cmd_roll":       ("Flight", "Roll 명령 이상"),
-    "att_state_yaw":      ("Flight", "Yaw 상태 이상"),
-    "att_state_pitch":    ("Flight", "Pitch 상태 이상"),
-    "att_state_roll":     ("Flight", "Roll 상태 이상"),
-    "esti_gyro_bias_x":   ("EKF",   "Gyro Bias X 이상"),
-    "esti_gyro_bias_y":   ("EKF",   "Gyro Bias Y 이상"),
-    "esti_gyro_bias_z":   ("EKF",   "Gyro Bias Z 이상"),
-    "esti_accel_bias_x":  ("EKF",   "Accel Bias X 이상"),
-    "esti_accel_bias_y":  ("EKF",   "Accel Bias Y 이상"),
-    "esti_accel_bias_z":  ("EKF",   "Accel Bias Z 이상"),
-    "sensor_gyro_x":      ("Gyro",  "Gyro X 각속도 이상"),
-    "sensor_gyro_y":      ("Gyro",  "Gyro Y 각속도 이상"),
-    "sensor_gyro_z":      ("Gyro",  "Gyro Z 각속도 이상"),
-    "sensor_accel_x":     ("Accel", "Accel X 가속도 이상"),
-    "sensor_accel_y":     ("Accel", "Accel Y 가속도 이상"),
-    "sensor_accel_z":     ("Accel", "Accel Z 가속도 이상"),
-    "pwm1":               ("Motor", "Motor 1 PWM 이상"),
-    "pwm2":               ("Motor", "Motor 2 PWM 이상"),
-    "pwm3":               ("Motor", "Motor 3 PWM 이상"),
-    "pwm4":               ("Motor", "Motor 4 PWM 이상"),
+    "volt":            ("Power",  "전압 이상 감지"),
+    "current":         ("Power",  "전류 이상 감지"),
+    "att_cmd_yaw":     ("Flight", "Yaw 명령 이상"),
+    "att_cmd_pitch":   ("Flight", "Pitch 명령 이상"),
+    "att_cmd_roll":    ("Flight", "Roll 명령 이상"),
+    "att_state_yaw":   ("Flight", "Yaw 상태 이상"),
+    "att_state_pitch": ("Flight", "Pitch 상태 이상"),
+    "att_state_roll":  ("Flight", "Roll 상태 이상"),
 }
 
 
@@ -133,9 +113,10 @@ class CNNLSTM(nn.Module):
 # 드론별 상태
 # ════════════════════════════════════════════════════════
 class _DroneState:
-    def __init__(self, num_features, rmse_train):
+    def __init__(self, num_features, cusum_mu0):
         self.n = num_features
-        self.err_mu0 = np.array(rmse_train, dtype=np.float32)
+        # CUSUM 기준치: 정규화 스케일이어야 err_norm 과 단위가 맞음
+        self.err_mu0 = np.array(cusum_mu0, dtype=np.float32)
         self.fail_cnt     = np.zeros(num_features, dtype=np.int32)
         self.pre_fail_cnt = np.zeros(num_features, dtype=np.int32)
         self.S = np.zeros((1, num_features), dtype=np.float32)
@@ -150,7 +131,8 @@ class _DroneState:
 # 단일 모델 컨테이너
 # ════════════════════════════════════════════════════════
 class _ModelBundle:
-    def __init__(self, model, device, mu, sig, win_s, n_feat, n_out, rmse_train, thresholds):
+    def __init__(self, model, device, mu, sig, win_s, n_feat, n_out,
+                 rmse_train, thresholds, cusum_mu0):
         self.model      = model
         self.device     = device
         self.mu         = mu
@@ -158,8 +140,9 @@ class _ModelBundle:
         self.win_s      = win_s
         self.n_feat     = n_feat
         self.n_out      = n_out
-        self.rmse_train = rmse_train
-        self.thresholds = thresholds
+        self.rmse_train = rmse_train     # 원본 스케일 (fail_count threshold 계산용)
+        self.thresholds = thresholds     # 원본 스케일 (err 와 비교)
+        self.cusum_mu0  = cusum_mu0      # 정규화 스케일 (err_norm 과 비교)
 
 
 def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_ModelBundle]:
@@ -174,11 +157,18 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         with open(pkl_path, "rb") as f:
             stats = pickle.load(f)
 
-        mu  = np.array(stats["mu"]).squeeze()
-        sig = np.array(stats["sig"]).squeeze()
+        mu  = np.array(stats["mu"]).squeeze()    # (11,)
+        sig = np.array(stats["sig"]).squeeze()   # (11,)
         sig[sig == 0] = 1e-7
         win_s  = int(stats["win_s"])
         n_feat = mu.shape[0]
+
+        # 학습 측 feature_cols 와 collector 측 AI_FEATURE_COLS 일치 검증
+        train_cols = stats.get("feature_cols")
+        if train_cols is not None and list(train_cols) != list(AI_FEATURE_COLS):
+            print(f"[inference] ⚠️ feature_cols 불일치! 학습={train_cols} vs collector={AI_FEATURE_COLS}")
+        if n_feat != len(AI_FEATURE_COLS):
+            print(f"[inference] ⚠️ 피처 수 불일치! stats={n_feat} vs collector={len(AI_FEATURE_COLS)}")
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ckpt   = torch.load(model_path, map_location=device, weights_only=False)
@@ -188,15 +178,21 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         model.load_state_dict(ckpt["model_state_dict"])
         model.eval()
 
-        rmse_train = np.array(ckpt["rmse_train_list"], dtype=np.float32)
+        rmse_train = np.array(ckpt["rmse_train_list"], dtype=np.float32)   # 원본 스케일
         min_len    = min(len(rmse_train), len(sig))
+
+        # fail_count 임계값: 원본 스케일 (rmse_train + sig), 일부 override
         thresholds = rmse_train[:min_len] + sig[:min_len]
         for feat_idx, override_val in FAIL_THRESHOLDS_OVERRIDE.items():
             if feat_idx < min_len:
                 thresholds[feat_idx] = override_val
 
+        # CUSUM 기준치: 정규화 스케일. rmse_train(원본)을 sig 로 나눠 정규화 단위로 변환
+        cusum_mu0 = (rmse_train[:min_len] / sig[:min_len]).astype(np.float32)
+
         print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out}")
-        return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out, rmse_train, thresholds)
+        return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out,
+                            rmse_train, thresholds, cusum_mu0)
 
     except Exception as e:
         print(f"[inference] ❌ [{label}] 로드 실패: {e}")
@@ -219,7 +215,6 @@ class InferenceEngine:
                 self._bundles[drone_id] = bundle
 
     def _get_bundle(self, drone_id: str) -> Optional[_ModelBundle]:
-        """drone_id에 맞는 모델 반환, 없으면 None"""
         return self._bundles.get(drone_id)
 
     @property
@@ -230,14 +225,17 @@ class InferenceEngine:
         if drone_id not in self._drone_states:
             self._drone_states[drone_id] = _DroneState(
                 num_features=bundle.n_feat,
-                rmse_train=bundle.rmse_train.tolist(),
+                cusum_mu0=bundle.cusum_mu0.tolist(),
             )
         return self._drone_states[drone_id]
 
     @staticmethod
     def _fix_yaw(X):
+        """새 인덱스(YAW_COLS_NEW=[2,5]) 기준 yaw unwrap.
+           학습(cnnlstm_retrain)은 원본 좌표계에서 unwrap 했고,
+           추론은 이미 11개로 슬라이스된 윈도우를 받으므로 새 인덱스로 보정한다."""
         X = X.copy()
-        for col in [5, 8]:
+        for col in YAW_COLS_NEW:
             if col >= X.shape[1]:
                 continue
             sign = X[0, col] >= 0
@@ -257,14 +255,14 @@ class InferenceEngine:
         if bundle is None:
             return []
 
-        window = get_window(drone_id)
+        window = get_window(drone_id)   # (20, 11)
         if window is None:
             return []
 
         state = self._get_state(drone_id, bundle)
 
         window_fixed = self._fix_yaw(window)
-        x_norm       = (window_fixed - bundle.mu) / bundle.sig  # (20, 27)
+        x_norm       = (window_fixed - bundle.mu) / bundle.sig  # (20, 11)
 
         y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
         x_tensor    = torch.tensor(x_norm, dtype=torch.float32).unsqueeze(0).to(bundle.device)
@@ -281,7 +279,7 @@ class InferenceEngine:
         n = min(bundle.n_out, bundle.n_feat)
         thresholds = bundle.thresholds[:n]
 
-        # ── fail count (점진적 이상) ──────────────────────
+        # ── fail count (점진적 이상) — 원본 스케일 ────────
         for j in range(n):
             if err[j] >= thresholds[j]:
                 state.fail_cnt[j] += 1
@@ -308,9 +306,9 @@ class InferenceEngine:
             else:
                 state.pre_fail_cnt[j] = state.fail_cnt[j]
 
-        # ── CUSUM (순간적 이상) ───────────────────────────
+        # ── CUSUM (순간적 이상) — 정규화 스케일로 통일 ────
         err_norm_arr = err_norm[:n].reshape(1, n)
-        mu0          = bundle.rmse_train[:n]
+        mu0          = bundle.cusum_mu0[:n]    # ← 정규화 스케일 (단위 통일)
         state.S      = np.maximum(0, state.S + (err_norm_arr - mu0 - CUSUM_DRIFT))
         cusum_flags  = (state.S > CUSUM_THRESHOLD).squeeze(0)
 
