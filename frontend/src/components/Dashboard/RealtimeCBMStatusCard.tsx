@@ -62,6 +62,10 @@ const API_BASE_URL =
 const WS_RECONNECT_DELAY_MS = 5000
 const ALERT_HOLD_MS = 10000 // 알람 유지 시간 (10초)
 
+// AI가 감시하는 시스템 목록 (항상 화면에 표시: 정상이면 초록, 이상이면 알람)
+// 8피처 모델 기준 — Power(volt,current), Flight(자세 6개)
+const AI_MONITORED_SYSTEMS = ["Power", "Flight"] as const
+
 function calcRuleSystems(
   connected: boolean,
   droneData?: RealtimeCBMStatusCardProps["droneData"],
@@ -297,6 +301,9 @@ export function RealtimeCBMStatusCard({
     Motor: <Zap className="h-4 w-4 text-red-500" />,
   }
 
+  // AI 모델이 추론 중(수집 완료 + 모델 준비)일 때만 시스템별 정상/이상을 신뢰 표시
+  const aiActive = modelReady && windowSize >= 20
+
   return (
     <Card className="rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.35)] ring-1 ring-white/70 backdrop-blur-xl transition-all duration-300 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
       <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60">
@@ -394,50 +401,78 @@ export function RealtimeCBMStatusCard({
                     </div>
                   </div>
 
-                  {aiLevel === "safe" && (
-                    <div className="flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-700">
-                      <CheckCircle className="h-4 w-4 shrink-0" />
-                      모든 센서 패턴 정상 범위입니다
+                  {/* 수집 중(off): 아직 추론 전이라 시스템별 상태를 신뢰할 수 없음 */}
+                  {aiLevel === "off" && (
+                    <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/60 px-3 py-2 text-xs text-slate-500">
+                      <Activity className="h-4 w-4 shrink-0 animate-pulse" />
+                      데이터 수집 중입니다 (20개 채워지면 탐지 시작)
                     </div>
                   )}
 
-                  {(aiLevel === "warning" || aiLevel === "danger") &&
-                    Object.entries(alertBySystem).map(([sysName, alerts]) => (
-                      <div
-                        key={sysName}
-                        className={`rounded-xl border px-3 py-2 text-xs ${
-                          alerts.some((a) => a.level === "danger")
-                            ? "border-rose-200/70 bg-rose-50/60"
-                            : "border-amber-200/70 bg-amber-50/60"
-                        }`}
-                      >
-                        <div className="mb-1.5 flex items-center gap-1.5">
-                          {systemIconMap[sysName] ?? (
-                            <AlertTriangle className="h-4 w-4 text-slate-400" />
-                          )}
-                          <span
-                            className={`font-semibold ${alerts.some((a) => a.level === "danger") ? "text-rose-700" : "text-amber-700"}`}
-                          >
-                            {sysName}
-                          </span>
-                        </div>
-                        <div className="space-y-1">
-                          {alerts.map((a, i) => (
-                            <div
-                              key={i}
-                              className="flex items-start justify-between gap-2"
-                            >
-                              <span className="text-slate-600">{a.msg}</span>
-                              <span
-                                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${a.level === "danger" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
-                              >
-                                {a.method === "cusum" ? "CUSUM" : "연속 초과"}
+                  {/* 추론 활성: 감시 시스템(Power·Flight)을 항상 표시.
+                      이상 없으면 초록 '정상', 있으면 해당 시스템만 알람 상세 */}
+                  {aiActive &&
+                    AI_MONITORED_SYSTEMS.map((sysName) => {
+                      const alerts = alertBySystem[sysName] ?? []
+                      const hasDanger = alerts.some((a) => a.level === "danger")
+                      const hasWarning = alerts.some(
+                        (a) => a.level === "warning",
+                      )
+                      const tone = hasDanger
+                        ? "border-rose-200/70 bg-rose-50/60"
+                        : hasWarning
+                          ? "border-amber-200/70 bg-amber-50/60"
+                          : "border-emerald-200/70 bg-emerald-50/60"
+                      const labelColor = hasDanger
+                        ? "text-rose-700"
+                        : hasWarning
+                          ? "text-amber-700"
+                          : "text-emerald-700"
+
+                      return (
+                        <div
+                          key={sysName}
+                          className={`rounded-xl border px-3 py-2 text-xs ${tone}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              {systemIconMap[sysName] ?? (
+                                <CheckCircle className="h-4 w-4 text-slate-400" />
+                              )}
+                              <span className={`font-semibold ${labelColor}`}>
+                                {sysName}
                               </span>
                             </div>
-                          ))}
+                            {/* 정상일 때: 초록 체크 + '정상' 배지 */}
+                            {alerts.length === 0 && (
+                              <span className="flex items-center gap-1 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                <CheckCircle className="h-3 w-3" />
+                                정상
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 이상일 때: 기존 알람 상세 목록 */}
+                          {alerts.length > 0 && (
+                            <div className="mt-1.5 space-y-1">
+                              {alerts.map((a, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-start justify-between gap-2"
+                                >
+                                  <span className="text-slate-600">{a.msg}</span>
+                                  <span
+                                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${a.level === "danger" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
+                                  >
+                                    {a.method === "cusum" ? "CUSUM" : "연속 초과"}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                 </>
               )}
             </div>
