@@ -1,17 +1,17 @@
 """
-app/cbm/inference.py  (11-feature 버전)
+app/cbm/inference.py  (8-feature 버전)
 
 역할:
   1. 서버 시작 시 drone_id별 CNN-LSTM 모델 + 정규화 통계 로드
-  2. collector.py 의 슬라이딩 윈도우(20, 11)를 받아 추론
+  2. collector.py 의 슬라이딩 윈도우(20, 8)를 받아 추론
   3. 드론별 상태 유지형 CUSUM + fail count 로 이상 탐지
   4. 탐지 결과를 evaluator.py 가 사용할 수 있는 형태로 반환
 
 [이번 수정의 핵심]
   - 입력 차원 27 → 8 (collector / cnnlstm_retrain 와 동일한 AI_FEATURE_COLS 순서)
   - yaw unwrap 대상 인덱스: (원본 5,8) → (새 2,5)
-  - FAIL_THRESHOLDS_OVERRIDE 를 새 11피처 인덱스로 재매핑
-  - FEATURE_NAMES / FEATURE_MESSAGES 를 새 11개 기준으로 정리
+  - FAIL_THRESHOLDS_OVERRIDE 정리(volt 만 고정, current 는 자동값)
+  - FEATURE_NAMES / FEATURE_MESSAGES 를 새 8개 기준으로 정리
   - CUSUM 단위 통일: 정규화 오차(err_norm) 기준이므로 mu0 도 '정규화 스케일'로 사용
 
 기체별 모델:
@@ -50,7 +50,7 @@ CUSUM_DRIFT     = 0.03
 #   원본 5(att_cmd_yaw) → 새 2,  원본 8(att_state_yaw) → 새 5
 YAW_COLS_NEW = [AI_FEATURE_COLS.index(5), AI_FEATURE_COLS.index(8)]  # = [2, 5]
 
-# ── 피처 이름 (새 11개, AI_FEATURE_COLS 순서) ───────────
+# ── 피처 이름 (새 8개, AI_FEATURE_COLS 순서) ───────────
 FEATURE_NAMES = [
     "volt",            # new0  (orig 0)
     "current",         # new1  (orig 1)
@@ -63,14 +63,16 @@ FEATURE_NAMES = [
 ]
 
 # ── 피처별 fail count 임계값 (새 인덱스 기준) ────────────
-#   원본 detectFailure.py: volt=0.4, current=0.05
-#   (gyro·EKF·accel override 는 AI 에서 제거됐으므로 삭제 → gyro 는 물리 임계로 감시)
+#   volt 만 고정 override 유지 (전압은 변동이 있어 자동값보다 넉넉한 0.4 가 적절).
+#   current 는 override 를 제거해 자동 계산값(rmse_train + sig)을 사용한다.
+#     - 이번 재학습 current RMSE=0.019 로 매우 작아, 고정 0.05 는 오히려 과민/부적절.
+#     - 자동값은 학습된 정상 변동(sig)을 반영하므로 정상 비행에서 덜 울린다.
+#   gyro·EKF·accel override 는 해당 피처들이 AI 에서 빠졌으므로 없음.
 FAIL_THRESHOLDS_OVERRIDE = {
     0: 0.4,    # volt
-    1: 0.05,   # current
 }
 
-# ── 피처별 이상 메시지 (새 11개) ─────────────────────────
+# ── 피처별 이상 메시지 (새 8개) ─────────────────────────
 FEATURE_MESSAGES = {
     "volt":            ("Power",  "전압 이상 감지"),
     "current":         ("Power",  "전류 이상 감지"),
@@ -157,8 +159,8 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         with open(pkl_path, "rb") as f:
             stats = pickle.load(f)
 
-        mu  = np.array(stats["mu"]).squeeze()    # (11,)
-        sig = np.array(stats["sig"]).squeeze()   # (11,)
+        mu  = np.array(stats["mu"]).squeeze()    # (8,)
+        sig = np.array(stats["sig"]).squeeze()   # (8,)
         sig[sig == 0] = 1e-7
         win_s  = int(stats["win_s"])
         n_feat = mu.shape[0]
@@ -233,7 +235,7 @@ class InferenceEngine:
     def _fix_yaw(X):
         """새 인덱스(YAW_COLS_NEW=[2,5]) 기준 yaw unwrap.
            학습(cnnlstm_retrain)은 원본 좌표계에서 unwrap 했고,
-           추론은 이미 11개로 슬라이스된 윈도우를 받으므로 새 인덱스로 보정한다."""
+           추론은 이미 8개로 슬라이스된 윈도우를 받으므로 새 인덱스로 보정한다."""
         X = X.copy()
         for col in YAW_COLS_NEW:
             if col >= X.shape[1]:
@@ -255,14 +257,14 @@ class InferenceEngine:
         if bundle is None:
             return []
 
-        window = get_window(drone_id)   # (20, 11)
+        window = get_window(drone_id)   # (20, 8)
         if window is None:
             return []
 
         state = self._get_state(drone_id, bundle)
 
         window_fixed = self._fix_yaw(window)
-        x_norm       = (window_fixed - bundle.mu) / bundle.sig  # (20, 11)
+        x_norm       = (window_fixed - bundle.mu) / bundle.sig  # (20, 8)
 
         y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
         x_tensor    = torch.tensor(x_norm, dtype=torch.float32).unsqueeze(0).to(bundle.device)
