@@ -43,8 +43,9 @@ DRONE_MODEL_MAP = {
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
 DETECT_FAIL_CNT = 10
-CUSUM_THRESHOLD = 10.0
-CUSUM_DRIFT     = 0.03
+CUSUM_THRESHOLD = 15.0   # 누적 한계선 (10 → 15: 더 오래 지속돼야 경고)
+CUSUM_DRIFT     = 0.10   # 허용 여유분 (0.03 → 0.10: 기준선 위 이만큼은 정상으로 간주)
+CUSUM_MU0_MARGIN = 1.5   # 정상 기준선 여유 계수 (학습 평균 오차 × 1.5 까지 정상)
 
 # ── AI 새 인덱스(0~10) 기준 yaw unwrap 대상 ─────────────
 #   원본 5(att_cmd_yaw) → 새 2,  원본 8(att_state_yaw) → 새 5
@@ -190,7 +191,9 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
                 thresholds[feat_idx] = override_val
 
         # CUSUM 기준치: 정규화 스케일. rmse_train(원본)을 sig 로 나눠 정규화 단위로 변환
-        cusum_mu0 = (rmse_train[:min_len] / sig[:min_len]).astype(np.float32)
+        # MU0_MARGIN 을 곱해 '정상으로 간주하는 폭'을 학습 평균 오차보다 넓게 잡는다
+        # (운용 환경이 학습 데이터와 조금 달라도 누적되지 않도록 — 오탐 완화)
+        cusum_mu0 = (rmse_train[:min_len] / sig[:min_len] * CUSUM_MU0_MARGIN).astype(np.float32)
 
         print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out}")
         return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out,
