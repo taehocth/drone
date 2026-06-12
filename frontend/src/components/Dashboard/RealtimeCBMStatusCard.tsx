@@ -62,9 +62,20 @@ const API_BASE_URL =
 const WS_RECONNECT_DELAY_MS = 5000
 const ALERT_HOLD_MS = 10000 // 알람 유지 시간 (10초)
 
-// AI가 감시하는 시스템 목록 (항상 화면에 표시: 정상이면 초록, 이상이면 알람)
-// 8피처 모델 기준 — Power(volt,current), Flight(자세 6개)
-const AI_MONITORED_SYSTEMS = ["Power", "Flight"] as const
+// AI가 감시하는 표시 그룹 (항상 화면에 표시: 정상이면 초록, 이상이면 알람)
+// 8피처 모델 기준 — Power(volt,current), 자세는 Roll/Pitch/Yaw 축별로 분리 표시
+// 각 그룹은 알람의 feature 이름으로 매칭한다 (예: att_cmd_roll, att_state_roll → Roll)
+interface AiDisplayGroup {
+  name: string
+  match: (feature: string) => boolean
+}
+
+const AI_DISPLAY_GROUPS: AiDisplayGroup[] = [
+  { name: "Power", match: (f) => f === "volt" || f === "current" },
+  { name: "Roll", match: (f) => f.endsWith("roll") },
+  { name: "Pitch", match: (f) => f.endsWith("pitch") },
+  { name: "Yaw", match: (f) => f.endsWith("yaw") },
+]
 
 function calcRuleSystems(
   connected: boolean,
@@ -285,14 +296,20 @@ export function RealtimeCBMStatusCard({
   const aiAlerts = cbmPayload?.systems ?? []
   const aiLevel = aiOverallLevel(aiAlerts, modelReady, windowSize)
 
-  const alertBySystem = aiAlerts.reduce<Record<string, AiAlert[]>>((acc, a) => {
-    if (!acc[a.system]) acc[a.system] = []
-    acc[a.system].push(a)
-    return acc
-  }, {})
+  // 알람을 표시 그룹(Power/Roll/Pitch/Yaw)별로 분류 — feature 이름 기준
+  const alertsByGroup = AI_DISPLAY_GROUPS.reduce<Record<string, AiAlert[]>>(
+    (acc, g) => {
+      acc[g.name] = aiAlerts.filter((a) => g.match(a.feature))
+      return acc
+    },
+    {},
+  )
 
   const systemIconMap: Record<string, JSX.Element> = {
     Power: <Battery className="h-4 w-4 text-amber-500" />,
+    Roll: <Activity className="h-4 w-4 text-blue-500" />,
+    Pitch: <Activity className="h-4 w-4 text-indigo-500" />,
+    Yaw: <Activity className="h-4 w-4 text-violet-500" />,
     GPS: <Satellite className="h-4 w-4 text-sky-500" />,
     Flight: <Activity className="h-4 w-4 text-blue-500" />,
     EKF: <Radio className="h-4 w-4 text-purple-500" />,
@@ -409,11 +426,12 @@ export function RealtimeCBMStatusCard({
                     </div>
                   )}
 
-                  {/* 추론 활성: 감시 시스템(Power·Flight)을 항상 표시.
-                      이상 없으면 초록 '정상', 있으면 해당 시스템만 알람 상세 */}
+                  {/* 추론 활성: 감시 그룹(Power·Roll·Pitch·Yaw)을 항상 표시.
+                      이상 없으면 초록 '정상', 있으면 해당 그룹만 알람 상세 */}
                   {aiActive &&
-                    AI_MONITORED_SYSTEMS.map((sysName) => {
-                      const alerts = alertBySystem[sysName] ?? []
+                    AI_DISPLAY_GROUPS.map((group) => {
+                      const sysName = group.name
+                      const alerts = alertsByGroup[sysName] ?? []
                       const hasDanger = alerts.some((a) => a.level === "danger")
                       const hasWarning = alerts.some(
                         (a) => a.level === "warning",
