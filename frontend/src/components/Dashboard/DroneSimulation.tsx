@@ -66,7 +66,11 @@ export function getFlightStatus(data: DroneData | null): FlightStatus {
 
 /* =========================
  * Drone 목록 정의
- * ========================= */
+ * =========================
+ * ⚠ lteIp는 telemetry_agent/agent.py 의 DRONE_LIST 와 반드시 일치해야 함.
+ *   agent가 push하는 lte_ip와 여기 값이 다르면 해당 기체 데이터가 화면에서 무시됨.
+ *   (2026-06: drone-001~003 LTE IP 변경 반영 — 3.36.81.238 → 121.153.47.136)
+ */
 interface DroneTarget {
   label: string
   port: number
@@ -78,7 +82,7 @@ const DRONE_TARGETS: DroneTarget[] = [
   {
     label: "DM4_1",
     port: 51067,
-    lteIp: "3.36.81.238:51067",
+    lteIp: "121.153.47.136:51067", // 3.36.81.238 → 121.153.47.136 (agent.py와 동기화)
     keywords: ["DM4_1", "dm4_1", "중왕항", "중왕"],
   },
   {
@@ -96,7 +100,7 @@ const DRONE_TARGETS: DroneTarget[] = [
   {
     label: "DM3",
     port: 52066,
-    lteIp: "3.36.81.238:52066",
+    lteIp: "121.153.47.136:52066", // 3.36.81.238 → 121.153.47.136 (agent.py와 동기화)
     keywords: ["DM3", "dm3", "삼길포항", "삼길포"],
   },
 ]
