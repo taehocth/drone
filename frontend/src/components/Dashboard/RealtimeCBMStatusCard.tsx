@@ -77,6 +77,12 @@ const AI_DISPLAY_GROUPS: AiDisplayGroup[] = [
   { name: "Yaw", match: (f) => f.endsWith("yaw") },
 ]
 
+// feature 문자열이 없는 알람(서버 형식 차이 등)으로부터 화면 크래시를 방지하는 안전 매칭
+function matchGroup(group: AiDisplayGroup, feature: string | undefined): boolean {
+  if (typeof feature !== "string" || feature.length === 0) return false
+  return group.match(feature)
+}
+
 function calcRuleSystems(
   connected: boolean,
   droneData?: RealtimeCBMStatusCardProps["droneData"],
@@ -299,7 +305,7 @@ export function RealtimeCBMStatusCard({
   // 알람을 표시 그룹(Power/Roll/Pitch/Yaw)별로 분류 — feature 이름 기준
   const alertsByGroup = AI_DISPLAY_GROUPS.reduce<Record<string, AiAlert[]>>(
     (acc, g) => {
-      acc[g.name] = aiAlerts.filter((a) => g.match(a.feature))
+      acc[g.name] = aiAlerts.filter((a) => matchGroup(g, a.feature))
       return acc
     },
     {},
