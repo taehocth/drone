@@ -43,4 +43,4 @@ xmltodict
 feedparser==6.0.12
 pandas==2.2.3
 pyulog==1.2.2
-google-generativeai>=0.8.0
+google-generativeai>=0.8.6
