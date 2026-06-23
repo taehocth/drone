@@ -13,7 +13,10 @@ app = FastAPI(title=settings.PROJECT_NAME)
 # ----------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS.split(","),
+    allow_origins=[
+        "https://drone-6-fabz.onrender.com",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
