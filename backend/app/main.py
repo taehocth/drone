@@ -33,7 +33,10 @@ async def on_startup():
 
     # 디버깅: 등록된 라우트 출력
     for route in app.routes:
-        print("등록된 엔드포인트:", route.path, getattr(route, "methods", "WS"))
+        path = getattr(route, "path", None)
+        if path is None:
+            continue
+        print("등록된 엔드포인트:", path, getattr(route, "methods", "WS"))
 
 # ----------------------
 # 루트 엔드포인트
