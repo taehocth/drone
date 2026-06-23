@@ -11,7 +11,7 @@ psycopg2-binary
 # --- 인증 & 보안 ---
 PyJWT
 passlib[bcrypt]==1.7.4
-bcrypt==4.0.1
+bcrypt==5.0.0
 python-multipart
 
 # --- 설정/환경 관리 ---
