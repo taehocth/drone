@@ -8,6 +8,7 @@ import DroneSimulation, {
   MissionWaypoint,
 } from "./DroneSimulation"
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
+import { AiAssistantPanel } from "./AiAssistantPanel"
 import { convertGRID_GPS } from "@/utils/convertGrid"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 import {
@@ -2795,6 +2796,14 @@ export function UavDashboard() {
                 </div>
               )}
             </div>
+
+            <AiAssistantPanel
+              droneConnected={droneConnected && !isDroneOffline}
+              droneData={isDroneOffline ? null : droneData}
+              droneLabel={
+                selectedDroneIdx !== null ? DRONE_LABELS[selectedDroneIdx] : null
+              }
+            />
 
             {!droneConnected && !isDroneOffline && (
               <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
