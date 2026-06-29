@@ -10,6 +10,8 @@ import DroneSimulation, {
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
 import { AiAssistantPanel } from "./AiAssistantPanel"
 import { convertGRID_GPS } from "@/utils/convertGrid"
+import SimDroneSimulation from "./SimDroneSimulation"
+import { SimCBMCard } from "./SimCBMCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 import {
   MapPin,
@@ -38,6 +40,7 @@ import {
   Target,
   Radio,
   AlertOctagon,
+  PlayCircle
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -1816,6 +1819,7 @@ export function UavDashboard() {
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
   const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [simMode, setSimMode] = useState(false)
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
@@ -2442,6 +2446,18 @@ export function UavDashboard() {
           </div>
           <div className="flex items-center gap-2">
             {renderNotificationButton()}
+            <button
+              type="button"
+              onClick={() => setSimMode((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition hover:opacity-80 ${
+                simMode
+                  ? "bg-indigo-100 text-indigo-700"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              {simMode ? "시뮬레이션 켜짐" : "시뮬레이션"}
+            </button>
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
             >
@@ -2659,11 +2675,19 @@ export function UavDashboard() {
                       : {}
                   }
                 >
+                  {simMode ? (
+                    <SimDroneSimulation
+                      onAllDroneStates={setAllDroneStates}
+                      onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
+                      onSelectedDrone={handleSelectedDrone}
+                    />
+                  ) : (
                   <DroneSimulation
                     onAllDroneStates={setAllDroneStates}
                     onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
                     onSelectedDrone={handleSelectedDrone}
                   />
+                )}
                 </div>
               </div>
             </div>
@@ -2778,6 +2802,9 @@ export function UavDashboard() {
               </div>
               {!collapseCBM && (
                 <div className="p-4">
+                  {simMode ? (
+                    <SimCBMCard droneId={selectedDroneId ?? "drone-002"} />
+                  ) : (
                   <RealtimeCBMStatusCard
                     connected={droneConnected && !isDroneOffline}
                     droneId={selectedDroneId}
@@ -2793,6 +2820,7 @@ export function UavDashboard() {
                         : undefined
                     }
                   />
+                  )}
                 </div>
               )}
             </div>
