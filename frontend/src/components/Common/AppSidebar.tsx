@@ -8,7 +8,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  // SidebarGroupLabel,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -93,25 +93,64 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          {/* <SidebarGroupLabel>Application</SidebarGroupLabel> */}
+          {/* 옅은 섹션 라벨로 구조감 부여 */}
+          <SidebarGroupLabel className="px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            메뉴
+          </SidebarGroupLabel>
           <SidebarGroupContent>
-            {/* 메뉴 항목 간격(gap-1)과 높이(py-5)를 키워 세로 공백을 자연스럽게 흡수 */}
-            <SidebarMenu className="gap-1">
-              {filteredItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    // isActive={item.url === window.location.pathname}
-                    isActive={item.url === router.location.pathname}
-                    className="py-5"
-                  >
-                    <Link to={item.url}>
-                      <item.icon />
-                      <span className="text-base">{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+            <SidebarMenu className="gap-1.5">
+              {filteredItems.map((item) => {
+                const isActive = item.url === router.location.pathname
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive}
+                      className={[
+                        // 공통: 둥근 모서리, 넉넉한 높이, 부드러운 전환
+                        "group/menu relative h-11 rounded-xl px-3 transition-all duration-200",
+                        // 호버: 살짝 배경 + 오른쪽으로 미세 이동
+                        "hover:translate-x-0.5 hover:bg-slate-100/80 dark:hover:bg-slate-800/50",
+                        // 선택 상태: 인디고 톤 강조
+                        isActive
+                          ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+                          : "text-slate-600 dark:text-slate-300",
+                      ].join(" ")}
+                    >
+                      <Link to={item.url}>
+                        {/* 선택 시 왼쪽 강조 바 */}
+                        <span
+                          className={[
+                            "absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-indigo-500 transition-all duration-200",
+                            isActive
+                              ? "opacity-100"
+                              : "opacity-0 group-hover/menu:opacity-40",
+                          ].join(" ")}
+                        />
+                        {/* 아이콘을 둥근 박스에 담아 정돈 */}
+                        <span
+                          className={[
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors [&>svg]:h-4 [&>svg]:w-4",
+                            isActive
+                              ? "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300"
+                              : "bg-slate-100/70 text-slate-500 group-hover/menu:bg-white dark:bg-slate-800/60 dark:text-slate-400",
+                          ].join(" ")}
+                        >
+                          <item.icon />
+                        </span>
+                        <span
+                          className={[
+                            "text-[15px] transition-colors",
+                            isActive ? "font-semibold" : "font-medium",
+                          ].join(" ")}
+                        >
+                          {item.title}
+                        </span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -128,12 +167,14 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <SidebarMenuButton>
-                  <User2 />
+                <SidebarMenuButton className="h-11 rounded-xl transition-colors hover:bg-slate-100/80 dark:hover:bg-slate-800/50">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100/70 text-slate-500 dark:bg-slate-800/60 dark:text-slate-400 [&>svg]:h-4 [&>svg]:w-4">
+                    <User2 />
+                  </span>
                   <Typography variant="bold">
                     {currentUser?.email && currentUser.email.split("@")[0]}
                   </Typography>
-                  <ChevronUp className="ml-auto" />
+                  <ChevronUp className="ml-auto h-4 w-4 text-slate-400" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent
