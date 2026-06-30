@@ -2632,10 +2632,10 @@ export function UavDashboard() {
             <div
               className={`overflow-hidden ${
                 mapSize === "small"
-                  ? "h-[480px]"
+                  ? "h-[380px]"
                   : mapSize === "large"
-                    ? "h-[820px]"
-                    : "h-[640px]"
+                    ? "h-[660px]"
+                    : "h-[512px]"
               }`}
             >
               <NaverMap
@@ -2731,7 +2731,12 @@ export function UavDashboard() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
 
+        {/* ===== 나머지 카드: 지도 아래 2단 배치 (원래대로) ===== */}
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+          <div className="space-y-5">
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -2787,7 +2792,9 @@ export function UavDashboard() {
                 )}
               </div>
             </div>
+          </div>
 
+          <div className="space-y-5">
             <FlightFeasibilityWidget
               droneConnected={droneConnected && !isDroneOffline}
               droneData={isDroneOffline ? null : droneData}
