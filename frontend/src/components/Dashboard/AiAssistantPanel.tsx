@@ -13,6 +13,7 @@ import {
   Send,
   BookOpen,
   Clock,
+  Loader2,
 } from "lucide-react"
 
 /* =============================================================
@@ -54,11 +55,55 @@ export function AiAssistantPanel({
   const [collapsed, setCollapsed] = useState(false)
   const [tab, setTab] = useState<TabKey>("report")
 
+  // ── 운용자 질문(Gemini) ──────────────────────────────────
+  // GeminiChatCard 와 동일한 백엔드 엔드포인트(/gemini/chat)를 재사용.
+  // 차이점: 현재 비행 데이터를 프롬프트에 함께 담아 '상황 맞춤형' 답변을 유도.
+  const [question, setQuestion] = useState("")
+  const [answer, setAnswer] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+
   const label = droneLabel ?? "DM4_2"
   // 실제 값이 있으면 사용, 없으면 시연용 기본값 (스크린샷에서 빈 화면 방지)
   const battery = droneData?.battery ?? 67
   const altitude = droneData?.altitude ?? 52
   const speed = droneData?.speed ?? 9.8
+
+  const askGemini = async () => {
+    const q = question.trim()
+    if (!q || asking) return
+    setAsking(true)
+    setAnswer(null)
+    try {
+      // 현재 비행 상태를 맥락으로 제공 (상황 맞춤형 답변용)
+      const ctx = droneConnected
+        ? `현재 기체 ${label} 비행 중 — 고도 ${altitude.toFixed(0)}m, 속도 ${speed.toFixed(1)}m/s, 배터리 ${battery.toFixed(0)}%.`
+        : `현재 기체 ${label}는 연결되어 있지 않습니다.`
+      const prompt =
+        `당신은 해상 드론 배송 관제 시스템의 AI 운용 어시스턴트입니다. ` +
+        `다음 비행 상태를 참고하여 운용자의 질문에 한국어로 간결하고 실무적으로 답하세요.\n` +
+        `[비행 상태] ${ctx}\n[질문] ${q}`
+
+      // GeminiChatCard 와 동일한 엔드포인트 규칙
+      const apiBaseUrl =
+        import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+      const apiUrl = apiBaseUrl.endsWith("/api/v1")
+        ? `${apiBaseUrl}/gemini/chat`
+        : `${apiBaseUrl}/api/v1/gemini/chat`
+
+      const res = await fetch(apiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: prompt, history: [] }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setAnswer(data?.response || "응답을 가져오지 못했습니다.")
+    } catch (err: any) {
+      setAnswer(`⚠️ 응답 실패: ${err?.message ?? "알 수 없는 오류"}`)
+    } finally {
+      setAsking(false)
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-indigo-200/60 bg-white shadow-sm">
@@ -323,19 +368,53 @@ export function AiAssistantPanel({
             </div>
           )}
 
-          {/* 운용자 질문 (입력 데모) — 우하단 'AI 상담'과 연계됨 */}
-          <div className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
-            <MessageCircle className="h-4 w-4 shrink-0 text-indigo-400" />
-            <span className="flex-1 truncate text-xs text-slate-400">
-              질문하기 — 예: "이번 비행에서 가장 주의할 점은?"
-            </span>
-            <button
-              type="button"
-              className="flex items-center gap-1 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-600"
-            >
-              <Send className="h-3 w-3" />
-              전송
-            </button>
+          {/* 운용자 질문 — Gemini 실연동 (현재 비행 데이터를 맥락으로 전달) */}
+          <div className="mt-4">
+            {/* 답변 표시 */}
+            {(answer || asking) && (
+              <div className="mb-2 flex items-start gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
+                {asking ? (
+                  <span className="flex items-center gap-2 text-xs text-slate-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    AI가 비행 데이터를 분석해 답변 중...
+                  </span>
+                ) : (
+                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
+                    {answer}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* 입력창 */}
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+              <MessageCircle className="h-4 w-4 shrink-0 text-indigo-400" />
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") askGemini()
+                }}
+                placeholder='질문하기 — 예: "이번 비행에서 가장 주의할 점은?"'
+                disabled={asking}
+                className="flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 disabled:opacity-60"
+              />
+              <button
+                type="button"
+                onClick={askGemini}
+                disabled={asking || !question.trim()}
+                className="flex items-center gap-1 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+              >
+                {asking ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Send className="h-3 w-3" />
+                )}
+                전송
+              </button>
+            </div>
           </div>
         </div>
       )}
