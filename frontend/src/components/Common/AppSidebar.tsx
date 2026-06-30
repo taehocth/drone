@@ -32,8 +32,6 @@ import {
   User2,
   ClipboardList,
   FileText,
-  ShieldCheck,
-  Cpu,
 } from "lucide-react"
 import Logo from "/assets/images/company-logo.svg"
 
@@ -97,13 +95,15 @@ export function AppSidebar() {
         <SidebarGroup>
           {/* <SidebarGroupLabel>Application</SidebarGroupLabel> */}
           <SidebarGroupContent>
-            <SidebarMenu>
+            {/* 메뉴 항목 간격(gap-1)과 높이(py-5)를 키워 세로 공백을 자연스럽게 흡수 */}
+            <SidebarMenu className="gap-1">
               {filteredItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
                     // isActive={item.url === window.location.pathname}
                     isActive={item.url === router.location.pathname}
+                    className="py-5"
                   >
                     <Link to={item.url}>
                       <item.icon />
@@ -115,68 +115,15 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {/* ── 메뉴와 푸터 사이 빈 공간 채우기: 시스템 상태 요약 ── */}
-        {/* mt-auto 로 아래로 밀어 메뉴 직후가 아닌 하단부에 배치 */}
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <div className="mx-2 space-y-3 rounded-2xl border border-slate-200/70 bg-gradient-to-br from-slate-50 to-white p-3.5 shadow-sm dark:border-slate-700/60 dark:from-slate-800/40 dark:to-slate-900/40">
-              {/* 헤더 */}
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                </span>
-                <div className="leading-tight">
-                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                    시스템 상태
-                  </p>
-                  <p className="text-[10px] text-slate-400">관제 시스템 정상</p>
-                </div>
-              </div>
-
-              {/* 상태 항목들 */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    텔레메트리
-                  </span>
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                    수신 중
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                    <Cpu className="h-3 w-3" />
-                    AI 이상탐지
-                  </span>
-                  <span className="font-medium text-indigo-600 dark:text-indigo-400">
-                    CNN-LSTM
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    관제 기체
-                  </span>
-                  <span className="font-medium text-slate-600 dark:text-slate-300">
-                    4대 운용
-                  </span>
-                </div>
-              </div>
-
-              {/* 브랜드 표기 */}
-              <div className="border-t border-slate-200/60 pt-2.5 dark:border-slate-700/60">
-                <p className="text-center text-[10px] font-medium tracking-wide text-slate-400">
-                  HANUL DRONE · 해상 배송 관제
-                </p>
-              </div>
-            </div>
-          </SidebarGroupContent>
-        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter>
+        {/* 하단 공백을 자연스럽게 마감하는 얇은 브랜드 라인 */}
+        <div className="mb-1 border-t border-slate-200/60 px-2 pt-2 dark:border-slate-700/60">
+          <p className="text-center text-[10px] font-medium tracking-wide text-slate-400">
+            HANUL DRONE · 해상 배송 관제
+          </p>
+        </div>
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
