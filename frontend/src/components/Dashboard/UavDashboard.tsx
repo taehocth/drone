@@ -2565,9 +2565,9 @@ export function UavDashboard() {
         {/* ===== 메인 관제 영역: 지도(좌, 약 68%) + 우측 패널(우, 약 32%) =====
             바깥은 CSS Grid로 좌우 비율 1.9 : 1 고정 (우측 최소 360px 보장),
             우측 패널 내부는 flex-col 로 카드를 세로로 쌓는다. */}
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.9fr)_minmax(360px,1fr)]">
+        <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.9fr)_minmax(360px,1fr)]">
           {/* ── 좌측: 지도 (메인) ── */}
-          <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+          <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
               className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
               onClick={() => setCollapseMap((v) => !v)}
@@ -2635,7 +2635,7 @@ export function UavDashboard() {
                   ? "h-[380px]"
                   : mapSize === "large"
                     ? "h-[660px]"
-                    : "h-[512px]"
+                    : "min-h-[512px] flex-1"
               }`}
             >
               <NaverMap
@@ -2737,6 +2737,14 @@ export function UavDashboard() {
         {/* ===== 나머지 카드: 지도 아래 2단 배치 (원래대로) ===== */}
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <div className="space-y-5">
+            <AiAssistantPanel
+              droneConnected={droneConnected && !isDroneOffline}
+              droneData={isDroneOffline ? null : droneData}
+              droneLabel={
+                selectedDroneIdx !== null ? DRONE_LABELS[selectedDroneIdx] : null
+              }
+            />
+
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -2867,14 +2875,6 @@ export function UavDashboard() {
                 </div>
               )}
             </div>
-
-            <AiAssistantPanel
-              droneConnected={droneConnected && !isDroneOffline}
-              droneData={isDroneOffline ? null : droneData}
-              droneLabel={
-                selectedDroneIdx !== null ? DRONE_LABELS[selectedDroneIdx] : null
-              }
-            />
 
             {!droneConnected && !isDroneOffline && (
               <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
