@@ -2562,12 +2562,17 @@ export function UavDashboard() {
           </div>
         )}
 
-        <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-          <div
-            className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
-            onClick={() => setCollapseMap((v) => !v)}
-          >
-            <div className="flex items-center gap-3">
+        {/* ===== 메인 관제 영역: 지도(좌, 약 68%) + 우측 패널(우, 약 32%) =====
+            바깥은 CSS Grid로 좌우 비율 1.9 : 1 고정 (우측 최소 360px 보장),
+            우측 패널 내부는 flex-col 로 카드를 세로로 쌓는다. */}
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1.9fr)_minmax(360px,1fr)]">
+          {/* ── 좌측: 지도 (메인) ── */}
+          <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+            <div
+              className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
+              onClick={() => setCollapseMap((v) => !v)}
+            >
+              <div className="flex items-center gap-3">
               <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
                 <MapPin className="h-4 w-4 text-white" />
               </div>
@@ -2627,10 +2632,10 @@ export function UavDashboard() {
             <div
               className={`overflow-hidden ${
                 mapSize === "small"
-                  ? "h-[320px]"
+                  ? "h-[480px]"
                   : mapSize === "large"
-                    ? "h-[720px]"
-                    : "h-[520px]"
+                    ? "h-[820px]"
+                    : "h-[640px]"
               }`}
             >
               <NaverMap
@@ -2663,10 +2668,10 @@ export function UavDashboard() {
               />
             </div>
           )}
-        </div>
+          </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          <div className="space-y-5">
+          {/* ── 우측: 관제 정보 패널 (flex-col 세로 나열) ── */}
+          <div className="flex flex-col gap-5">
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
                 <SectionHeader
@@ -2782,9 +2787,7 @@ export function UavDashboard() {
                 )}
               </div>
             </div>
-          </div>
 
-          <div className="space-y-5">
             <FlightFeasibilityWidget
               droneConnected={droneConnected && !isDroneOffline}
               droneData={isDroneOffline ? null : droneData}
