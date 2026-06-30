@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { DroneSimulationCard } from "./DroneSimulationCard"
-import { X, Radio, PlayCircle } from "lucide-react"
+import { Radio } from "lucide-react"
 import {
   DroneData,
   DroneWsState,
@@ -200,22 +200,6 @@ const SimDroneSimulation: React.FC<SimProps> = ({
 
   return (
     <div className="space-y-4">
-      {/* 시뮬레이션 안내 배너 */}
-      <div className="flex items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100">
-          <PlayCircle className="h-5 w-5 text-indigo-600" />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-bold text-indigo-900">
-            시뮬레이션 비행 중 — {SIM_LABEL} ({SIM_REGION})
-          </p>
-          <p className="mt-0.5 text-xs text-indigo-600/80">
-            가상 정상 비행 데이터 · 고도 {TARGET_ALT}m · 속도 {TARGET_SPEED}m/s
-          </p>
-        </div>
-        <FlightStatusBadge status={isActive ? "flying" : "unknown"} />
-      </div>
-
       {/* 연결된 기체 상태 카드 (실제 컴포넌트와 동일 톤) */}
       <div className="rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4">
         <div className="flex items-center justify-between">
