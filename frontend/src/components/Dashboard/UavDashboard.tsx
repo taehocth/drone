@@ -1828,8 +1828,6 @@ export function UavDashboard() {
   const [missionWaypoints, setMissionWaypoints] = useState<MissionWaypoint[]>(
     [],
   )
-  // 지도 크기: small / medium / large
-  const [mapSize, setMapSize] = useState<"small" | "medium" | "large">("medium")
 
   const _selectedState =
     selectedDroneIdx !== null ? allDroneStates[selectedDroneIdx] : null
@@ -2591,33 +2589,8 @@ export function UavDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div
-                className="flex items-center gap-1 rounded-full bg-slate-100 p-0.5"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {(
-                  [
-                    ["small", "작게"],
-                    ["medium", "보통"],
-                    ["large", "크게"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setMapSize(key)}
-                    className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
-                      mapSize === key
-                        ? "bg-white text-slate-800 shadow-sm"
-                        : "text-slate-400 hover:text-slate-600"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
               <div onClick={(e) => e.stopPropagation()}>
-                <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다. 크게/보통/작게로 높이를 조절할 수 있습니다." />
+                <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다." />
               </div>
               <span className="text-slate-400">
                 {collapseMap ? (
@@ -2629,15 +2602,7 @@ export function UavDashboard() {
             </div>
           </div>
           {!collapseMap && (
-            <div
-              className={`overflow-hidden ${
-                mapSize === "small"
-                  ? "h-[380px]"
-                  : mapSize === "large"
-                    ? "h-[660px]"
-                    : "min-h-[512px] flex-1"
-              }`}
-            >
+            <div className="min-h-[512px] flex-1 overflow-hidden">
               <NaverMap
                 lat={DEFAULT_MAP_OPTIONS.center.lat}
                 lng={DEFAULT_MAP_OPTIONS.center.lng}

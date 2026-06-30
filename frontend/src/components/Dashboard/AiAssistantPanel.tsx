@@ -177,10 +177,10 @@ export function AiAssistantPanel({
                 </span>
               </div>
 
-              <p className="mb-3 text-base leading-relaxed text-slate-600">
-                <b className="font-semibold text-slate-800">{label}</b> 비행이
+              <p className="mb-3 text-base font-medium leading-relaxed text-slate-700">
+                <b className="font-bold text-slate-900">{label}</b> 비행이
                 정상 종료되었습니다 (30분 12초). 주요 지표는 정상 범위였으며,
-                배터리 소모율에서 경미한 주의 항목 1건이 확인되었습니다.
+                <b className="font-semibold text-amber-700"> 배터리 소모율에서 경미한 주의 항목 1건</b>이 확인되었습니다.
               </p>
 
               {/* 요약 지표 */}
@@ -232,7 +232,7 @@ export function AiAssistantPanel({
                     ) : (
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
                     )}
-                    <span className="text-sm leading-relaxed text-slate-600">
+                    <span className="text-sm font-medium leading-relaxed text-slate-700">
                       {row.t}
                     </span>
                   </div>
@@ -243,10 +243,10 @@ export function AiAssistantPanel({
                 <p className="text-sm font-semibold text-indigo-700">
                   정비 권고
                 </p>
-                <p className="mt-0.5 text-sm leading-relaxed text-slate-600">
+                <p className="mt-0.5 text-sm font-medium leading-relaxed text-slate-700">
                   즉시 조치 필요 항목 없음. 누적 비행 시간 기준 다음 정기
-                  점검까지 <b>4.2시간</b> 남았습니다. 프로펠러 육안 점검을
-                  권장합니다.
+                  점검까지 <b className="font-bold text-indigo-700">4.2시간</b>{" "}
+                  남았습니다. <b className="font-semibold text-slate-900">프로펠러 육안 점검을 권장</b>합니다.
                 </p>
               </div>
 
@@ -290,8 +290,8 @@ export function AiAssistantPanel({
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">
                       {i + 1}
                     </span>
-                    <p className="text-sm leading-relaxed text-slate-600">
-                      <b className="font-semibold text-slate-800">{s.t}</b>
+                    <p className="text-sm font-medium leading-relaxed text-slate-700">
+                      <b className="font-bold text-slate-900">{s.t}</b>
                       {s.d}
                     </p>
                   </div>
@@ -321,7 +321,7 @@ export function AiAssistantPanel({
                   <p className="text-lg font-bold text-emerald-700">
                     임무 수행 적합
                   </p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm font-semibold text-slate-600">
                     주요 점검 항목 통과 · 조건부 권고 1건
                   </p>
                 </div>
@@ -344,10 +344,10 @@ export function AiAssistantPanel({
                     ) : (
                       <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
                     )}
-                    <span className="text-sm font-medium text-slate-700">
+                    <span className="text-sm font-semibold text-slate-800">
                       {c.l}
                     </span>
-                    <span className="ml-auto text-sm text-slate-500">
+                    <span className="ml-auto text-sm font-semibold text-slate-600">
                       {c.v}
                     </span>
                   </div>
@@ -355,10 +355,10 @@ export function AiAssistantPanel({
               </div>
 
               <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <p className="text-sm leading-relaxed text-slate-600">
-                  <b className="font-semibold text-indigo-700">💬 AI 조언:</b>{" "}
-                  적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다.
-                  임무 반경을 10% 줄이거나 여유 배터리를 확보하세요.
+                <p className="text-sm font-medium leading-relaxed text-slate-700">
+                  <b className="font-bold text-indigo-700">💬 AI 조언:</b>{" "}
+                  적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다.{" "}
+                  <b className="font-semibold text-slate-900">임무 반경을 10% 줄이거나 여유 배터리를 확보</b>하세요.
                 </p>
               </div>
 
