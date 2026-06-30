@@ -2429,7 +2429,7 @@ export function UavDashboard() {
         document.body,
       )}
 
-<div className="max-w-none space-y-6 p-4 md:p-6">
+      <div className="mx-auto max-w-[1600px] space-y-8 p-4 md:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-sm">
@@ -2482,7 +2482,7 @@ export function UavDashboard() {
           droneOffline={isDroneOffline}
         />
 
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
           <ActionGuideWidget
             droneConnected={droneConnected}
             droneData={droneData}
@@ -2630,7 +2630,7 @@ export function UavDashboard() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
           <div className="space-y-5">
             <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
