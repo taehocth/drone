@@ -114,19 +114,19 @@ export function AiAssistantPanel({
       >
         <div className="flex items-center gap-3">
           <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 p-2 shadow-sm">
-            <Sparkles className="h-4 w-4 text-white" />
+            <Sparkles className="h-5 w-5 text-white" />
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-900">
+            <p className="text-lg font-bold text-slate-900">
               AI 운용 어시스턴트
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm text-slate-500">
               Cloud LLM 연동 — 리포트·대응 가이드·임무 조언 자동 생성
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200/70 bg-white px-2.5 py-0.5 text-xs font-semibold text-indigo-600">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200/70 bg-white px-2.5 py-0.5 text-sm font-semibold text-indigo-600">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500" />
@@ -152,7 +152,7 @@ export function AiAssistantPanel({
                 key={t.key}
                 type="button"
                 onClick={() => setTab(t.key)}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${
                   tab === t.key
                     ? "bg-white text-indigo-700 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"
@@ -168,16 +168,16 @@ export function AiAssistantPanel({
           {tab === "report" && (
             <div>
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                <span className="text-sm font-semibold uppercase tracking-wider text-slate-400">
                   비행 종료 후 자동 생성됨
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                  <Clock className="h-3 w-3" />
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                  <Clock className="h-3.5 w-3.5" />
                   14:52 생성
                 </span>
               </div>
 
-              <p className="mb-3 text-sm leading-relaxed text-slate-600">
+              <p className="mb-3 text-base leading-relaxed text-slate-600">
                 <b className="font-semibold text-slate-800">{label}</b> 비행이
                 정상 종료되었습니다 (30분 12초). 주요 지표는 정상 범위였으며,
                 배터리 소모율에서 경미한 주의 항목 1건이 확인되었습니다.
@@ -195,11 +195,11 @@ export function AiAssistantPanel({
                     key={k.l}
                     className="rounded-xl border border-slate-200/70 bg-slate-50/60 px-3 py-2.5"
                   >
-                    <p className="text-[10px] text-slate-400">{k.l}</p>
-                    <p className="mt-0.5 text-base font-bold text-slate-800">
+                    <p className="text-xs text-slate-400">{k.l}</p>
+                    <p className="mt-0.5 text-xl font-bold text-slate-800">
                       {k.v}
                       {k.u && (
-                        <span className="ml-0.5 text-[10px] font-medium text-slate-400">
+                        <span className="ml-0.5 text-xs font-medium text-slate-400">
                           {k.u}
                         </span>
                       )}
@@ -208,7 +208,7 @@ export function AiAssistantPanel({
                 ))}
               </div>
 
-              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-indigo-500">
+              <p className="mb-1.5 text-sm font-semibold uppercase tracking-wider text-indigo-500">
                 AI 분석 요약
               </p>
               <div className="space-y-1.5">
@@ -228,11 +228,11 @@ export function AiAssistantPanel({
                 ].map((row, i) => (
                   <div key={i} className="flex items-start gap-2">
                     {row.ok ? (
-                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
                     ) : (
-                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
                     )}
-                    <span className="text-xs leading-relaxed text-slate-600">
+                    <span className="text-sm leading-relaxed text-slate-600">
                       {row.t}
                     </span>
                   </div>
@@ -240,10 +240,10 @@ export function AiAssistantPanel({
               </div>
 
               <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-indigo-700">
+                <p className="text-sm font-semibold text-indigo-700">
                   정비 권고
                 </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-slate-600">
+                <p className="mt-0.5 text-sm leading-relaxed text-slate-600">
                   즉시 조치 필요 항목 없음. 누적 비행 시간 기준 다음 정기
                   점검까지 <b>4.2시간</b> 남았습니다. 프로펠러 육안 점검을
                   권장합니다.
@@ -259,16 +259,16 @@ export function AiAssistantPanel({
           {tab === "guide" && (
             <div>
               <div className="mb-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2.5">
-                <p className="flex items-center gap-1.5 text-xs font-bold text-amber-700">
-                  <AlertTriangle className="h-3.5 w-3.5" />
+                <p className="flex items-center gap-1.5 text-sm font-bold text-amber-700">
+                  <AlertTriangle className="h-4 w-4" />
                   Power — 전압 변동 주의 (CUSUM)
                 </p>
-                <p className="mt-1 text-[11px] text-slate-500">
+                <p className="mt-1 text-sm text-slate-500">
                   14:43 · 비행 중 전압 예측 오차가 누적 기준을 초과했습니다.
                 </p>
               </div>
 
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-indigo-500">
+              <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-indigo-500">
                 AI 대응 가이드
               </p>
               <div className="space-y-2.5">
@@ -287,10 +287,10 @@ export function AiAssistantPanel({
                   },
                 ].map((s, i) => (
                   <div key={i} className="flex items-start gap-2.5">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-[11px] font-bold text-white">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">
                       {i + 1}
                     </span>
-                    <p className="text-xs leading-relaxed text-slate-600">
+                    <p className="text-sm leading-relaxed text-slate-600">
                       <b className="font-semibold text-slate-800">{s.t}</b>
                       {s.d}
                     </p>
@@ -298,8 +298,8 @@ export function AiAssistantPanel({
                 ))}
               </div>
 
-              <div className="mt-3 flex items-center gap-1.5 border-t border-dashed border-slate-200 pt-2.5 text-[11px] text-slate-400">
-                <BookOpen className="h-3 w-3" />
+              <div className="mt-3 flex items-center gap-1.5 border-t border-dashed border-slate-200 pt-2.5 text-sm text-slate-400">
+                <BookOpen className="h-3.5 w-3.5" />
                 참조 · 운용 매뉴얼 §4.2 전력계통 / 과거 유사 사례 3건 매칭
               </div>
 
@@ -318,10 +318,10 @@ export function AiAssistantPanel({
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-base font-bold text-emerald-700">
+                  <p className="text-lg font-bold text-emerald-700">
                     임무 수행 적합
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm text-slate-500">
                     주요 점검 항목 통과 · 조건부 권고 1건
                   </p>
                 </div>
@@ -340,14 +340,14 @@ export function AiAssistantPanel({
                     className="flex items-center gap-2.5 rounded-xl bg-slate-50/70 px-3 py-2"
                   >
                     {c.ok ? (
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
                     ) : (
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
                     )}
-                    <span className="text-xs font-medium text-slate-700">
+                    <span className="text-sm font-medium text-slate-700">
                       {c.l}
                     </span>
-                    <span className="ml-auto text-xs text-slate-500">
+                    <span className="ml-auto text-sm text-slate-500">
                       {c.v}
                     </span>
                   </div>
@@ -355,7 +355,7 @@ export function AiAssistantPanel({
               </div>
 
               <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <p className="text-xs leading-relaxed text-slate-600">
+                <p className="text-sm leading-relaxed text-slate-600">
                   <b className="font-semibold text-indigo-700">💬 AI 조언:</b>{" "}
                   적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다.
                   임무 반경을 10% 줄이거나 여유 배터리를 확보하세요.
@@ -375,12 +375,12 @@ export function AiAssistantPanel({
               <div className="mb-2 flex items-start gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
                 <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
                 {asking ? (
-                  <span className="flex items-center gap-2 text-xs text-slate-500">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span className="flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
                     AI가 비행 데이터를 분석해 답변 중...
                   </span>
                 ) : (
-                  <p className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
                     {answer}
                   </p>
                 )}
@@ -399,18 +399,18 @@ export function AiAssistantPanel({
                 }}
                 placeholder='질문하기 — 예: "이번 비행에서 가장 주의할 점은?"'
                 disabled={asking}
-                className="flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400 disabled:opacity-60"
+                className="flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={askGemini}
                 disabled={asking || !question.trim()}
-                className="flex items-center gap-1 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+                className="flex items-center gap-1 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
               >
                 {asking ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Send className="h-3 w-3" />
+                  <Send className="h-3.5 w-3.5" />
                 )}
                 전송
               </button>

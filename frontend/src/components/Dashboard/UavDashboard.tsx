@@ -2800,6 +2800,9 @@ export function UavDashboard() {
                 )}
               </div>
             </div>
+
+            {/* 비행 이벤트 로그 — 왼쪽 컬럼, 임계값 아래 (세로 컴팩트, 내부 스크롤) */}
+            <FlightLogWidget logs={logs} />
           </div>
 
           <div className="space-y-5">
@@ -2908,9 +2911,6 @@ export function UavDashboard() {
             )}
           </div>
         </div>
-
-        {/* 이벤트 로그 — 하단 풀폭 (사진 ④ 배치) */}
-        <FlightLogWidget logs={logs} />
       </div>
 
       {createPortal(
