@@ -2577,7 +2577,7 @@ export function UavDashboard() {
         document.body,
       )}
 
-      <div className="mx-auto max-w-[1600px] space-y-8 p-4 md:p-8">
+      <div className="mx-auto max-w-[1920px] space-y-8 p-4 md:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-sm">
@@ -2729,7 +2729,7 @@ export function UavDashboard() {
         {/* ===== 메인 관제 영역: 지도(좌, 약 68%) + 우측 패널(우, 약 32%) =====
             바깥은 CSS Grid로 좌우 비율 1.9 : 1 고정 (우측 최소 360px 보장),
             우측 패널 내부는 flex-col 로 카드를 세로로 쌓는다. */}
-        <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.9fr)_minmax(360px,1fr)]">
+        <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(560px,1.2fr)]">
           {/* ── 좌측: 지도 (메인) ── */}
           <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
@@ -2801,8 +2801,8 @@ export function UavDashboard() {
           )}
           </div>
 
-          {/* ── 우측: 관제 정보 패널 (CBM → AI 세로 나열) ── */}
-          <div className="flex flex-col gap-5">
+          {/* ── 우측: 관제 정보 패널 (넓은 화면에서 CBM | AI 가로 2열) ── */}
+          <div className="grid grid-cols-1 items-start gap-5 2xl:grid-cols-2">
             {cbmCard}
             {aiCard}
           </div>
