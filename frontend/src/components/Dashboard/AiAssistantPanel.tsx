@@ -42,9 +42,9 @@ interface AiAssistantPanelProps {
 type TabKey = "report" | "guide" | "preflight"
 
 const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
-  { key: "report", label: "비행 후 리포트", icon: <FileText className="h-4 w-4" /> },
-  { key: "guide", label: "이상 대응 가이드", icon: <LifeBuoy className="h-4 w-4" /> },
   { key: "preflight", label: "임무 적합성", icon: <Compass className="h-4 w-4" /> },
+  { key: "guide", label: "이상 대응 가이드", icon: <LifeBuoy className="h-4 w-4" /> },
+  { key: "report", label: "비행 후 리포트", icon: <FileText className="h-4 w-4" /> },
 ]
 
 export function AiAssistantPanel({
@@ -53,7 +53,7 @@ export function AiAssistantPanel({
   droneLabel,
 }: AiAssistantPanelProps) {
   const [collapsed, setCollapsed] = useState(false)
-  const [tab, setTab] = useState<TabKey>("report")
+  const [tab, setTab] = useState<TabKey>("preflight")
 
   // ── 운용자 질문(Gemini) ──────────────────────────────────
   // GeminiChatCard 와 동일한 백엔드 엔드포인트(/gemini/chat)를 재사용.
