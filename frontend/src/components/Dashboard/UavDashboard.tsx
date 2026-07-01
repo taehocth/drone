@@ -2577,7 +2577,7 @@ export function UavDashboard() {
         document.body,
       )}
 
-      <div className="mx-auto max-w-[1920px] space-y-8 p-4 md:p-8">
+      <div className="w-full space-y-8 p-4 md:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-sm">
