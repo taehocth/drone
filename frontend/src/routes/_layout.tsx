@@ -31,7 +31,9 @@ function Layout() {
             <LoadingSpinner />
           </div>
         ) : (
-          <main className="flex-1 max-w-full px-4">
+          // min-w-0 : flex 자식이 콘텐츠 때문에 줄어들지 않는 문제 방지
+          // w-full  : 사이드바를 제외한 남은 폭을 전부 사용
+          <main className="min-w-0 flex-1 w-full px-4">
             <Outlet />
           </main>
         )}
