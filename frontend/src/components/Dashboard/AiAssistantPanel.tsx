@@ -39,7 +39,9 @@ export function AiAssistantPanel({
   const [tab, setTab] = useState<TabKey>("preflight")
 
   const [question, setQuestion] = useState("")
-  const [answer, setAnswer] = useState<string | null>(null)
+  const [messages, setMessages] = useState<
+    Array<{ role: "user" | "ai"; text: string }>
+  >([])
   const [asking, setAsking] = useState(false)
 
   const label = droneLabel ?? "DM4_2"
@@ -102,7 +104,9 @@ export function AiAssistantPanel({
     const q = question.trim()
     if (!q || asking) return
     setAsking(true)
-    setAnswer(null)
+    // 사용자 질문을 즉시 대화에 추가하고 입력창 비우기
+    setMessages((prev) => [...prev, { role: "user", text: q }])
+    setQuestion("")
     try {
       const ctx = droneConnected
         ? `현재 기체 ${label} 비행 중 — 고도 ${altitude.toFixed(0)}m, 속도 ${speed.toFixed(1)}m/s, 배터리 ${battery.toFixed(0)}%.`
@@ -125,9 +129,15 @@ export function AiAssistantPanel({
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      setAnswer(data?.response || "응답을 가져오지 못했습니다.")
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: data?.response || "응답을 가져오지 못했습니다." },
+      ])
     } catch (err: any) {
-      setAnswer(`⚠️ 응답 실패: ${err?.message ?? "알 수 없는 오류"}`)
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: `⚠️ 응답 실패: ${err?.message ?? "알 수 없는 오류"}` },
+      ])
     } finally {
       setAsking(false)
     }
@@ -555,19 +565,33 @@ export function AiAssistantPanel({
 
           {/* 운용자 질문 — Gemini 실연동 (현재 비행 데이터를 맥락으로 전달) */}
           <div className="mt-4">
-            {/* 답변 표시 */}
-            {(answer || asking) && (
-              <div className="mb-2 flex items-start gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
-                {asking ? (
-                  <span className="flex items-center gap-2 text-sm text-slate-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    AI가 비행 데이터를 분석해 답변 중...
-                  </span>
-                ) : (
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-                    {answer}
-                  </p>
+            {/* 대화 기록 — 내 질문(오른쪽)·AI 답변(왼쪽) */}
+            {(messages.length > 0 || asking) && (
+              <div className="mb-2 max-h-72 space-y-2 overflow-y-auto pr-1">
+                {messages.map((m, i) =>
+                  m.role === "user" ? (
+                    <div key={i} className="flex justify-end">
+                      <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-indigo-500 px-3 py-2 text-sm font-medium leading-relaxed text-white">
+                        {m.text}
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={i} className="flex items-start gap-2">
+                      <Sparkles className="mt-1.5 h-4 w-4 shrink-0 text-indigo-500" />
+                      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tl-sm border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-sm leading-relaxed text-slate-700">
+                        {m.text}
+                      </div>
+                    </div>
+                  ),
+                )}
+                {asking && (
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="mt-1.5 h-4 w-4 shrink-0 text-indigo-500" />
+                    <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-sm text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      AI가 비행 데이터를 분석해 답변 중...
+                    </div>
+                  </div>
                 )}
               </div>
             )}
