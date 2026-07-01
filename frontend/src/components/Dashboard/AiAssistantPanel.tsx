@@ -46,6 +46,57 @@ export function AiAssistantPanel({
   const battery = droneData?.battery ?? 67
   const altitude = droneData?.altitude ?? 52
   const speed = droneData?.speed ?? 9.8
+  const satellites = droneData?.gpsSatellites ?? 31
+
+  // ── 임무 적합성 실시간 판정 (배터리·GPS 반영) ──────────────
+  const batteryStatus: "ok" | "warn" | "danger" =
+    battery <= 25 ? "danger" : battery <= 40 ? "warn" : "ok"
+  const gpsStatus: "ok" | "warn" | "danger" =
+    satellites < 10 ? "danger" : satellites < 20 ? "warn" : "ok"
+  // 전체 판정 = 가장 나쁜 항목 기준
+  const preflightVerdict: "go" | "caution" | "no-go" =
+    batteryStatus === "danger" || gpsStatus === "danger"
+      ? "no-go"
+      : batteryStatus === "warn" || gpsStatus === "warn"
+        ? "caution"
+        : "go"
+  const verdictConfig = {
+    go: {
+      title: "임무 수행 적합",
+      sub: "주요 점검 항목 통과",
+      border: "border-emerald-200/60",
+      bg: "bg-emerald-50/70",
+      iconBg: "from-emerald-500 to-teal-500",
+      text: "text-emerald-700",
+      icon: <CheckCircle2 className="h-6 w-6" />,
+    },
+    caution: {
+      title: "조건부 수행 — 주의",
+      sub: "일부 항목 점검 후 수행하세요",
+      border: "border-amber-200/60",
+      bg: "bg-amber-50/70",
+      iconBg: "from-amber-500 to-yellow-400",
+      text: "text-amber-700",
+      icon: <AlertTriangle className="h-6 w-6" />,
+    },
+    "no-go": {
+      title: "임무 수행 부적합",
+      sub: "위험 항목을 해결하기 전 비행 불가",
+      border: "border-red-200/60",
+      bg: "bg-red-50/70",
+      iconBg: "from-red-500 to-rose-500",
+      text: "text-red-700",
+      icon: <AlertTriangle className="h-6 w-6" />,
+    },
+  }[preflightVerdict]
+  const preflightAdvice =
+    preflightVerdict === "no-go"
+      ? batteryStatus === "danger"
+        ? "배터리가 위험 수준(≤25%)입니다. 즉시 충전 또는 교체 전에는 이륙하지 마세요."
+        : "GPS 위성 수가 부족합니다. 신호가 회복될 때까지 비행을 보류하세요."
+      : preflightVerdict === "caution"
+        ? "이륙은 가능하나 여유가 적습니다. 임무 반경을 줄이거나 여유 배터리를 확보하세요."
+        : "적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다. 여유 배터리를 확보하세요."
 
   const askGemini = async () => {
     const q = question.trim()
@@ -393,53 +444,110 @@ export function AiAssistantPanel({
           {/* ③ 임무 전 적합성 조언 */}
           {tab === "preflight" && (
             <div>
-              {/* 판정 배너 */}
-              <div className="mb-3 flex items-center gap-3 rounded-2xl border border-emerald-200/60 bg-emerald-50/70 px-4 py-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-sm">
-                  <CheckCircle2 className="h-6 w-6" />
+              {/* 판정 배너 (배터리·GPS 상태 실시간 반영) */}
+              <div
+                className={`mb-3 flex items-center gap-3 rounded-2xl border ${verdictConfig.border} ${verdictConfig.bg} px-4 py-3`}
+              >
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${verdictConfig.iconBg} text-white shadow-sm`}
+                >
+                  {verdictConfig.icon}
                 </div>
                 <div>
-                  <p className="text-lg font-bold text-emerald-700">
-                    임무 수행 적합
+                  <p className={`text-lg font-bold ${verdictConfig.text}`}>
+                    {verdictConfig.title}
                   </p>
                   <p className="text-sm font-semibold text-slate-600">
-                    주요 점검 항목 통과 · 조건부 권고 1건
+                    {verdictConfig.sub}
                   </p>
                 </div>
               </div>
 
-              {/* 체크 항목 */}
+              {/* 체크 항목 (실시간) */}
               <div className="space-y-2">
                 {[
-                  { ok: true, l: "배터리", v: `충전 ${battery > 90 ? "100" : battery.toFixed(0)}% · 셀 균형 정상` },
-                  { ok: true, l: "기체 상태", v: "직전 비행 이상 없음" },
-                  { ok: true, l: "GPS / 통신", v: "위성 31 · LTE 양호" },
-                  { ok: false, l: "기상", v: "북서풍 6 m/s — 주의" },
+                  {
+                    status: batteryStatus,
+                    l: "배터리",
+                    v:
+                      batteryStatus === "danger"
+                        ? `${battery.toFixed(0)}% — 위험, 즉시 충전`
+                        : batteryStatus === "warn"
+                          ? `${battery.toFixed(0)}% — 여유 부족`
+                          : `충전 ${battery > 90 ? "100" : battery.toFixed(0)}% · 셀 균형 정상`,
+                  },
+                  {
+                    status: "ok" as const,
+                    l: "기체 상태",
+                    v: "직전 비행 이상 없음",
+                  },
+                  {
+                    status: gpsStatus,
+                    l: "GPS / 통신",
+                    v:
+                      gpsStatus === "danger"
+                        ? `위성 ${satellites} — 신호 부족`
+                        : gpsStatus === "warn"
+                          ? `위성 ${satellites} — 주의`
+                          : `위성 ${satellites} · LTE 양호`,
+                  },
+                  {
+                    status: "warn" as const,
+                    l: "기상",
+                    v: "북서풍 6 m/s — 주의",
+                  },
                 ].map((c) => (
                   <div
                     key={c.l}
                     className="flex items-center gap-2.5 rounded-xl bg-slate-50/70 px-3 py-2"
                   >
-                    {c.ok ? (
+                    {c.status === "ok" ? (
                       <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
-                    ) : (
+                    ) : c.status === "warn" ? (
                       <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
+                    ) : (
+                      <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
                     )}
                     <span className="text-sm font-semibold text-slate-800">
                       {c.l}
                     </span>
-                    <span className="ml-auto text-sm font-semibold text-slate-600">
+                    <span
+                      className={`ml-auto text-sm font-semibold ${
+                        c.status === "danger"
+                          ? "text-red-600"
+                          : c.status === "warn"
+                            ? "text-amber-600"
+                            : "text-slate-600"
+                      }`}
+                    >
                       {c.v}
                     </span>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+              <div
+                className={`mt-3 rounded-xl border px-3 py-2.5 ${
+                  preflightVerdict === "no-go"
+                    ? "border-red-200/70 bg-red-50/60"
+                    : preflightVerdict === "caution"
+                      ? "border-amber-200/70 bg-amber-50/60"
+                      : "border-indigo-100 bg-indigo-50/50"
+                }`}
+              >
                 <p className="text-sm font-medium leading-relaxed text-slate-700">
-                  <b className="font-bold text-indigo-700">💬 AI 조언:</b>{" "}
-                  적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다.{" "}
-                  <b className="font-semibold text-slate-900">임무 반경을 10% 줄이거나 여유 배터리를 확보</b>하세요.
+                  <b
+                    className={`font-bold ${
+                      preflightVerdict === "no-go"
+                        ? "text-red-700"
+                        : preflightVerdict === "caution"
+                          ? "text-amber-700"
+                          : "text-indigo-700"
+                    }`}
+                  >
+                    💬 AI 조언:
+                  </b>{" "}
+                  {preflightAdvice}
                 </p>
               </div>
             </div>

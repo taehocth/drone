@@ -2408,7 +2408,7 @@ export function UavDashboard() {
       <div className="border-b border-slate-100 px-5 py-4">
         <SectionHeader
           icon={<Wrench />}
-          title="상태 기반 정비 (CBM)"
+          title="AI 기체 상태 진단"
           desc="배터리·고도·속도·GPS 기반 정비 지표"
           collapsible
           collapsed={collapseCBM}
@@ -2438,7 +2438,20 @@ export function UavDashboard() {
       {!collapseCBM && (
         <div className="p-4">
           {simMode ? (
-            <SimCBMCard droneId={selectedDroneId ?? "drone-002"} />
+            <SimCBMCard
+              droneId={selectedDroneId ?? "drone-002"}
+              data={
+                droneData && !isDroneOffline
+                  ? {
+                      battery: droneData.battery,
+                      altitude: droneData.altitude,
+                      speed: droneData.speed,
+                      gpsFixType: droneData.gpsFixType,
+                      gpsSatellites: droneData.gpsSatellites,
+                    }
+                  : undefined
+              }
+            />
           ) : (
             <RealtimeCBMStatusCard
               connected={droneConnected && !isDroneOffline}
