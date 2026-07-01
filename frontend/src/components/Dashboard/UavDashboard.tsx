@@ -2726,7 +2726,7 @@ export function UavDashboard() {
           </div>
         )}
 
-        {/* ===== 메인 관제 영역: 지도(좌) + 우측 패널(우) — 가용 폭 전체 사용 ===== */}
+        {/* ===== 메인 관제 영역: 지도(좌상) + CBM/AI(우상) / 기체정보(좌하) + 이벤트로그(우하) ===== */}
         <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
           {/* ── 좌측: 지도 (메인) ── */}
           <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
@@ -2804,14 +2804,19 @@ export function UavDashboard() {
             {cbmCard}
             {aiCard}
           </div>
+
+          {/* ── 좌하: 지도 바로 아래 기체 실시간 정보 ── */}
+          <div className="min-w-0">
+            {monitorCard}
+          </div>
+
+          {/* ── 우하: 기체 실시간 정보 우측 비행 이벤트 로그 ── */}
+          <div className="min-w-0">
+            <FlightLogWidget logs={logs} />
+          </div>
         </div>
 
-        {/* ===== 지도 아래: 기체 실시간 정보 + 비행 이벤트 로그 ===== */}
-        <div className="space-y-8">
-          {monitorCard}
-          {helpCard}
-          <FlightLogWidget logs={logs} />
-        </div>
+        {helpCard && <div className="mt-6">{helpCard}</div>}
       </div>
 
       {createPortal(
