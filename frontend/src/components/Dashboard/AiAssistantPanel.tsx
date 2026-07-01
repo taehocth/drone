@@ -100,6 +100,139 @@ export function AiAssistantPanel({
         ? "이륙은 가능하나 여유가 적습니다. 임무 반경을 줄이거나 여유 배터리를 확보하세요."
         : "적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다. 여유 배터리를 확보하세요."
 
+  // ── 이상 대응 가이드 (배터리·GPS 상태에 따라 통째로 전환) ──────
+  type GuideStep = { t: string; d: string; time?: string; caution?: string }
+  interface ResponseGuide {
+    severity: "danger" | "warn" | "ok"
+    alertTitle: string
+    alertDesc: string
+    steps: GuideStep[]
+    ref: string
+  }
+  const responseGuide: ResponseGuide = (() => {
+    // 우선순위: 배터리 위험 > GPS 위험 > 배터리 주의 > GPS 주의 > 정상
+    if (batteryStatus === "danger") {
+      return {
+        severity: "danger",
+        alertTitle: `배터리 위험 — 현재 ${battery.toFixed(0)}% (임계 25% 이하)`,
+        alertDesc:
+          "해상 복귀 거리를 고려하면 남은 전력으로 안전 착륙이 어려울 수 있습니다. 즉시 대응이 필요합니다.",
+        steps: [
+          {
+            t: "즉시 RTL(자동 귀환) 전환",
+            d: " — 진행 중인 배송 임무를 중단하고 비행 모드를 RTL로 바꾸세요. 가장 가까운 복귀 지점으로 자동 이동합니다.",
+            time: "즉시 (0초)",
+            caution: "수동 조종 중이었다면 급기동·급상승을 피하세요. 전력 소모가 급증합니다.",
+          },
+          {
+            t: "복귀 경로상 착륙 지점 확보",
+            d: " — RTL 거리가 남은 전력보다 멀다고 판단되면, 가장 가까운 해상 플랫폼·선박·육지로 비상 착륙을 준비하세요.",
+            time: "10~20초 내 판단",
+            caution: "인구 밀집·항로 위를 피하고, 낙하 시 인명 피해가 없는 지점을 고르세요.",
+          },
+          {
+            t: "착륙 후 전원·배터리 분리",
+            d: " — 착륙 완료 즉시 모터를 정지(Disarm)하고 배터리를 분리하세요. 과방전은 화재·셀 손상 위험이 있습니다.",
+            time: "착륙 직후",
+            caution: "배터리가 부풀거나 뜨거우면 만지지 말고 안전 거리에서 냉각시키세요.",
+          },
+        ],
+        ref: "참조 · 운용 매뉴얼 §5.1 저전력 비상 절차 / 과거 저배터리 회수 사례 7건",
+      }
+    }
+    if (gpsStatus === "danger") {
+      return {
+        severity: "danger",
+        alertTitle: `GPS 신호 위험 — 현재 위성 ${satellites}개 (최소 10개 미만)`,
+        alertDesc:
+          "위치 추정 정확도가 급격히 떨어져 자동 항법이 불안정합니다. 해상에서는 표류·충돌 위험이 큽니다.",
+        steps: [
+          {
+            t: "즉시 호버링(고도 유지)",
+            d: " — 전진 비행을 멈추고 현재 위치에서 고도를 유지하세요. GPS 없이 이동하면 위치 오차가 누적됩니다.",
+            time: "즉시 (0초)",
+            caution: "바람이 강하면 호버링 중에도 표류합니다. 자세(Attitude) 모드로 수동 유지 준비.",
+          },
+          {
+            t: "30초간 신호 회복 대기",
+            d: " — 위성 수가 다시 15개 이상으로 회복되는지 관찰하세요. 일시적 음영일 수 있습니다.",
+            time: "약 30초",
+            caution: "회복 안 되면 다음 단계로. 무한정 대기하면 배터리만 소모됩니다.",
+          },
+          {
+            t: "수동 모드 전환 후 육안 복귀",
+            d: " — 회복이 안 되면 자세 모드로 전환하고, 육안 또는 마지막 알려진 위치 기준으로 수동 복귀하세요.",
+            time: "회복 실패 시",
+            caution: "GCS 화면의 마지막 유효 좌표와 기수 방향(Heading)을 기준으로 조종하세요.",
+          },
+        ],
+        ref: "참조 · 운용 매뉴얼 §4.4 항법 상실 절차 / 해상 GPS 음영 사례 5건",
+      }
+    }
+    if (batteryStatus === "warn") {
+      return {
+        severity: "warn",
+        alertTitle: `배터리 주의 — 현재 ${battery.toFixed(0)}% (귀환 준비 권장)`,
+        alertDesc:
+          "아직 위험 수준은 아니지만, 해상 복귀 거리를 고려해 지금부터 귀환을 준비하는 것이 안전합니다.",
+        steps: [
+          {
+            t: "현재 임무 단계 마무리",
+            d: " — 진행 중인 배송을 마치되, 새 임무는 시작하지 마세요.",
+            time: "1~2분 내",
+          },
+          {
+            t: "귀환 경로·시간 계산",
+            d: " — 복귀 거리와 남은 전력을 비교해, 위험 임계(25%) 도달 전 복귀가 가능한지 확인하세요.",
+            time: "지금 판단",
+            caution: "맞바람 구간이 있으면 소모가 빨라집니다. 여유를 크게 두세요.",
+          },
+          {
+            t: "25% 도달 전 수동 복귀 시작",
+            d: " — 자동 RTL 임계값에 도달하기 전에 먼저 복귀를 시작하는 것이 안전 마진을 확보합니다.",
+            time: "임계 도달 전",
+          },
+        ],
+        ref: "참조 · 운용 매뉴얼 §5.1 저전력 비상 절차",
+      }
+    }
+    // 정상
+    return {
+      severity: "ok",
+      alertTitle: "현재 특이 이상 없음 — 정상 운항",
+      alertDesc:
+        "배터리·GPS 등 주요 지표가 안전 범위입니다. 예방적 모니터링을 유지하세요.",
+      steps: [
+        {
+          t: "30초 주기 지표 확인",
+          d: " — 배터리·GPS·통신 상태를 주기적으로 점검하세요.",
+        },
+        {
+          t: "기상 변화 주시",
+          d: " — 해상 돌풍·풍속 변화가 배터리 소모에 영향을 줍니다.",
+        },
+        {
+          t: "귀환 여유 전력 유지",
+          d: " — 복귀에 필요한 전력을 항상 확보한 상태로 운항하세요.",
+        },
+      ],
+      ref: "참조 · 운용 매뉴얼 §3 정상 운항 모니터링",
+    }
+  })()
+
+  const guideAlertTone =
+    responseGuide.severity === "danger"
+      ? "border-red-200/70 bg-red-50/70 text-red-700"
+      : responseGuide.severity === "warn"
+        ? "border-amber-200/70 bg-amber-50/70 text-amber-700"
+        : "border-emerald-200/70 bg-emerald-50/70 text-emerald-700"
+  const guideStepBadge =
+    responseGuide.severity === "danger"
+      ? "bg-red-500"
+      : responseGuide.severity === "warn"
+        ? "bg-amber-500"
+        : "bg-emerald-500"
+
   const askGemini = async () => {
     const q = question.trim()
     if (!q || asking) return
@@ -401,16 +534,20 @@ export function AiAssistantPanel({
             </div>
           )}
 
-          {/* ② 이상 감지 대응 가이드 */}
+          {/* ② 이상 감지 대응 가이드 (배터리·GPS 상태 실시간 반영) */}
           {tab === "guide" && (
             <div>
-              <div className="mb-3 rounded-xl border border-amber-200/70 bg-amber-50/70 px-3 py-2.5">
-                <p className="flex items-center gap-1.5 text-sm font-bold text-amber-700">
-                  <AlertTriangle className="h-4 w-4" />
-                  Power — 전압 변동 주의 (CUSUM)
+              <div className={`mb-3 rounded-xl border px-3 py-2.5 ${guideAlertTone}`}>
+                <p className="flex items-center gap-1.5 text-sm font-bold">
+                  {responseGuide.severity === "ok" ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" />
+                  )}
+                  {responseGuide.alertTitle}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  14:43 · 비행 중 전압 예측 오차가 누적 기준을 초과했습니다.
+                  {responseGuide.alertDesc}
                 </p>
               </div>
 
@@ -418,35 +555,47 @@ export function AiAssistantPanel({
                 AI 대응 가이드
               </p>
               <div className="space-y-2.5">
-                {[
-                  {
-                    t: "현 고도 유지",
-                    d: " 후 배터리 잔량과 전압을 즉시 확인하세요. 급격한 기동을 피합니다.",
-                  },
-                  {
-                    t: "전압 21.0V 미만",
-                    d: "으로 떨어지면 자동 귀환(RTL)을 준비하세요.",
-                  },
-                  {
-                    t: "30초간 추세 관찰",
-                    d: " — 유사 사례(2026-05-28)에서는 일시적 부하 변동으로 자동 회복됨.",
-                  },
-                ].map((s, i) => (
-                  <div key={i} className="flex items-start gap-2.5">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-xs font-bold text-white">
-                      {i + 1}
-                    </span>
-                    <p className="text-sm font-medium leading-relaxed text-slate-700">
-                      <b className="font-bold text-slate-900">{s.t}</b>
-                      {s.d}
-                    </p>
+                {responseGuide.steps.map((s, i) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-slate-200/70 bg-slate-50/50 px-3 py-2.5"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white ${guideStepBadge}`}
+                      >
+                        {i + 1}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium leading-relaxed text-slate-700">
+                          <b className="font-bold text-slate-900">{s.t}</b>
+                          {s.d}
+                        </p>
+                        {(s.time || s.caution) && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {s.time && (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-slate-200/70 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                                <Clock className="h-3 w-3" />
+                                {s.time}
+                              </span>
+                            )}
+                            {s.caution && (
+                              <span className="inline-flex items-start gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700">
+                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                                {s.caution}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
 
               <div className="mt-3 flex items-center gap-1.5 border-t border-dashed border-slate-200 pt-2.5 text-sm text-slate-400">
                 <BookOpen className="h-3.5 w-3.5" />
-                참조 · 운용 매뉴얼 §4.2 전력계통 / 과거 유사 사례 3건 매칭
+                {responseGuide.ref}
               </div>
             </div>
           )}
