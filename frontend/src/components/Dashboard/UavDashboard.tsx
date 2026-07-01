@@ -1819,6 +1819,9 @@ export function UavDashboard() {
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
   const [simMode, setSimMode] = useState(false)
+  const [simScenario, setSimScenario] = useState<
+    "normal" | "battery" | "gps"
+  >("normal")
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
@@ -2383,6 +2386,7 @@ export function UavDashboard() {
         >
           {simMode ? (
             <SimDroneSimulation
+              scenario={simScenario}
               onAllDroneStates={setAllDroneStates}
               onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
               onSelectedDrone={handleSelectedDrone}
@@ -2606,6 +2610,38 @@ export function UavDashboard() {
               <PlayCircle className="h-3.5 w-3.5" />
               {simMode ? "시뮬레이션 켜짐" : "시뮬레이션"}
             </button>
+            {/* 시뮬레이션이 켜졌을 때만 위험 시나리오 선택 노출 */}
+            {simMode && (
+              <div className="flex items-center gap-1 rounded-full bg-slate-100 p-0.5">
+                {(
+                  [
+                    { key: "normal", label: "정상", tone: "emerald" },
+                    { key: "battery", label: "배터리 위험", tone: "red" },
+                    { key: "gps", label: "GPS 상실", tone: "red" },
+                  ] as const
+                ).map((s) => {
+                  const active = simScenario === s.key
+                  const activeCls =
+                    s.tone === "red"
+                      ? "bg-red-500 text-white shadow-sm"
+                      : "bg-emerald-500 text-white shadow-sm"
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setSimScenario(s.key)}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                        active
+                          ? activeCls
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
             >
@@ -2726,8 +2762,10 @@ export function UavDashboard() {
           </div>
         )}
 
-        {/* ===== 메인 관제 영역: 지도(좌상) + CBM/AI(우상) / 기체정보(좌하) + 이벤트로그(우하) ===== */}
-        <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+        {/* ===== 메인 관제 영역: 지도(좌, 약 68%) + 우측 패널(우, 약 32%) =====
+            바깥은 CSS Grid로 좌우 비율 1.9 : 1 고정 (우측 최소 360px 보장),
+            우측 패널 내부는 flex-col 로 카드를 세로로 쌓는다. */}
+        <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(640px,1.1fr)]">
           {/* ── 좌측: 지도 (메인) ── */}
           <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
@@ -2799,24 +2837,19 @@ export function UavDashboard() {
           )}
           </div>
 
-          {/* ── 우측: 관제 정보 패널 (넓은 화면에서 CBM | AI 가로 2열) ── */}
-          <div className="grid min-w-0 grid-cols-1 items-stretch gap-5 xl:grid-cols-2">
+          {/* ── 우측: 관제 정보 패널 (공간 넓으면 CBM | AI 2열, 좁으면 자동 1열) ── */}
+          <div className="grid grid-cols-1 items-start gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
             {cbmCard}
             {aiCard}
           </div>
-
-          {/* ── 좌하: 지도 바로 아래 기체 실시간 정보 ── */}
-          <div className="min-w-0">
-            {monitorCard}
-          </div>
-
-          {/* ── 우하: 기체 실시간 정보 우측 비행 이벤트 로그 ── */}
-          <div className="min-w-0">
-            <FlightLogWidget logs={logs} />
-          </div>
         </div>
 
-        {helpCard && <div className="mt-6">{helpCard}</div>}
+        {/* ===== 지도 아래: 기체 실시간 정보 + 비행 이벤트 로그 ===== */}
+        <div className="space-y-8">
+          {monitorCard}
+          {helpCard}
+          <FlightLogWidget logs={logs} />
+        </div>
       </div>
 
       {createPortal(
