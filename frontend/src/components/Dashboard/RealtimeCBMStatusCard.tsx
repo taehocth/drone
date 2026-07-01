@@ -332,7 +332,7 @@ export function RealtimeCBMStatusCard({
       <CardHeader className="border-b border-slate-200/60 dark:border-slate-800/60">
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-amber-600" />
-          상태 기반 정비 (CBM)
+          AI 기체 상태 진단
         </CardTitle>
       </CardHeader>
 
