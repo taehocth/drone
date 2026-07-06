@@ -8,10 +8,15 @@
     "jspdf": "^3.0.2",
     "jspdf-autotable": "^5.0.2",
     "list": "^2.0.19",
+    "lucide-react": "^1.17.0",
     "papaparse": "^5.5.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
     "react-sparklines": "^1.7.0"
   },
   "devDependencies": {
-    "@types/papaparse": "^5.5.0"
+    "@types/papaparse": "^5.5.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
   }
 }
