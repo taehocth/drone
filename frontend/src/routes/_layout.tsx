@@ -31,11 +31,16 @@ function Layout() {
             <LoadingSpinner />
           </div>
         ) : (
-          <main className="flex-1 max-w-full px-4">
+          // min-w-0 flex-1 : 사이드바를 뺀 남은 폭을 전부 사용
+          <main className="min-w-0 flex-1 px-4">
             <Outlet />
           </main>
         )}
-        <UserMenu />
+        {/* UserMenu 는 flex 흐름에서 빼서 우측 상단에 떠 있게 함
+            (그러지 않으면 오른쪽에 가로 공간을 차지해 본문 폭이 줄어듦) */}
+        <div className="fixed right-4 top-3 z-50">
+          <UserMenu />
+        </div>
       </SidebarProvider>
     </>
   )

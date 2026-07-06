@@ -224,7 +224,7 @@ export function LogCBMStatusCard({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg font-semibold">
             <AlertTriangle className="h-5 w-5 text-amber-600" />
-            상태 기반 정비 (CBM)
+            AI 기체 상태 진단
           </CardTitle>
         </CardHeader>
         <CardContent>로그를 업로드하면 상태가 분석됩니다.</CardContent>
@@ -474,7 +474,7 @@ export function LogCBMStatusCard({
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-3 text-2xl font-bold text-gray-900 drop-shadow-sm">
           <AlertTriangle className="h-6 w-6 text-amber-600" />
-          상태 기반 정비 (CBM) 분석
+          AI 기체 상태 진단
         </CardTitle>
       </CardHeader>
 

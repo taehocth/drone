@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_layout/")({
 
 function Dashboard() {
   return (
-    <div className="container">
+    <div className="w-full max-w-none">
       <div className="m-4 pt-12 page-content">
         <div className="page-hero">
           <PageTitle>대시보드</PageTitle>

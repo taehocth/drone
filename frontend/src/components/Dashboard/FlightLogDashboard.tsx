@@ -36,7 +36,7 @@ export function FlightLogDashboard() {
           </div>
           <div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-              상태 기반 정비 (CBM)
+            AI 기체 상태 진단
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               업로드한 PX4 로그 데이터를 기반으로 주요 시스템 상태를 평가합니다.

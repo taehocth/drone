@@ -8,7 +8,10 @@ import DroneSimulation, {
   MissionWaypoint,
 } from "./DroneSimulation"
 import { RealtimeCBMStatusCard } from "@/components/Dashboard/RealtimeCBMStatusCard"
+import { AiAssistantPanel } from "./AiAssistantPanel"
 import { convertGRID_GPS } from "@/utils/convertGrid"
+import SimDroneSimulation from "./SimDroneSimulation"
+import { SimCBMCard } from "./SimCBMCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 import {
   MapPin,
@@ -37,6 +40,7 @@ import {
   Target,
   Radio,
   AlertOctagon,
+  PlayCircle,
 } from "lucide-react"
 import { createPortal } from "react-dom"
 
@@ -1813,8 +1817,11 @@ export function UavDashboard() {
   } | null>(null)
   const [selectedDroneIdx, setSelectedDroneIdx] = useState<number | null>(null)
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
-  const [showAlertDetails, setShowAlertDetails] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [simMode, setSimMode] = useState(false)
+  const [simScenario, setSimScenario] = useState<
+    "normal" | "battery" | "gps"
+  >("normal")
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
@@ -2274,12 +2281,6 @@ export function UavDashboard() {
     return () => window.removeEventListener("qgcFlightEvents", onQgcEvents)
   }, [addLog, selectedLteIp])
 
-  const alertTone =
-    alertLevel === "danger"
-      ? "bg-red-100 text-red-700"
-      : alertLevel === "caution"
-        ? "bg-amber-100 text-amber-700"
-        : "bg-emerald-100 text-emerald-700"
   const connectionLabel = isDroneOffline
     ? "신호 끊김"
     : droneConnected
@@ -2341,6 +2342,175 @@ export function UavDashboard() {
       </button>
     )
   }
+
+  // ── 카드 정의 (배치 재사용용) ──────────────────────────────
+  const monitorCard = (
+    <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <SectionHeader
+          icon={<Activity />}
+          title="기체 실시간 정보"
+          desc="자세, 속도, 배터리, 위치를 실시간 모니터링"
+          collapsible
+          collapsed={collapseMonitor}
+          onToggle={() => setCollapseMonitor((v) => !v)}
+          badge={
+            <StatusBadge
+              level={
+                isDroneOffline ? "danger" : droneConnected ? "safe" : "off"
+              }
+              label={
+                isDroneOffline
+                  ? "신호 끊김"
+                  : droneConnected
+                    ? "수신 중"
+                    : "미연결"
+              }
+            />
+          }
+        />
+      </div>
+      <div className={collapseMonitor ? "" : "p-4"}>
+        <div
+          style={
+            collapseMonitor
+              ? {
+                  visibility: "hidden",
+                  height: 0,
+                  overflow: "hidden",
+                  padding: 0,
+                  margin: 0,
+                }
+              : {}
+          }
+        >
+          {simMode ? (
+            <SimDroneSimulation
+              scenario={simScenario}
+              onAllDroneStates={setAllDroneStates}
+              onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
+              onSelectedDrone={handleSelectedDrone}
+            />
+          ) : (
+            <DroneSimulation
+              onAllDroneStates={setAllDroneStates}
+              onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
+              onSelectedDrone={handleSelectedDrone}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  const cbmCard = (
+    <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <SectionHeader
+          icon={<Wrench />}
+          title="AI 기체 상태 진단"
+          desc="배터리·고도·속도·GPS 기반 정비 지표"
+          collapsible
+          collapsed={collapseCBM}
+          onToggle={() => setCollapseCBM((v) => !v)}
+          badge={
+            <StatusBadge
+              level={
+                isDroneOffline
+                  ? "danger"
+                  : droneConnected
+                    ? alertLevel
+                    : "off"
+              }
+              label={
+                isDroneOffline
+                  ? "신호 끊김"
+                  : droneConnected
+                    ? alertLevel === "safe"
+                      ? "정상"
+                      : "점검 필요"
+                    : "미연결"
+              }
+            />
+          }
+        />
+      </div>
+      {!collapseCBM && (
+        <div className="p-4">
+          {simMode ? (
+            <SimCBMCard
+              droneId={selectedDroneId ?? "drone-002"}
+              data={
+                droneData && !isDroneOffline
+                  ? {
+                      battery: droneData.battery,
+                      altitude: droneData.altitude,
+                      speed: droneData.speed,
+                      gpsFixType: droneData.gpsFixType,
+                      gpsSatellites: droneData.gpsSatellites,
+                    }
+                  : undefined
+              }
+            />
+          ) : (
+            <RealtimeCBMStatusCard
+              connected={droneConnected && !isDroneOffline}
+              droneId={selectedDroneId}
+              droneData={
+                droneData && !isDroneOffline
+                  ? {
+                      battery: droneData.battery,
+                      altitude: droneData.altitude,
+                      speed: droneData.speed,
+                      gpsFixType: droneData.gpsFixType,
+                      gpsSatellites: droneData.gpsSatellites,
+                    }
+                  : undefined
+              }
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const aiCard = (
+    <AiAssistantPanel
+      droneConnected={droneConnected && !isDroneOffline}
+      droneData={isDroneOffline ? null : droneData}
+      droneLabel={selectedDroneIdx !== null ? DRONE_LABELS[selectedDroneIdx] : null}
+    />
+  )
+
+  const helpCard = !droneConnected && !isDroneOffline && (
+    <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
+      <div className="flex items-start gap-3">
+        <div className="rounded-xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
+          <AlertTriangle className="h-4 w-4 text-white" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-amber-900">
+            연결이 안 될 때 확인하세요
+          </p>
+          <ul className="mt-2 space-y-1.5 text-xs text-amber-800/80">
+            <li className="flex items-start gap-1.5">
+              <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+              드론 전원 및 통신 모듈(LTE/RFD) 상태를 확인합니다.
+            </li>
+            <li className="flex items-start gap-1.5">
+              <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+              지상국(GCS)과 동일 네트워크/포트를 사용하는지 확인합니다.
+            </li>
+            <li className="flex items-start gap-1.5">
+              <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+              연결 후에도 값이 안 보이면 "마지막 갱신" 시각이 업데이트되는지
+              확인합니다.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="relative min-h-screen overflow-x-hidden scroll-smooth text-slate-900">
@@ -2424,7 +2594,7 @@ export function UavDashboard() {
         document.body,
       )}
 
-      <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+      <div className="w-full space-y-8 p-4 md:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 shadow-sm">
@@ -2441,6 +2611,50 @@ export function UavDashboard() {
           </div>
           <div className="flex items-center gap-2">
             {renderNotificationButton()}
+            <button
+              type="button"
+              onClick={() => setSimMode((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition hover:opacity-80 ${
+                simMode
+                  ? "bg-indigo-100 text-indigo-700"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              <PlayCircle className="h-3.5 w-3.5" />
+              {simMode ? "시뮬레이션 켜짐" : "시뮬레이션"}
+            </button>
+            {/* 시뮬레이션이 켜졌을 때만 위험 시나리오 선택 노출 */}
+            {simMode && (
+              <div className="flex items-center gap-1 rounded-full bg-slate-100 p-0.5">
+                {(
+                  [
+                    { key: "normal", label: "정상", tone: "emerald" },
+                    { key: "battery", label: "배터리 위험", tone: "red" },
+                    { key: "gps", label: "GPS 상실", tone: "red" },
+                  ] as const
+                ).map((s) => {
+                  const active = simScenario === s.key
+                  const activeCls =
+                    s.tone === "red"
+                      ? "bg-red-500 text-white shadow-sm"
+                      : "bg-emerald-500 text-white shadow-sm"
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setSimScenario(s.key)}
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold transition ${
+                        active
+                          ? activeCls
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${connectionTone}`}
             >
@@ -2465,14 +2679,32 @@ export function UavDashboard() {
           droneOffline={isDroneOffline}
         />
 
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-          <ActionGuideWidget
-            droneConnected={droneConnected}
-            droneData={droneData}
-            alerts={alerts}
-            collapsed={collapseAction}
-            onToggle={() => setCollapseAction((v) => !v)}
-          />
+        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
+          <div className="space-y-8">
+            <ActionGuideWidget
+              droneConnected={droneConnected}
+              droneData={droneData}
+              alerts={alerts}
+              collapsed={collapseAction}
+              onToggle={() => setCollapseAction((v) => !v)}
+            />
+            <FlightFeasibilityWidget
+              droneConnected={droneConnected && !isDroneOffline}
+              droneData={isDroneOffline ? null : droneData}
+              alertLevel={alertLevel}
+              alerts={alerts}
+              selectedDroneState={
+                selectedDroneIdx !== null
+                  ? allDroneStates[selectedDroneIdx]
+                  : null
+              }
+              selectedDroneLabel={
+                selectedDroneIdx !== null
+                  ? DRONE_LABELS[selectedDroneIdx]
+                  : null
+              }
+            />
+          </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
               className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3 transition-colors hover:bg-slate-100/60"
@@ -2543,12 +2775,17 @@ export function UavDashboard() {
           </div>
         )}
 
-        <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-          <div
-            className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
-            onClick={() => setCollapseMap((v) => !v)}
-          >
-            <div className="flex items-center gap-3">
+        {/* ===== 메인 관제 영역: 지도(좌, 약 68%) + 우측 패널(우, 약 32%) =====
+            바깥은 CSS Grid로 좌우 비율 1.9 : 1 고정 (우측 최소 360px 보장),
+            우측 패널 내부는 flex-col 로 카드를 세로로 쌓는다. */}
+        <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-[minmax(0,1.8fr)_minmax(640px,1.1fr)]">
+          {/* ── 좌측: 지도 (메인) ── */}
+          <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
+            <div
+              className="flex cursor-pointer select-none items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-4 transition-colors hover:bg-slate-100/60"
+              onClick={() => setCollapseMap((v) => !v)}
+            >
+              <div className="flex items-center gap-3">
               <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
                 <MapPin className="h-4 w-4 text-white" />
               </div>
@@ -2580,7 +2817,7 @@ export function UavDashboard() {
             </div>
           </div>
           {!collapseMap && (
-            <div className="aspect-video overflow-hidden">
+            <div className="min-h-[512px] flex-1 overflow-hidden">
               <NaverMap
                 lat={DEFAULT_MAP_OPTIONS.center.lat}
                 lng={DEFAULT_MAP_OPTIONS.center.lng}
@@ -2611,222 +2848,20 @@ export function UavDashboard() {
               />
             </div>
           )}
+          </div>
+
+          {/* ── 우측: 관제 정보 패널 (공간 넓으면 CBM | AI 2열, 좁으면 자동 1열) ── */}
+          <div className="grid grid-cols-1 items-start gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+            {cbmCard}
+            {aiCard}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-          <div className="space-y-5">
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <SectionHeader
-                  icon={<Activity />}
-                  title="기체 실시간 정보"
-                  desc="자세, 속도, 배터리, 위치를 실시간 모니터링"
-                  collapsible
-                  collapsed={collapseMonitor}
-                  onToggle={() => setCollapseMonitor((v) => !v)}
-                  badge={
-                    <StatusBadge
-                      level={
-                        isDroneOffline
-                          ? "danger"
-                          : droneConnected
-                            ? "safe"
-                            : "off"
-                      }
-                      label={
-                        isDroneOffline
-                          ? "신호 끊김"
-                          : droneConnected
-                            ? "수신 중"
-                            : "미연결"
-                      }
-                    />
-                  }
-                />
-              </div>
-              <div className={collapseMonitor ? "" : "p-4"}>
-                <div
-                  style={
-                    collapseMonitor
-                      ? {
-                          visibility: "hidden",
-                          height: 0,
-                          overflow: "hidden",
-                          padding: 0,
-                          margin: 0,
-                        }
-                      : {}
-                  }
-                >
-                  <DroneSimulation
-                    onAllDroneStates={setAllDroneStates}
-                    onMissionWaypoints={(wps) => setMissionWaypoints(wps ?? [])}
-                    onSelectedDrone={handleSelectedDrone}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <FlightLogWidget logs={logs} />
-
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <SectionHeader
-                  icon={<AlertTriangle />}
-                  title="임계값 알림"
-                  desc={`배터리 ${THRESHOLD.battery.danger}%/${THRESHOLD.battery.caution}% · 고도 ${THRESHOLD.altitude.caution}/${THRESHOLD.altitude.danger}m · 속도 ${THRESHOLD.speed.caution}/${THRESHOLD.speed.danger}m/s · GPS ${THRESHOLD.gps.caution}/${THRESHOLD.gps.danger}위성`}
-                  badge={
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setShowAlertDetails((prev) =>
-                          alerts.length ? !prev : prev,
-                        )
-                      }}
-                      className={`rounded-full px-2.5 py-0.5 text-xs font-semibold transition ${alertTone} ${alerts.length ? "hover:opacity-80" : "cursor-default"}`}
-                    >
-                      {isDroneOffline
-                        ? "신호 끊김"
-                        : droneConnected
-                          ? alerts.length
-                            ? `${alerts.length}건 주의`
-                            : "정상"
-                          : "미연결"}
-                    </button>
-                  }
-                />
-              </div>
-              <div className="p-4">
-                {isDroneOffline ? (
-                  <div className="rounded-2xl border border-red-200/60 bg-red-50/60 px-4 py-3 text-sm font-medium text-red-700">
-                    기체 신호가 끊겼습니다. 재연결 대기 중입니다.
-                  </div>
-                ) : !droneConnected ? (
-                  <p className="py-6 text-center text-sm text-slate-400">
-                    기체 연결 후 임계값 알림을 확인할 수 있습니다.
-                  </p>
-                ) : alerts.length === 0 ? (
-                  <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/60 px-4 py-3 text-sm font-medium text-emerald-700">
-                    모든 항목이 정상 범위입니다.
-                  </div>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {alerts.map((alert) => (
-                      <div
-                        key={alert.id}
-                        className={`rounded-2xl border px-4 py-3 text-xs font-medium ${alert.level === "danger" ? "border-red-200/60 bg-red-50 text-red-700" : "border-amber-200/60 bg-amber-50 text-amber-700"}`}
-                      >
-                        {alert.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-5">
-            <FlightFeasibilityWidget
-              droneConnected={droneConnected && !isDroneOffline}
-              droneData={isDroneOffline ? null : droneData}
-              alertLevel={alertLevel}
-              alerts={alerts}
-              selectedDroneState={
-                selectedDroneIdx !== null
-                  ? allDroneStates[selectedDroneIdx]
-                  : null
-              }
-              selectedDroneLabel={
-                selectedDroneIdx !== null
-                  ? DRONE_LABELS[selectedDroneIdx]
-                  : null
-              }
-            />
-
-            <div className="rounded-3xl border border-slate-200/60 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <SectionHeader
-                  icon={<Wrench />}
-                  title="상태 기반 정비 (CBM)"
-                  desc="배터리·고도·속도·GPS 기반 정비 지표"
-                  collapsible
-                  collapsed={collapseCBM}
-                  onToggle={() => setCollapseCBM((v) => !v)}
-                  badge={
-                    <StatusBadge
-                      level={
-                        isDroneOffline
-                          ? "danger"
-                          : droneConnected
-                            ? alertLevel
-                            : "off"
-                      }
-                      label={
-                        isDroneOffline
-                          ? "신호 끊김"
-                          : droneConnected
-                            ? alertLevel === "safe"
-                              ? "정상"
-                              : "점검 필요"
-                            : "미연결"
-                      }
-                    />
-                  }
-                />
-              </div>
-              {!collapseCBM && (
-                <div className="p-4">
-                  <RealtimeCBMStatusCard
-                    connected={droneConnected && !isDroneOffline}
-                    droneId={selectedDroneId}
-                    droneData={
-                      droneData && !isDroneOffline
-                        ? {
-                            battery: droneData.battery,
-                            altitude: droneData.altitude,
-                            speed: droneData.speed,
-                            gpsFixType: droneData.gpsFixType,
-                            gpsSatellites: droneData.gpsSatellites,
-                          }
-                        : undefined
-                    }
-                  />
-                </div>
-              )}
-            </div>
-
-            {!droneConnected && !isDroneOffline && (
-              <div className="rounded-3xl border border-amber-200/60 bg-amber-50/70 p-5">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-gradient-to-br from-amber-500 to-yellow-400 p-2 shadow-sm">
-                    <AlertTriangle className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-amber-900">
-                      연결이 안 될 때 확인하세요
-                    </p>
-                    <ul className="mt-2 space-y-1.5 text-xs text-amber-800/80">
-                      <li className="flex items-start gap-1.5">
-                        <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                        드론 전원 및 통신 모듈(LTE/RFD) 상태를 확인합니다.
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                        지상국(GCS)과 동일 네트워크/포트를 사용하는지
-                        확인합니다.
-                      </li>
-                      <li className="flex items-start gap-1.5">
-                        <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-                        연결 후에도 값이 안 보이면 "마지막 갱신" 시각이
-                        업데이트되는지 확인합니다.
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+        {/* ===== 지도 아래: 기체 실시간 정보 + 비행 이벤트 로그 ===== */}
+        <div className="space-y-8">
+          {monitorCard}
+          {helpCard}
+          <FlightLogWidget logs={logs} />
         </div>
       </div>
 
