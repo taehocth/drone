@@ -25,9 +25,21 @@ interface AiAssistantPanelProps {
 type TabKey = "report" | "guide" | "preflight"
 
 const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
-  { key: "preflight", label: "임무 적합성", icon: <Compass className="h-4 w-4" /> },
-  { key: "guide", label: "이상 대응 가이드", icon: <LifeBuoy className="h-4 w-4" /> },
-  { key: "report", label: "비행 후 리포트", icon: <FileText className="h-4 w-4" /> },
+  {
+    key: "preflight",
+    label: "임무 적합성",
+    icon: <Compass className="h-4 w-4" />,
+  },
+  {
+    key: "guide",
+    label: "이상 대응 가이드",
+    icon: <LifeBuoy className="h-4 w-4" />,
+  },
+  {
+    key: "report",
+    label: "비행 후 리포트",
+    icon: <FileText className="h-4 w-4" />,
+  },
 ]
 
 export function AiAssistantPanel({
@@ -43,6 +55,15 @@ export function AiAssistantPanel({
     Array<{ role: "user" | "ai"; text: string }>
   >([])
   const [asking, setAsking] = useState(false)
+
+  // ── 비행 후 리포트 (실제 AI 생성) ──────────────────────────
+  const [report, setReport] = useState<string | null>(null)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+
+  // ── 이상 대응 가이드 AI 상세 분석 (실제 AI 생성) ────────────
+  const [guideAi, setGuideAi] = useState<string | null>(null)
+  const [guideAiLoading, setGuideAiLoading] = useState(false)
 
   const label = droneLabel ?? "DM4_2"
   const battery = droneData?.battery ?? 67
@@ -122,19 +143,22 @@ export function AiAssistantPanel({
             t: "즉시 RTL(자동 귀환) 전환",
             d: " — 진행 중인 배송 임무를 중단하고 비행 모드를 RTL로 바꾸세요. 가장 가까운 복귀 지점으로 자동 이동합니다.",
             time: "즉시 (0초)",
-            caution: "수동 조종 중이었다면 급기동·급상승을 피하세요. 전력 소모가 급증합니다.",
+            caution:
+              "수동 조종 중이었다면 급기동·급상승을 피하세요. 전력 소모가 급증합니다.",
           },
           {
             t: "복귀 경로상 착륙 지점 확보",
             d: " — RTL 거리가 남은 전력보다 멀다고 판단되면, 가장 가까운 해상 플랫폼·선박·육지로 비상 착륙을 준비하세요.",
             time: "10~20초 내 판단",
-            caution: "인구 밀집·항로 위를 피하고, 낙하 시 인명 피해가 없는 지점을 고르세요.",
+            caution:
+              "인구 밀집·항로 위를 피하고, 낙하 시 인명 피해가 없는 지점을 고르세요.",
           },
           {
             t: "착륙 후 전원·배터리 분리",
             d: " — 착륙 완료 즉시 모터를 정지(Disarm)하고 배터리를 분리하세요. 과방전은 화재·셀 손상 위험이 있습니다.",
             time: "착륙 직후",
-            caution: "배터리가 부풀거나 뜨거우면 만지지 말고 안전 거리에서 냉각시키세요.",
+            caution:
+              "배터리가 부풀거나 뜨거우면 만지지 말고 안전 거리에서 냉각시키세요.",
           },
         ],
         ref: "참조 · 운용 매뉴얼 §5.1 저전력 비상 절차 / 과거 저배터리 회수 사례 7건",
@@ -151,19 +175,22 @@ export function AiAssistantPanel({
             t: "즉시 호버링(고도 유지)",
             d: " — 전진 비행을 멈추고 현재 위치에서 고도를 유지하세요. GPS 없이 이동하면 위치 오차가 누적됩니다.",
             time: "즉시 (0초)",
-            caution: "바람이 강하면 호버링 중에도 표류합니다. 자세(Attitude) 모드로 수동 유지 준비.",
+            caution:
+              "바람이 강하면 호버링 중에도 표류합니다. 자세(Attitude) 모드로 수동 유지 준비.",
           },
           {
             t: "30초간 신호 회복 대기",
             d: " — 위성 수가 다시 15개 이상으로 회복되는지 관찰하세요. 일시적 음영일 수 있습니다.",
             time: "약 30초",
-            caution: "회복 안 되면 다음 단계로. 무한정 대기하면 배터리만 소모됩니다.",
+            caution:
+              "회복 안 되면 다음 단계로. 무한정 대기하면 배터리만 소모됩니다.",
           },
           {
             t: "수동 모드 전환 후 육안 복귀",
             d: " — 회복이 안 되면 자세 모드로 전환하고, 육안 또는 마지막 알려진 위치 기준으로 수동 복귀하세요.",
             time: "회복 실패 시",
-            caution: "GCS 화면의 마지막 유효 좌표와 기수 방향(Heading)을 기준으로 조종하세요.",
+            caution:
+              "GCS 화면의 마지막 유효 좌표와 기수 방향(Heading)을 기준으로 조종하세요.",
           },
         ],
         ref: "참조 · 운용 매뉴얼 §4.4 항법 상실 절차 / 해상 GPS 음영 사례 5건",
@@ -185,7 +212,8 @@ export function AiAssistantPanel({
             t: "귀환 경로·시간 계산",
             d: " — 복귀 거리와 남은 전력을 비교해, 위험 임계(25%) 도달 전 복귀가 가능한지 확인하세요.",
             time: "지금 판단",
-            caution: "맞바람 구간이 있으면 소모가 빨라집니다. 여유를 크게 두세요.",
+            caution:
+              "맞바람 구간이 있으면 소모가 빨라집니다. 여유를 크게 두세요.",
           },
           {
             t: "25% 도달 전 수동 복귀 시작",
@@ -233,6 +261,76 @@ export function AiAssistantPanel({
         ? "bg-amber-500"
         : "bg-emerald-500"
 
+  // API base URL 헬퍼 (chat 과 동일 규칙)
+  const buildApiUrl = (path: string) => {
+    const base = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1"
+    return base.endsWith("/api/v1") ? `${base}${path}` : `${base}/api/v1${path}`
+  }
+
+  // 현재 비행 상태를 요약 데이터로 구성 (ai-summary 입력용)
+  const buildFlightData = () => ({
+    기체: label,
+    연결상태: droneConnected ? "비행 중" : "미연결",
+    배터리_퍼센트: Number(battery.toFixed(0)),
+    고도_m: Number(altitude.toFixed(0)),
+    속도_ms: Number(speed.toFixed(1)),
+    GPS_위성수: satellites,
+    배터리_상태:
+      batteryStatus === "danger"
+        ? "위험"
+        : batteryStatus === "warn"
+          ? "주의"
+          : "정상",
+    GPS_상태:
+      gpsStatus === "danger" ? "위험" : gpsStatus === "warn" ? "주의" : "정상",
+  })
+
+  // ① 비행 후 리포트 생성 (실제 Gemini 호출: /gemini/cbm/ai-summary)
+  const generateReport = async () => {
+    if (reportLoading) return
+    setReportLoading(true)
+    setReportError(null)
+    try {
+      const res = await fetch(buildApiUrl("/gemini/cbm/ai-summary"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: buildFlightData(), level: "normal" }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      setReport(json?.summary || "리포트를 생성하지 못했습니다.")
+    } catch (err: any) {
+      setReportError(err?.message ?? "알 수 없는 오류")
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  // ② 이상 대응 가이드 — AI 상세 분석 (실제 Gemini 호출)
+  const generateGuideAi = async () => {
+    if (guideAiLoading) return
+    setGuideAiLoading(true)
+    try {
+      const res = await fetch(buildApiUrl("/gemini/cbm/ask-question"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisData: buildFlightData(),
+          question:
+            "현재 기체 상태에서 운용자가 취해야 할 대응 조치를 우선순위 순으로 구체적으로 알려줘. 각 조치의 이유와 주의점도 짧게 덧붙여줘.",
+          level: "normal",
+        }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json = await res.json()
+      setGuideAi(json?.answer || "분석을 생성하지 못했습니다.")
+    } catch (err: any) {
+      setGuideAi(`⚠️ 분석 실패: ${err?.message ?? "알 수 없는 오류"}`)
+    } finally {
+      setGuideAiLoading(false)
+    }
+  }
+
   const askGemini = async () => {
     const q = question.trim()
     if (!q || asking) return
@@ -269,7 +367,10 @@ export function AiAssistantPanel({
     } catch (err: any) {
       setMessages((prev) => [
         ...prev,
-        { role: "ai", text: `⚠️ 응답 실패: ${err?.message ?? "알 수 없는 오류"}` },
+        {
+          role: "ai",
+          text: `⚠️ 응답 실패: ${err?.message ?? "알 수 없는 오류"}`,
+        },
       ])
     } finally {
       setAsking(false)
@@ -338,6 +439,70 @@ export function AiAssistantPanel({
           {/* ① 비행 후 자동 리포트 */}
           {tab === "report" && (
             <div>
+              {/* ── 실제 AI 리포트 생성 (Gemini /cbm/ai-summary) ── */}
+              <div className="mb-4 rounded-2xl border border-indigo-200/70 bg-gradient-to-br from-indigo-50/80 to-violet-50/50 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-indigo-500" />
+                    <span className="text-sm font-bold text-slate-800">
+                      실시간 데이터 기반 AI 리포트
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={generateReport}
+                    disabled={reportLoading}
+                    className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
+                  >
+                    {reportLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        생성 중...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="h-3.5 w-3.5" />
+                        {report ? "다시 생성" : "리포트 생성"}
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {!report && !reportLoading && !reportError && (
+                  <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                    현재 기체 상태(배터리 {battery.toFixed(0)}% · 고도{" "}
+                    {altitude.toFixed(0)}m · 속도 {speed.toFixed(1)}m/s · 위성{" "}
+                    {satellites})를 바탕으로 AI가 비행 리포트를 생성합니다.
+                  </p>
+                )}
+                {reportLoading && (
+                  <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    AI가 비행 데이터를 분석해 리포트를 작성하고 있습니다...
+                  </p>
+                )}
+                {reportError && (
+                  <p className="mt-2 text-sm font-medium text-red-600">
+                    ⚠️ 생성 실패: {reportError} — 잠시 후 다시 시도하세요.
+                  </p>
+                )}
+                {report && !reportLoading && (
+                  <div className="mt-3 whitespace-pre-wrap rounded-xl border border-indigo-100 bg-white/80 px-3 py-2.5 text-sm leading-relaxed text-slate-700">
+                    {report}
+                  </div>
+                )}
+              </div>
+
+              {/* ── 참고용 리포트 구조 (예시) ── */}
+              <div className="mb-2 flex items-center gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  리포트 구성 예시
+                </span>
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                  샘플
+                </span>
+              </div>
+
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-sm font-semibold uppercase tracking-wider text-slate-400">
                   비행 종료 후 자동 생성됨
@@ -349,9 +514,13 @@ export function AiAssistantPanel({
               </div>
 
               <p className="mb-3 text-base font-medium leading-relaxed text-slate-700">
-                <b className="font-bold text-slate-900">{label}</b> 비행이
-                정상 종료되었습니다 (30분 12초). 주요 지표는 정상 범위였으며,
-                <b className="font-semibold text-amber-700"> 배터리 소모율에서 경미한 주의 항목 1건</b>이 확인되었습니다.
+                <b className="font-bold text-slate-900">{label}</b> 비행이 정상
+                종료되었습니다 (30분 12초). 주요 지표는 정상 범위였으며,
+                <b className="font-semibold text-amber-700">
+                  {" "}
+                  배터리 소모율에서 경미한 주의 항목 1건
+                </b>
+                이 확인되었습니다.
               </p>
 
               {/* 요약 지표 */}
@@ -523,7 +692,11 @@ export function AiAssistantPanel({
                 <p className="mt-0.5 text-sm font-medium leading-relaxed text-slate-700">
                   즉시 조치 필요 항목 없음. 누적 비행 시간 기준 다음 정기
                   점검까지 <b className="font-bold text-indigo-700">4.2시간</b>{" "}
-                  남았습니다. <b className="font-semibold text-slate-900">프로펠러 육안 점검을 권장</b>합니다.
+                  남았습니다.{" "}
+                  <b className="font-semibold text-slate-900">
+                    프로펠러 육안 점검을 권장
+                  </b>
+                  합니다.
                 </p>
               </div>
 
@@ -537,7 +710,9 @@ export function AiAssistantPanel({
           {/* ② 이상 감지 대응 가이드 (배터리·GPS 상태 실시간 반영) */}
           {tab === "guide" && (
             <div>
-              <div className={`mb-3 rounded-xl border px-3 py-2.5 ${guideAlertTone}`}>
+              <div
+                className={`mb-3 rounded-xl border px-3 py-2.5 ${guideAlertTone}`}
+              >
                 <p className="flex items-center gap-1.5 text-sm font-bold">
                   {responseGuide.severity === "ok" ? (
                     <CheckCircle2 className="h-4 w-4" />
@@ -596,6 +771,33 @@ export function AiAssistantPanel({
               <div className="mt-3 flex items-center gap-1.5 border-t border-dashed border-slate-200 pt-2.5 text-sm text-slate-400">
                 <BookOpen className="h-3.5 w-3.5" />
                 {responseGuide.ref}
+              </div>
+
+              {/* AI 상세 분석 (실제 Gemini 호출) */}
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={generateGuideAi}
+                  disabled={guideAiLoading}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-indigo-200/70 bg-indigo-50/50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100/60 disabled:opacity-50"
+                >
+                  {guideAiLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      AI 분석 중...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      AI 상세 분석 받기
+                    </>
+                  )}
+                </button>
+                {guideAi && !guideAiLoading && (
+                  <div className="mt-2 whitespace-pre-wrap rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5 text-sm leading-relaxed text-slate-700">
+                    {guideAi}
+                  </div>
+                )}
               </div>
             </div>
           )}
