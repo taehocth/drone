@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import type { DroneData } from "./DroneSimulation"
 import {
   Sparkles,
@@ -60,6 +60,37 @@ export function AiAssistantPanel({
   const [report, setReport] = useState<string | null>(null)
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
+
+  // 비행 중 실제 데이터 누적 (방법 A) — 리포트는 이 누적값을 요약
+  interface FlightAccum {
+    startTs: number | null // 비행(데이터 수신) 시작 시각
+    endTs: number | null // 마지막 데이터 수신 시각
+    samples: number // 표본 수
+    batteryStart: number | null // 시작 배터리
+    batteryLast: number | null // 마지막 배터리
+    batteryMin: number | null // 최저 배터리
+    altMax: number // 최고 고도
+    speedSum: number // 속도 합 (평균 계산용)
+    speedMax: number // 최고 속도
+    satMin: number | null // 최소 위성
+    dangerEvents: number // 위험 감지 횟수(배터리/GPS)
+  }
+  const emptyAccum = (): FlightAccum => ({
+    startTs: null,
+    endTs: null,
+    samples: 0,
+    batteryStart: null,
+    batteryLast: null,
+    batteryMin: null,
+    altMax: 0,
+    speedSum: 0,
+    speedMax: 0,
+    satMin: null,
+    dangerEvents: 0,
+  })
+  const accumRef = useRef<FlightAccum>(emptyAccum())
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reportRequestedRef = useRef(false) // 자동 리포트 중복 방지
 
   // ── 이상 대응 가이드 AI 상세 분석 (실제 AI 생성) ────────────
   const [guideAi, setGuideAi] = useState<string | null>(null)
@@ -301,7 +332,41 @@ export function AiAssistantPanel({
     return base.endsWith("/api/v1") ? `${base}${path}` : `${base}/api/v1${path}`
   }
 
-  // 현재 비행 상태를 요약 데이터로 구성 (ai-summary 입력용)
+  // 누적된 비행 기록을 리포트용 데이터로 요약
+  const buildFlightSummary = () => {
+    const a = accumRef.current
+    const durationSec =
+      a.startTs && a.endTs
+        ? Math.max(0, Math.round((a.endTs - a.startTs) / 1000))
+        : 0
+    const mm = String(Math.floor(durationSec / 60)).padStart(2, "0")
+    const ss = String(durationSec % 60).padStart(2, "0")
+    const avgSpeed = a.samples > 0 ? a.speedSum / a.samples : 0
+    const batteryUsed =
+      a.batteryStart != null && a.batteryLast != null
+        ? Math.max(0, a.batteryStart - a.batteryLast)
+        : null
+    return {
+      기체: label,
+      비행시간: `${mm}:${ss}`,
+      비행시간_초: durationSec,
+      표본수: a.samples,
+      배터리_시작_퍼센트:
+        a.batteryStart != null ? Math.round(a.batteryStart) : null,
+      배터리_종료_퍼센트:
+        a.batteryLast != null ? Math.round(a.batteryLast) : null,
+      배터리_최저_퍼센트:
+        a.batteryMin != null ? Math.round(a.batteryMin) : null,
+      배터리_소모_퍼센트: batteryUsed != null ? Math.round(batteryUsed) : null,
+      최고_고도_m: Math.round(a.altMax),
+      평균_속도_ms: Number(avgSpeed.toFixed(1)),
+      최고_속도_ms: Number(a.speedMax.toFixed(1)),
+      최소_위성수: a.satMin,
+      위험_감지_횟수: a.dangerEvents,
+    }
+  }
+
+  // 현재 비행 상태를 요약 데이터로 구성 (가이드 AI 등 실시간 스냅샷용)
   const buildFlightData = () => ({
     기체: label,
     연결상태: droneConnected ? "비행 중" : "미연결",
@@ -319,16 +384,24 @@ export function AiAssistantPanel({
       gpsStatus === "danger" ? "위험" : gpsStatus === "warn" ? "주의" : "정상",
   })
 
-  // ① 비행 후 리포트 생성 (실제 Gemini 호출: /gemini/cbm/ai-summary)
+  // ① 비행 후 리포트 생성 (실제 누적 데이터 → Gemini /cbm/ai-summary)
   const generateReport = async () => {
     if (reportLoading) return
+    const summary = buildFlightSummary()
+    // 표본이 없으면(비행 기록 없음) 생성 불가
+    if (summary.표본수 === 0) {
+      setReportError(
+        "비행 기록이 없습니다. 기체를 연결해 비행한 후 생성하세요.",
+      )
+      return
+    }
     setReportLoading(true)
     setReportError(null)
     try {
       const res = await fetch(buildApiUrl("/gemini/cbm/ai-summary"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: buildFlightData(), level: "normal" }),
+        body: JSON.stringify({ data: summary, level: "normal" }),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const json = await res.json()
@@ -339,6 +412,82 @@ export function AiAssistantPanel({
       setReportLoading(false)
     }
   }
+
+  // 최신 generateReport 를 useEffect 안에서 안전하게 호출하기 위한 ref
+  const generateReportRef = useRef(generateReport)
+  generateReportRef.current = generateReport
+
+  // ── 비행 중 실제 데이터 누적 + 비행 종료(연결 끊김 10초) 자동 리포트 ──
+  useEffect(() => {
+    if (hasLiveData && droneData) {
+      const now = Date.now()
+
+      // 재연결(새 비행) 감지: 이전에 리포트가 요청된 뒤 다시 데이터가 들어오면 새 비행으로 리셋
+      if (reportRequestedRef.current) {
+        accumRef.current = emptyAccum()
+        reportRequestedRef.current = false
+      }
+      const acc = accumRef.current
+
+      if (acc.startTs == null) acc.startTs = now
+      acc.endTs = now
+      acc.samples += 1
+
+      const b = droneData.battery
+      if (typeof b === "number") {
+        if (acc.batteryStart == null) acc.batteryStart = b
+        acc.batteryLast = b
+        acc.batteryMin =
+          acc.batteryMin == null ? b : Math.min(acc.batteryMin, b)
+      }
+      const alt = droneData.altitude
+      if (typeof alt === "number") acc.altMax = Math.max(acc.altMax, alt)
+      const spd = droneData.speed
+      if (typeof spd === "number") {
+        acc.speedSum += spd
+        acc.speedMax = Math.max(acc.speedMax, spd)
+      }
+      const sat = droneData.gpsSatellites
+      if (typeof sat === "number")
+        acc.satMin = acc.satMin == null ? sat : Math.min(acc.satMin, sat)
+
+      // 위험 이벤트 카운트 (배터리 위험 또는 GPS 위험)
+      const bDanger = typeof b === "number" && b <= 25
+      const gDanger = typeof sat === "number" && sat < 10
+      if (bDanger || gDanger) acc.dangerEvents += 1
+
+      // 연결이 살아있으면 종료 타이머 해제
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current)
+        disconnectTimerRef.current = null
+      }
+    } else {
+      // 미연결 상태 — 누적 기록이 있고, 아직 리포트를 안 만들었으면 10초 후 자동 생성
+      const acc = accumRef.current
+      if (
+        acc.samples > 0 &&
+        !reportRequestedRef.current &&
+        !disconnectTimerRef.current
+      ) {
+        disconnectTimerRef.current = setTimeout(() => {
+          reportRequestedRef.current = true
+          disconnectTimerRef.current = null
+          // 비행 종료로 간주 → 자동 리포트 생성 (리포트 탭으로 전환)
+          setTab("report")
+          void generateReportRef.current()
+        }, 10000) // 10초
+      }
+    }
+
+    return () => {
+      // 언마운트 시 타이머 정리
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current)
+        disconnectTimerRef.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasLiveData, droneData])
 
   // ② 이상 대응 가이드 — AI 상세 분석 (실제 Gemini 호출)
   const generateGuideAi = async () => {
@@ -485,7 +634,10 @@ export function AiAssistantPanel({
                   <button
                     type="button"
                     onClick={generateReport}
-                    disabled={reportLoading || !hasLiveData}
+                    disabled={
+                      reportLoading ||
+                      (!hasLiveData && accumRef.current.samples === 0)
+                    }
                     className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
                   >
                     {reportLoading ? (
@@ -506,15 +658,22 @@ export function AiAssistantPanel({
                   <p className="mt-2 text-sm leading-relaxed text-slate-500">
                     {hasLiveData ? (
                       <>
-                        현재 기체 상태(배터리 {battery.toFixed(0)}% · 고도{" "}
-                        {altitude.toFixed(0)}m · 속도 {speed.toFixed(1)}m/s ·
-                        위성 {satellites})를 바탕으로 AI가 비행 리포트를
-                        생성합니다.
+                        비행 중입니다. 비행 데이터를 실시간으로 누적하고 있으며,
+                        연결이 종료되면 자동으로 리포트를 생성합니다. 지금 바로
+                        생성할 수도 있습니다. (현재 배터리 {battery.toFixed(0)}%
+                        · 고도 {altitude.toFixed(0)}m · 위성 {satellites})
+                      </>
+                    ) : accumRef.current.samples > 0 ? (
+                      <>
+                        비행이 종료되었습니다. 누적된 비행 데이터(
+                        {accumRef.current.samples}개 표본)를 바탕으로 리포트를
+                        생성할 수 있습니다.
                       </>
                     ) : (
                       <>
-                        기체가 연결되어 있지 않습니다. 기체를 연결하면 실시간
-                        비행 데이터를 바탕으로 AI 리포트를 생성할 수 있습니다.
+                        기체가 연결되어 있지 않습니다. 기체를 연결해 비행하면
+                        비행 데이터가 누적되고, 종료 후 실제 데이터 기반
+                        리포트를 생성합니다.
                       </>
                     )}
                   </p>
@@ -537,217 +696,224 @@ export function AiAssistantPanel({
                 )}
               </div>
 
-              {/* ── 참고용 리포트 구조 (예시) ── */}
-              <div className="mb-2 flex items-center gap-1.5">
-                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  리포트 구성 예시
-                </span>
-                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
-                  샘플
-                </span>
-              </div>
+              {/* ── 참고용 리포트 구조 (예시) — 실제 리포트 생성 전에만 표시 ── */}
+              {!report && (
+                <>
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      리포트 구성 예시
+                    </span>
+                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                      샘플
+                    </span>
+                  </div>
 
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-                  비행 종료 후 자동 생성됨
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                  <Clock className="h-3.5 w-3.5" />
-                  14:52 생성
-                </span>
-              </div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+                      비행 종료 후 자동 생성됨
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                      <Clock className="h-3.5 w-3.5" />
+                      14:52 생성
+                    </span>
+                  </div>
 
-              <p className="mb-3 text-base font-medium leading-relaxed text-slate-700">
-                <b className="font-bold text-slate-900">{label}</b> 비행이 정상
-                종료되었습니다 (30분 12초). 주요 지표는 정상 범위였으며,
-                <b className="font-semibold text-amber-700">
-                  {" "}
-                  배터리 소모율에서 경미한 주의 항목 1건
-                </b>
-                이 확인되었습니다.
-              </p>
+                  <p className="mb-3 text-base font-medium leading-relaxed text-slate-700">
+                    <b className="font-bold text-slate-900">{label}</b> 비행이
+                    정상 종료되었습니다 (30분 12초). 주요 지표는 정상
+                    범위였으며,
+                    <b className="font-semibold text-amber-700">
+                      {" "}
+                      배터리 소모율에서 경미한 주의 항목 1건
+                    </b>
+                    이 확인되었습니다.
+                  </p>
 
-              {/* 요약 지표 */}
-              <div className="mb-4 grid grid-cols-4 gap-2">
-                {[
-                  { l: "비행 시간", v: "30:12", u: "" },
-                  { l: "최대 고도", v: altitude.toFixed(0), u: "m" },
-                  { l: "평균 속도", v: speed.toFixed(1), u: "m/s" },
-                  { l: "배터리 소모", v: "48", u: "%" },
-                ].map((k) => (
-                  <div
-                    key={k.l}
-                    className="rounded-xl border border-slate-200/70 bg-slate-50/60 px-3 py-2.5"
-                  >
-                    <p className="text-xs text-slate-400">{k.l}</p>
-                    <p className="mt-0.5 text-xl font-bold text-slate-800">
-                      {k.v}
-                      {k.u && (
-                        <span className="ml-0.5 text-xs font-medium text-slate-400">
-                          {k.u}
+                  {/* 요약 지표 */}
+                  <div className="mb-4 grid grid-cols-4 gap-2">
+                    {[
+                      { l: "비행 시간", v: "30:12", u: "" },
+                      { l: "최대 고도", v: altitude.toFixed(0), u: "m" },
+                      { l: "평균 속도", v: speed.toFixed(1), u: "m/s" },
+                      { l: "배터리 소모", v: "48", u: "%" },
+                    ].map((k) => (
+                      <div
+                        key={k.l}
+                        className="rounded-xl border border-slate-200/70 bg-slate-50/60 px-3 py-2.5"
+                      >
+                        <p className="text-xs text-slate-400">{k.l}</p>
+                        <p className="mt-0.5 text-xl font-bold text-slate-800">
+                          {k.v}
+                          {k.u && (
+                            <span className="ml-0.5 text-xs font-medium text-slate-400">
+                              {k.u}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ── 구간별 상세 분석 (시간대별 타임라인) ── */}
+                  <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-indigo-500">
+                    구간별 상세 분석
+                  </p>
+                  <div className="mb-4 space-y-2">
+                    {[
+                      {
+                        phase: "이륙 · 상승",
+                        time: "00:00 – 03:20",
+                        ok: true,
+                        detail:
+                          "이륙 후 목표 고도 50m까지 안정적으로 상승. 상승률 2.4m/s, 자세 흔들림 없음.",
+                      },
+                      {
+                        phase: "순항 (배송지 이동)",
+                        time: "03:20 – 14:10",
+                        ok: true,
+                        detail:
+                          "평균 속도 9.8m/s로 순항. GPS 위성 27~29개 안정 유지, 항로 이탈 없음.",
+                      },
+                      {
+                        phase: "배송 · 호버링",
+                        time: "14:10 – 18:40",
+                        ok: true,
+                        detail:
+                          "배송지 상공 호버링 4분 30초. 페이로드 투하 정상, 위치 유지 오차 ±0.8m 이내.",
+                      },
+                      {
+                        phase: "귀환",
+                        time: "18:40 – 30:12",
+                        ok: false,
+                        detail:
+                          "귀환 후반 10분간 배터리 소모율 평소 대비 약 8% 상승. 북서풍 맞바람 영향으로 추정.",
+                      },
+                    ].map((seg, i) => (
+                      <div
+                        key={i}
+                        className={`rounded-xl border px-3 py-2.5 ${
+                          seg.ok
+                            ? "border-slate-200/70 bg-slate-50/50"
+                            : "border-amber-200/70 bg-amber-50/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {seg.ok ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                          ) : (
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                          )}
+                          <span className="text-sm font-bold text-slate-800">
+                            {seg.phase}
+                          </span>
+                          <span className="ml-auto text-xs font-medium tabular-nums text-slate-400">
+                            {seg.time}
+                          </span>
+                        </div>
+                        <p className="mt-1 pl-6 text-sm font-medium leading-relaxed text-slate-600">
+                          {seg.detail}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="mb-1.5 text-sm font-semibold uppercase tracking-wider text-indigo-500">
+                    AI 분석 요약
+                  </p>
+                  <div className="space-y-1.5">
+                    {[
+                      {
+                        ok: true,
+                        t: "자세 제어(Roll·Pitch·Yaw) 전 구간 안정 — 명령 대비 실제 편차 평균 0.03 rad 이내.",
+                      },
+                      {
+                        ok: true,
+                        t: "GPS 수신 양호 — 위성 평균 28개, 신호 단절 구간 없음.",
+                      },
+                      {
+                        ok: true,
+                        t: "모터 4개 출력 균형 정상 — 개별 PWM 편차 3% 이내, 특정 모터 과부하 징후 없음.",
+                      },
+                      {
+                        ok: false,
+                        t: "후반 10분 배터리 소모율이 평소 대비 약 8% 높음 — 바람 영향 가능성. 다음 비행 시 여유 배터리 권장.",
+                      },
+                    ].map((row, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        {row.ok ? (
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                        ) : (
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                        )}
+                        <span className="text-sm font-medium leading-relaxed text-slate-700">
+                          {row.t}
                         </span>
-                      )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ── 다음 비행 전 점검 필요 항목 (안전 체크리스트) ── */}
+                  <p className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wider text-amber-600">
+                    다음 비행 전 점검 필요
+                  </p>
+                  <div className="space-y-1.5">
+                    {[
+                      {
+                        level: "권장",
+                        t: "배터리 셀 밸런스 및 내부 저항 점검 — 후반 소모율 상승 원인 확인",
+                      },
+                      {
+                        level: "권장",
+                        t: "프로펠러 육안 점검 — 크랙·이물질·체결 상태 확인",
+                      },
+                      {
+                        level: "참고",
+                        t: "해상 풍향·풍속 예보 확인 후 귀환 여유 배터리 10% 추가 확보",
+                      },
+                    ].map((c, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-2 rounded-xl bg-slate-50/60 px-3 py-2"
+                      >
+                        <span
+                          className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                            c.level === "권장"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-slate-200 text-slate-500"
+                          }`}
+                        >
+                          {c.level}
+                        </span>
+                        <span className="text-sm font-medium leading-relaxed text-slate-700">
+                          {c.t}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+                    <p className="text-sm font-semibold text-indigo-700">
+                      정비 권고
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium leading-relaxed text-slate-700">
+                      즉시 조치 필요 항목 없음. 누적 비행 시간 기준 다음 정기
+                      점검까지{" "}
+                      <b className="font-bold text-indigo-700">4.2시간</b>{" "}
+                      남았습니다.{" "}
+                      <b className="font-semibold text-slate-900">
+                        프로펠러 육안 점검을 권장
+                      </b>
+                      합니다.
                     </p>
                   </div>
-                ))}
-              </div>
 
-              {/* ── 구간별 상세 분석 (시간대별 타임라인) ── */}
-              <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-indigo-500">
-                구간별 상세 분석
-              </p>
-              <div className="mb-4 space-y-2">
-                {[
-                  {
-                    phase: "이륙 · 상승",
-                    time: "00:00 – 03:20",
-                    ok: true,
-                    detail:
-                      "이륙 후 목표 고도 50m까지 안정적으로 상승. 상승률 2.4m/s, 자세 흔들림 없음.",
-                  },
-                  {
-                    phase: "순항 (배송지 이동)",
-                    time: "03:20 – 14:10",
-                    ok: true,
-                    detail:
-                      "평균 속도 9.8m/s로 순항. GPS 위성 27~29개 안정 유지, 항로 이탈 없음.",
-                  },
-                  {
-                    phase: "배송 · 호버링",
-                    time: "14:10 – 18:40",
-                    ok: true,
-                    detail:
-                      "배송지 상공 호버링 4분 30초. 페이로드 투하 정상, 위치 유지 오차 ±0.8m 이내.",
-                  },
-                  {
-                    phase: "귀환",
-                    time: "18:40 – 30:12",
-                    ok: false,
-                    detail:
-                      "귀환 후반 10분간 배터리 소모율 평소 대비 약 8% 상승. 북서풍 맞바람 영향으로 추정.",
-                  },
-                ].map((seg, i) => (
-                  <div
-                    key={i}
-                    className={`rounded-xl border px-3 py-2.5 ${
-                      seg.ok
-                        ? "border-slate-200/70 bg-slate-50/50"
-                        : "border-amber-200/70 bg-amber-50/50"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      {seg.ok ? (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-                      )}
-                      <span className="text-sm font-bold text-slate-800">
-                        {seg.phase}
-                      </span>
-                      <span className="ml-auto text-xs font-medium tabular-nums text-slate-400">
-                        {seg.time}
-                      </span>
-                    </div>
-                    <p className="mt-1 pl-6 text-sm font-medium leading-relaxed text-slate-600">
-                      {seg.detail}
-                    </p>
+                  <div className="mt-2 flex items-center gap-1.5 border-t border-dashed border-slate-200 pt-2.5 text-sm text-slate-400">
+                    <BookOpen className="h-3.5 w-3.5" />
+                    근거 · 비행 로그 1,812건 · 과거 동일 기종 비행 24건 대비
+                    분석
                   </div>
-                ))}
-              </div>
-
-              <p className="mb-1.5 text-sm font-semibold uppercase tracking-wider text-indigo-500">
-                AI 분석 요약
-              </p>
-              <div className="space-y-1.5">
-                {[
-                  {
-                    ok: true,
-                    t: "자세 제어(Roll·Pitch·Yaw) 전 구간 안정 — 명령 대비 실제 편차 평균 0.03 rad 이내.",
-                  },
-                  {
-                    ok: true,
-                    t: "GPS 수신 양호 — 위성 평균 28개, 신호 단절 구간 없음.",
-                  },
-                  {
-                    ok: true,
-                    t: "모터 4개 출력 균형 정상 — 개별 PWM 편차 3% 이내, 특정 모터 과부하 징후 없음.",
-                  },
-                  {
-                    ok: false,
-                    t: "후반 10분 배터리 소모율이 평소 대비 약 8% 높음 — 바람 영향 가능성. 다음 비행 시 여유 배터리 권장.",
-                  },
-                ].map((row, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    {row.ok ? (
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                    ) : (
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                    )}
-                    <span className="text-sm font-medium leading-relaxed text-slate-700">
-                      {row.t}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* ── 다음 비행 전 점검 필요 항목 (안전 체크리스트) ── */}
-              <p className="mb-2 mt-4 text-sm font-semibold uppercase tracking-wider text-amber-600">
-                다음 비행 전 점검 필요
-              </p>
-              <div className="space-y-1.5">
-                {[
-                  {
-                    level: "권장",
-                    t: "배터리 셀 밸런스 및 내부 저항 점검 — 후반 소모율 상승 원인 확인",
-                  },
-                  {
-                    level: "권장",
-                    t: "프로펠러 육안 점검 — 크랙·이물질·체결 상태 확인",
-                  },
-                  {
-                    level: "참고",
-                    t: "해상 풍향·풍속 예보 확인 후 귀환 여유 배터리 10% 추가 확보",
-                  },
-                ].map((c, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2 rounded-xl bg-slate-50/60 px-3 py-2"
-                  >
-                    <span
-                      className={`mt-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
-                        c.level === "권장"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-slate-200 text-slate-500"
-                      }`}
-                    >
-                      {c.level}
-                    </span>
-                    <span className="text-sm font-medium leading-relaxed text-slate-700">
-                      {c.t}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <p className="text-sm font-semibold text-indigo-700">
-                  정비 권고
-                </p>
-                <p className="mt-0.5 text-sm font-medium leading-relaxed text-slate-700">
-                  즉시 조치 필요 항목 없음. 누적 비행 시간 기준 다음 정기
-                  점검까지 <b className="font-bold text-indigo-700">4.2시간</b>{" "}
-                  남았습니다.{" "}
-                  <b className="font-semibold text-slate-900">
-                    프로펠러 육안 점검을 권장
-                  </b>
-                  합니다.
-                </p>
-              </div>
-
-              <div className="mt-2 flex items-center gap-1.5 border-t border-dashed border-slate-200 pt-2.5 text-sm text-slate-400">
-                <BookOpen className="h-3.5 w-3.5" />
-                근거 · 비행 로그 1,812건 · 과거 동일 기종 비행 24건 대비 분석
-              </div>
+                </>
+              )}
             </div>
           )}
 
