@@ -66,6 +66,8 @@ export function AiAssistantPanel({
   const [guideAiLoading, setGuideAiLoading] = useState(false)
 
   const label = droneLabel ?? "DM4_2"
+  // 실제 텔레메트리 수신 여부 — 미연결이면 판정/수치를 표시하지 않음
+  const hasLiveData = droneConnected && droneData != null
   const battery = droneData?.battery ?? 67
   const altitude = droneData?.altitude ?? 52
   const speed = droneData?.speed ?? 9.8
@@ -76,9 +78,10 @@ export function AiAssistantPanel({
     battery <= 25 ? "danger" : battery <= 40 ? "warn" : "ok"
   const gpsStatus: "ok" | "warn" | "danger" =
     satellites < 10 ? "danger" : satellites < 20 ? "warn" : "ok"
-  // 전체 판정 = 가장 나쁜 항목 기준
-  const preflightVerdict: "go" | "caution" | "no-go" =
-    batteryStatus === "danger" || gpsStatus === "danger"
+  // 전체 판정 = 가장 나쁜 항목 기준 (미연결이면 unknown)
+  const preflightVerdict: "go" | "caution" | "no-go" | "unknown" = !hasLiveData
+    ? "unknown"
+    : batteryStatus === "danger" || gpsStatus === "danger"
       ? "no-go"
       : batteryStatus === "warn" || gpsStatus === "warn"
         ? "caution"
@@ -111,15 +114,26 @@ export function AiAssistantPanel({
       text: "text-red-700",
       icon: <AlertTriangle className="h-6 w-6" />,
     },
+    unknown: {
+      title: "기체 미연결",
+      sub: "기체를 연결하면 실시간 적합성이 표시됩니다",
+      border: "border-slate-200/60",
+      bg: "bg-slate-50/70",
+      iconBg: "from-slate-400 to-slate-500",
+      text: "text-slate-600",
+      icon: <AlertTriangle className="h-6 w-6" />,
+    },
   }[preflightVerdict]
   const preflightAdvice =
-    preflightVerdict === "no-go"
-      ? batteryStatus === "danger"
-        ? "배터리가 위험 수준(≤25%)입니다. 즉시 충전 또는 교체 전에는 이륙하지 마세요."
-        : "GPS 위성 수가 부족합니다. 신호가 회복될 때까지 비행을 보류하세요."
-      : preflightVerdict === "caution"
-        ? "이륙은 가능하나 여유가 적습니다. 임무 반경을 줄이거나 여유 배터리를 확보하세요."
-        : "적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다. 여유 배터리를 확보하세요."
+    preflightVerdict === "unknown"
+      ? "현재 연결된 기체가 없습니다. 기체를 연결하면 배터리·GPS·통신 상태를 실시간으로 진단합니다."
+      : preflightVerdict === "no-go"
+        ? batteryStatus === "danger"
+          ? "배터리가 위험 수준(≤25%)입니다. 즉시 충전 또는 교체 전에는 이륙하지 마세요."
+          : "GPS 위성 수가 부족합니다. 신호가 회복될 때까지 비행을 보류하세요."
+        : preflightVerdict === "caution"
+          ? "이륙은 가능하나 여유가 적습니다. 임무 반경을 줄이거나 여유 배터리를 확보하세요."
+          : "적합 판정이나, 후반 구간 바람으로 배터리 소모가 늘 수 있습니다. 여유 배터리를 확보하세요."
 
   // ── 이상 대응 가이드 (배터리·GPS 상태에 따라 통째로 전환) ──────
   type GuideStep = { t: string; d: string; time?: string; caution?: string }
@@ -131,6 +145,26 @@ export function AiAssistantPanel({
     ref: string
   }
   const responseGuide: ResponseGuide = (() => {
+    // 미연결이면 안내만 표시
+    if (!hasLiveData) {
+      return {
+        severity: "ok",
+        alertTitle: "기체 미연결 — 대응 가이드 대기 중",
+        alertDesc:
+          "연결된 기체가 없습니다. 기체를 연결하면 실시간 상태에 맞는 대응 가이드가 표시됩니다.",
+        steps: [
+          {
+            t: "기체 연결",
+            d: " — '기체 실시간 정보' 패널에서 관제할 기체를 선택해 연결하세요.",
+          },
+          {
+            t: "텔레메트리 수신 확인",
+            d: " — 배터리·GPS·통신 값이 수신되면 자동으로 이상 감지가 시작됩니다.",
+          },
+        ],
+        ref: "참조 · 운용 매뉴얼 §1 기체 연결 절차",
+      }
+    }
     // 우선순위: 배터리 위험 > GPS 위험 > 배터리 주의 > GPS 주의 > 정상
     if (batteryStatus === "danger") {
       return {
@@ -451,7 +485,7 @@ export function AiAssistantPanel({
                   <button
                     type="button"
                     onClick={generateReport}
-                    disabled={reportLoading}
+                    disabled={reportLoading || !hasLiveData}
                     className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-600 disabled:opacity-50"
                   >
                     {reportLoading ? (
@@ -470,9 +504,19 @@ export function AiAssistantPanel({
 
                 {!report && !reportLoading && !reportError && (
                   <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                    현재 기체 상태(배터리 {battery.toFixed(0)}% · 고도{" "}
-                    {altitude.toFixed(0)}m · 속도 {speed.toFixed(1)}m/s · 위성{" "}
-                    {satellites})를 바탕으로 AI가 비행 리포트를 생성합니다.
+                    {hasLiveData ? (
+                      <>
+                        현재 기체 상태(배터리 {battery.toFixed(0)}% · 고도{" "}
+                        {altitude.toFixed(0)}m · 속도 {speed.toFixed(1)}m/s ·
+                        위성 {satellites})를 바탕으로 AI가 비행 리포트를
+                        생성합니다.
+                      </>
+                    ) : (
+                      <>
+                        기체가 연결되어 있지 않습니다. 기체를 연결하면 실시간
+                        비행 데이터를 바탕으로 AI 리포트를 생성할 수 있습니다.
+                      </>
+                    )}
                   </p>
                 )}
                 {reportLoading && (
@@ -778,7 +822,7 @@ export function AiAssistantPanel({
                 <button
                   type="button"
                   onClick={generateGuideAi}
-                  disabled={guideAiLoading}
+                  disabled={guideAiLoading || !hasLiveData}
                   className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-indigo-200/70 bg-indigo-50/50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100/60 disabled:opacity-50"
                 >
                   {guideAiLoading ? (
@@ -824,38 +868,44 @@ export function AiAssistantPanel({
                 </div>
               </div>
 
-              {/* 체크 항목 (실시간) */}
+              {/* 체크 항목 (실시간 / 미연결 시 미표시) */}
               <div className="space-y-2">
                 {[
                   {
-                    status: batteryStatus,
+                    status: hasLiveData ? batteryStatus : ("unknown" as const),
                     l: "배터리",
-                    v:
-                      batteryStatus === "danger"
+                    v: !hasLiveData
+                      ? "미연결"
+                      : batteryStatus === "danger"
                         ? `${battery.toFixed(0)}% — 위험, 즉시 충전`
                         : batteryStatus === "warn"
                           ? `${battery.toFixed(0)}% — 여유 부족`
                           : `충전 ${battery > 90 ? "100" : battery.toFixed(0)}% · 셀 균형 정상`,
                   },
                   {
-                    status: "ok" as const,
+                    status: hasLiveData
+                      ? ("ok" as const)
+                      : ("unknown" as const),
                     l: "기체 상태",
-                    v: "직전 비행 이상 없음",
+                    v: hasLiveData ? "직전 비행 이상 없음" : "미연결",
                   },
                   {
-                    status: gpsStatus,
+                    status: hasLiveData ? gpsStatus : ("unknown" as const),
                     l: "GPS / 통신",
-                    v:
-                      gpsStatus === "danger"
+                    v: !hasLiveData
+                      ? "미연결"
+                      : gpsStatus === "danger"
                         ? `위성 ${satellites} — 신호 부족`
                         : gpsStatus === "warn"
                           ? `위성 ${satellites} — 주의`
                           : `위성 ${satellites} · LTE 양호`,
                   },
                   {
-                    status: "warn" as const,
+                    status: hasLiveData
+                      ? ("warn" as const)
+                      : ("unknown" as const),
                     l: "기상",
-                    v: "북서풍 6 m/s — 주의",
+                    v: hasLiveData ? "북서풍 6 m/s — 주의" : "미연결",
                   },
                 ].map((c) => (
                   <div
@@ -866,8 +916,10 @@ export function AiAssistantPanel({
                       <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
                     ) : c.status === "warn" ? (
                       <AlertTriangle className="h-5 w-5 shrink-0 text-amber-500" />
-                    ) : (
+                    ) : c.status === "danger" ? (
                       <AlertTriangle className="h-5 w-5 shrink-0 text-red-500" />
+                    ) : (
+                      <span className="h-5 w-5 shrink-0 rounded-full border-2 border-slate-300" />
                     )}
                     <span className="text-sm font-semibold text-slate-800">
                       {c.l}
@@ -878,7 +930,9 @@ export function AiAssistantPanel({
                           ? "text-red-600"
                           : c.status === "warn"
                             ? "text-amber-600"
-                            : "text-slate-600"
+                            : c.status === "unknown"
+                              ? "text-slate-400"
+                              : "text-slate-600"
                       }`}
                     >
                       {c.v}
@@ -893,7 +947,9 @@ export function AiAssistantPanel({
                     ? "border-red-200/70 bg-red-50/60"
                     : preflightVerdict === "caution"
                       ? "border-amber-200/70 bg-amber-50/60"
-                      : "border-indigo-100 bg-indigo-50/50"
+                      : preflightVerdict === "unknown"
+                        ? "border-slate-200/70 bg-slate-50/60"
+                        : "border-indigo-100 bg-indigo-50/50"
                 }`}
               >
                 <p className="text-sm font-medium leading-relaxed text-slate-700">
@@ -903,7 +959,9 @@ export function AiAssistantPanel({
                         ? "text-red-700"
                         : preflightVerdict === "caution"
                           ? "text-amber-700"
-                          : "text-indigo-700"
+                          : preflightVerdict === "unknown"
+                            ? "text-slate-500"
+                            : "text-indigo-700"
                     }`}
                   >
                     💬 AI 조언:
