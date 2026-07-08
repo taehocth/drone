@@ -96,6 +96,11 @@ async def qgc_ws(websocket: WebSocket):
 
     try:
         while True:
+            # ── 연결이 살아있는지 먼저 확인 (닫혔으면 조용히 종료) ──
+            # application_state.value == 1 이 CONNECTED 상태.
+            if websocket.application_state.value != 1:
+                break
+
             if lte_ip:
                 payload = registry.latest_flattened_by_lte_ip(lte_ip)
             else:
@@ -120,4 +125,18 @@ async def qgc_ws(websocket: WebSocket):
             await asyncio.sleep(0.1)
 
     except WebSocketDisconnect:
+        # 클라이언트가 정상적으로 연결을 종료한 경우 — 조용히 무시
         pass
+    except (RuntimeError, ConnectionError) as e:
+        # 이미 닫힌 소켓에 쓰기 시도 등 — 로그만 남기고 종료
+        # ("unable to perform operation on ... the handler is closed" 방지)
+        print(f"ℹ️  QGC WS 연결 종료됨 (lte_ip={lte_ip}): {e}")
+    except Exception as e:
+        print(f"⚠️ QGC WS 예기치 못한 오류 (lte_ip={lte_ip}): {e}")
+    finally:
+        # 아직 열려 있으면 정리
+        try:
+            if websocket.application_state.value == 1:
+                await websocket.close()
+        except Exception:
+            pass

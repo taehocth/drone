@@ -9,6 +9,12 @@ app/api/routes/cbm_ws.py
   5. Failsafe 판정 결과 페이로드에 추가
   6. GET /cbm/status            — 현재 상태 REST 조회
   7. POST /cbm/reset/{drone_id} — 세션 전환 시 CUSUM·버퍼·Failsafe 초기화
+
+  ★ 연결 종료 처리 개선:
+     - 이미 닫힌 소켓에 전송 시 발생하던
+       "unable to perform operation ... the handler is closed" 무한 반복 제거.
+     - RuntimeError/ConnectionError 는 continue 가 아니라 break 로 루프 종료.
+     - 전송 직전에도 연결 상태를 재확인.
 """
 
 from __future__ import annotations
@@ -39,6 +45,14 @@ ALERT_INTERVAL  = 0.5
 WARMUP_INTERVAL = 1.0
 
 
+def _is_connected(websocket: WebSocket) -> bool:
+    """WebSocket 이 아직 CONNECTED(1) 상태인지 확인."""
+    try:
+        return websocket.application_state.value == 1
+    except Exception:
+        return False
+
+
 # ════════════════════════════════════════════════════════
 # WebSocket — 실시간 CBM 스트림
 # ════════════════════════════════════════════════════════
@@ -49,25 +63,6 @@ async def cbm_ws(websocket: WebSocket):
 
     쿼리 파라미터:
         drone_id (선택): 특정 드론 지정. 없으면 가장 최근 드론 자동 선택.
-
-    전송 페이로드:
-    {
-        "timestamp":    "2025-...",
-        "drone_id":     "drone-001",
-        "window_size":  20,
-        "model_ready":  true,
-        "has_alert":    true,
-        "systems": [...],        # 기존 이상 탐지 alerts
-        "failsafe": {
-            "level":       "rtl",
-            "total_score": 5,
-            "details": [
-                {"feature": "배터리 전압", "stage": "warning", "score": 2, "value": 19.2, "source": "physical"},
-                {"feature": "sensor_gyro_x", "stage": "warning", "score": 2, "source": "cnn_lstm", ...},
-            ],
-            "action_msg": "RTL 귀환 권고 — 경고 단계 진입, 귀환 명령 실행 필요"
-        }
-    }
     """
     drone_id = websocket.query_params.get("drone_id")
     await websocket.accept()
@@ -77,7 +72,8 @@ async def cbm_ws(websocket: WebSocket):
 
     try:
         while True:
-            if websocket.application_state.value != 1:
+            # ── 연결이 살아있는지 먼저 확인 (닫혔으면 조용히 종료) ──
+            if not _is_connected(websocket):
                 print("⚠️ CBM 클라이언트 연결 끊김 감지 → 루프 종료")
                 break
 
@@ -108,7 +104,9 @@ async def cbm_ws(websocket: WebSocket):
                     "failsafe":    failsafe,
                 }
 
-                # ── 4. 전송
+                # ── 4. 전송 직전 재확인 후 전송
+                if not _is_connected(websocket):
+                    break
                 await websocket.send_text(
                     json.dumps(payload, ensure_ascii=False)
                 )
@@ -141,7 +139,13 @@ async def cbm_ws(websocket: WebSocket):
             except WebSocketDisconnect:
                 print("❌ CBM WebSocket 연결 종료됨 (클라이언트 측)")
                 break
+            except (RuntimeError, ConnectionError) as conn_err:
+                # 이미 닫힌 소켓에 쓰기 시도 등 — continue 하면 무한 반복되므로 break!
+                # ("unable to perform operation on ... the handler is closed" 방지)
+                print(f"ℹ️  CBM WS 연결 종료 감지 → 루프 종료: {conn_err}")
+                break
             except Exception as loop_err:
+                # 그 외 일시적 오류만 재시도
                 print(f"⚠️ CBM 내부 루프 오류: {loop_err}")
                 await asyncio.sleep(1)
                 continue
@@ -150,8 +154,11 @@ async def cbm_ws(websocket: WebSocket):
         print(f"💥 CBM WebSocket 전체 오류: {e}")
 
     finally:
-        if websocket.application_state.value == 1:
-            await websocket.close()
+        try:
+            if _is_connected(websocket):
+                await websocket.close()
+        except Exception:
+            pass
         print(f"🧹 CBM WebSocket 정리 완료 drone_id={drone_id or 'auto'}")
 
 
