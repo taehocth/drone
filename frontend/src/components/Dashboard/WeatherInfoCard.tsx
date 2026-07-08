@@ -81,11 +81,21 @@ async function fetchKpIndex() {
   }
 }
 
-// 환경 변수에서 API URL 가져오기
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "/api/v1").replace(
-  /\/api\/v1$/,
-  "",
-)
+// ✅ API URL 헬퍼 — VITE_API_URL 값이 무엇이든 항상 /api/v1 을 한 번만 붙인다.
+//   - "https://host"            → "https://host/api/v1{path}"
+//   - "https://host/api/v1"     → "https://host/api/v1{path}"
+//   - "https://host/api/v1/"    → "https://host/api/v1{path}"
+//   - 미설정                     → "/api/v1{path}"
+function buildApiUrl(path: string): string {
+  const raw = import.meta.env.VITE_API_URL || "/api/v1"
+  // 끝 슬래시 제거
+  let base = raw.replace(/\/+$/, "")
+  // 끝에 /api/v1 이 없으면 붙인다
+  if (!base.endsWith("/api/v1")) {
+    base = `${base}/api/v1`
+  }
+  return `${base}${path}`
+}
 
 interface WeatherInfoCardProps {
   clickedCoordinates?: { nx: number; ny: number } | null
@@ -105,7 +115,9 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
       const base_date = now.toISOString().slice(0, 10).replace(/-/g, "")
       const base_time = now.getHours().toString().padStart(2, "0") + "00"
 
-      const url = `${API_BASE_URL}/api/v1/weather/?nx=${region.nx}&ny=${region.ny}&base_date=${base_date}&base_time=${base_time}`
+      const url = buildApiUrl(
+        `/weather/?nx=${region.nx}&ny=${region.ny}&base_date=${base_date}&base_time=${base_time}`,
+      )
       const res = await fetch(url)
       if (!res.ok) throw new Error("API 요청 실패")
 
@@ -273,14 +285,17 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
         : "text-red-600"
 
   return (
-    <Card className="w-full rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] backdrop-blur-xl ring-1 ring-white/70 transition-all duration-300 motion-safe:hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+    <Card className="w-full rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/70 backdrop-blur-xl transition-all duration-300 hover:shadow-lg motion-safe:hover:-translate-y-0.5 dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
       <CardHeader className="border-b border-slate-200/60 pb-4 dark:border-slate-800/60">
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Cloud className="h-5 w-5" />
             기상 정보
           </CardTitle>
-          <Badge variant="outline" className="border-slate-200/70 text-xs dark:border-slate-700/60">
+          <Badge
+            variant="outline"
+            className="border-slate-200/70 text-xs dark:border-slate-700/60"
+          >
             {weatherData?.lastUpdate || "--:--:--"}
           </Badge>
         </div>
@@ -475,7 +490,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
             )}
           </>
         ) : (
-          <div className="p-3 text-center text-gray-500 animate-pulse">
+          <div className="animate-pulse p-3 text-center text-gray-500">
             날씨 데이터를 불러오는 중...
           </div>
         )}
