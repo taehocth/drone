@@ -1819,9 +1819,9 @@ export function UavDashboard() {
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
   const [simMode, setSimMode] = useState(false)
-  const [simScenario, setSimScenario] = useState<
-    "normal" | "battery" | "gps"
-  >("normal")
+  const [simScenario, setSimScenario] = useState<"normal" | "battery" | "gps">(
+    "normal",
+  )
   const [allDroneStates, setAllDroneStates] = useState<DroneWsState[]>([
     { ...INITIAL_DRONE_WS_STATE },
     { ...INITIAL_DRONE_WS_STATE },
@@ -2416,11 +2416,7 @@ export function UavDashboard() {
           badge={
             <StatusBadge
               level={
-                isDroneOffline
-                  ? "danger"
-                  : droneConnected
-                    ? alertLevel
-                    : "off"
+                isDroneOffline ? "danger" : droneConnected ? alertLevel : "off"
               }
               label={
                 isDroneOffline
@@ -2478,7 +2474,9 @@ export function UavDashboard() {
     <AiAssistantPanel
       droneConnected={droneConnected && !isDroneOffline}
       droneData={isDroneOffline ? null : droneData}
-      droneLabel={selectedDroneIdx !== null ? DRONE_LABELS[selectedDroneIdx] : null}
+      droneLabel={
+        selectedDroneIdx !== null ? DRONE_LABELS[selectedDroneIdx] : null
+      }
     />
   )
 
@@ -2786,68 +2784,68 @@ export function UavDashboard() {
               onClick={() => setCollapseMap((v) => !v)}
             >
               <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
-                <MapPin className="h-4 w-4 text-white" />
+                <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 p-2 shadow-sm">
+                  <MapPin className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-base font-semibold text-slate-900">
+                    드론 위치
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
+                    {missionWaypoints.length > 0 && (
+                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                        미션 {missionWaypoints.length}개 WP
+                      </span>
+                    )}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-base font-semibold text-slate-900">
-                  드론 위치
-                </p>
-                <p className="text-xs text-slate-500">
-                  지도를 클릭하면 해당 위치의 기상 정보를 조회합니다
-                  {missionWaypoints.length > 0 && (
-                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                      미션 {missionWaypoints.length}개 WP
-                    </span>
+              <div className="flex items-center gap-2">
+                <div onClick={(e) => e.stopPropagation()}>
+                  <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다." />
+                </div>
+                <span className="text-slate-400">
+                  {collapseMap ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronUp className="h-4 w-4" />
                   )}
-                </p>
+                </span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div onClick={(e) => e.stopPropagation()}>
-                <HelpHint text="드론의 실시간 위치를 지도에서 확인합니다." />
+            {!collapseMap && (
+              <div className="min-h-[512px] flex-1 overflow-hidden">
+                <NaverMap
+                  lat={DEFAULT_MAP_OPTIONS.center.lat}
+                  lng={DEFAULT_MAP_OPTIONS.center.lng}
+                  dronePosition={
+                    droneData &&
+                    !isDroneOffline &&
+                    typeof droneData.latitude === "number" &&
+                    typeof droneData.longitude === "number"
+                      ? {
+                          lat: droneData.latitude,
+                          lng: droneData.longitude,
+                          yaw: droneData.yawInt,
+                          satellites: droneData.gpsSatellites,
+                        }
+                      : undefined
+                  }
+                  onMapClick={(nx, ny) => setClickedCoordinates({ nx, ny })}
+                  droneStats={{
+                    battery: droneData?.battery,
+                    altitude: droneData?.altitude,
+                    speed: droneData?.speed,
+                    armed: armedValue,
+                  }}
+                  droneId={selectedDroneId}
+                  missionWaypoints={
+                    missionWaypoints.length > 0 ? missionWaypoints : undefined
+                  }
+                />
               </div>
-              <span className="text-slate-400">
-                {collapseMap ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronUp className="h-4 w-4" />
-                )}
-              </span>
-            </div>
-          </div>
-          {!collapseMap && (
-            <div className="min-h-[512px] flex-1 overflow-hidden">
-              <NaverMap
-                lat={DEFAULT_MAP_OPTIONS.center.lat}
-                lng={DEFAULT_MAP_OPTIONS.center.lng}
-                dronePosition={
-                  droneData &&
-                  !isDroneOffline &&
-                  typeof droneData.latitude === "number" &&
-                  typeof droneData.longitude === "number"
-                    ? {
-                        lat: droneData.latitude,
-                        lng: droneData.longitude,
-                        yaw: droneData.yawInt,
-                        satellites: droneData.gpsSatellites,
-                      }
-                    : undefined
-                }
-                onMapClick={(nx, ny) => setClickedCoordinates({ nx, ny })}
-                droneStats={{
-                  battery: droneData?.battery,
-                  altitude: droneData?.altitude,
-                  speed: droneData?.speed,
-                  armed: armedValue,
-                }}
-                droneId={selectedDroneId}
-                missionWaypoints={
-                  missionWaypoints.length > 0 ? missionWaypoints : undefined
-                }
-              />
-            </div>
-          )}
+            )}
           </div>
 
           {/* ── 우측: 관제 정보 패널 (공간 넓으면 CBM | AI 2열, 좁으면 자동 1열) ── */}
@@ -2857,11 +2855,17 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ===== 지도 아래: 기체 실시간 정보 + 비행 이벤트 로그 ===== */}
-        <div className="space-y-8">
-          {monitorCard}
-          {helpCard}
-          <FlightLogWidget logs={logs} />
+        {/* ===== 지도 아래: 기체 실시간 정보(좌) + 비행 이벤트 로그(우) 2분할 ===== */}
+        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
+          {/* 좌측: 기체 실시간 정보 (+ 연결 안내) */}
+          <div className="space-y-8">
+            {monitorCard}
+            {helpCard}
+          </div>
+          {/* 우측: 비행 이벤트 로그 */}
+          <div>
+            <FlightLogWidget logs={logs} />
+          </div>
         </div>
       </div>
 
