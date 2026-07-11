@@ -11,17 +11,11 @@ import math
 
 router = APIRouter(tags=["Flight Logs"])
 
-# --------------------------------------------------------
-# Constants
-# --------------------------------------------------------
 PWM_MIN_US = 1000.0
 PWM_MAX_US = 2000.0
 PWM_RANGE_US = PWM_MAX_US - PWM_MIN_US
 
 
-# --------------------------------------------------------
-# Utility: Safe clean (NaN / Inf 제거)
-# --------------------------------------------------------
 def deep_clean(obj):
     if isinstance(obj, dict):
         return {k: deep_clean(v) for k, v in obj.items()}
@@ -44,9 +38,6 @@ def clean_dict(d):
     return out
 
 
-# --------------------------------------------------------
-# Quaternion → Euler 변환
-# --------------------------------------------------------
 def quat_to_euler(q):
     q0, q1, q2, q3 = q
     roll = math.atan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1*q1 + q2*q2))
@@ -55,45 +46,19 @@ def quat_to_euler(q):
     return roll, pitch, yaw
 
 
-# --------------------------------------------------------
-# [FIX 1] 고도 표준편차: 호버링 구간만 추출
-#
-# 변경사항:
-#   - 기존: min_hover_alt_m 이상 전체 구간 → 이착륙 고도 변화가 포함되어 std 과대
-#   - 수정: 고도가 안정된 구간(연속 윈도우 내 변화량 작은 구간)만 추출
-#           → 실제 호버링/순항 중 고도 유지 능력만 측정
-# --------------------------------------------------------
 def calc_hovering_alt_std(
     altitudes: list[float],
     min_hover_alt_m: float = 1.5,
     window_size: int = 50,
     max_window_range_m: float = 5.0,
 ) -> float | None:
-    """
-    이륙/착륙/기동 구간 제외 후 호버링 고도 안정성 계산.
-
-    전략:
-    1. min_hover_alt_m 이상 구간만 후보로 선정
-    2. 슬라이딩 윈도우(50샘플, 허용 범위 5m)로 안정 구간 수집
-       - 허용 범위를 5m로 넉넉히 잡아 짧은 비행/저고도도 커버
-    3. 안정 구간이 충분하면 → 각 윈도우 내 중앙값 기준 편차 사용
-       (절대 고도 차이가 아닌 "유지 능력" 측정)
-    4. 안정 구간 부족 → 전체 비행 구간 IQR fallback
-    """
     if not altitudes or len(altitudes) < 10:
         return None
-
-    # Step 1: 비행 중 구간만
     flying_alts = [a for a in altitudes if a >= min_hover_alt_m]
     if len(flying_alts) < 10:
         flying_alts = altitudes
-
-    # Step 2: 슬라이딩 윈도우로 안정 구간 수집
-    # 각 윈도우 내에서 중앙값 기준 편차(잔차)만 모음
-    # → 고도가 50m든 100m든 "얼마나 흔들리는가"만 측정
     residuals = []
     stable_window_count = 0
-
     for i in range(0, len(flying_alts) - window_size, window_size // 2):
         window = flying_alts[i: i + window_size]
         if not window:
@@ -104,35 +69,21 @@ def calc_hovering_alt_std(
             window_residuals = [a - median_alt for a in window]
             residuals.extend(window_residuals)
             stable_window_count += 1
-
     if len(residuals) >= 30:
-        print(f"[ALT STD] 안정 윈도우 {stable_window_count}개, "
-              f"잔차 {len(residuals)}개 → std={float(np.std(residuals)):.3f}m")
         return float(np.std(residuals))
-
-    # Fallback: 전체 비행 구간 IQR
-    print(f"[ALT STD] 안정 구간 부족({len(residuals)}개) → IQR fallback")
     target_alts = flying_alts
     if len(target_alts) > 20:
         sorted_alts = sorted(target_alts)
         p10 = int(len(sorted_alts) * 0.10)
         p90 = int(len(sorted_alts) * 0.90)
         target_alts = sorted_alts[p10:p90]
-
     if len(target_alts) < 5:
         return None
-
-    # fallback도 중앙값 기준 잔차로 계산
     median_alt = float(np.median(target_alts))
     fallback_residuals = [a - median_alt for a in target_alts]
-    result = float(np.std(fallback_residuals))
-    print(f"[ALT STD] IQR fallback std={result:.3f}m")
-    return result
+    return float(np.std(fallback_residuals))
 
 
-# --------------------------------------------------------
-# PX4 ULG Analyzer
-# --------------------------------------------------------
 @router.post("/analyze", response_class=ORJSONResponse)
 async def upload_log(file: UploadFile = File(...)):
     try:
@@ -144,18 +95,9 @@ async def upload_log(file: UploadFile = File(...)):
             tmp_path = tmp.name
 
         ulog = ULog(tmp_path)
-        print(f"[DEBUG] Loaded ULog — topics: {len(ulog.data_list)}")
-
-        print("=============== ULOG TOPIC LIST ===============")
-        for d in ulog.data_list:
-            print(f"- {d.name} → {list(d.data.keys())}")
-        print("================================================")
 
         local_pos = next((d for d in ulog.data_list if d.name == "vehicle_local_position"), None)
-
-        # ============== Battery 인스턴스 자동 선택 ==============
         battery_list = [d for d in ulog.data_list if d.name == "battery_status"]
-
         if not battery_list:
             raise HTTPException(status_code=400, detail="battery_status 토픽 없음")
 
@@ -167,28 +109,6 @@ async def upload_log(file: UploadFile = File(...)):
 
         battery = max(battery_list, key=avg_voltage)
         battery_voltage = avg_voltage(battery)
-        print(f"[DEBUG] 선택된 battery_status 인스턴스 평균전압: {battery_voltage:.2f}V")
-
-        # 🔋 배터리 셀 수 자동 판단
-        battery_cell_count = 0
-        if battery_voltage >= 35:
-            battery_cell_count = 12
-        elif battery_voltage >= 15:
-            battery_cell_count = 6
-        else:
-            if "voltage_cell_v[0]" in battery.data:
-                for cell_idx in range(14):
-                    cell_key = f"voltage_cell_v[{cell_idx}]"
-                    if cell_key in battery.data and len(battery.data[cell_key]) > 0:
-                        sample_val = float(battery.data[cell_key][0]) if len(battery.data[cell_key]) > 0 else 0
-                        if 2.0 <= sample_val <= 5.0:
-                            battery_cell_count = cell_idx + 1
-            else:
-                estimated_cells = round(battery_voltage / 3.7)
-                if 4 <= estimated_cells <= 14:
-                    battery_cell_count = estimated_cells
-
-        print(f"[DEBUG] 배터리 셀 수 판단: {battery_cell_count}셀")
 
         gps = next((d for d in ulog.data_list if d.name == "vehicle_gps_position"), None)
         global_pos = next((d for d in ulog.data_list if d.name == "vehicle_global_position"), None)
@@ -199,16 +119,13 @@ async def upload_log(file: UploadFile = File(...)):
         if not local_pos:
             raise HTTPException(status_code=400, detail="필수 토픽 vehicle_local_position 없음")
 
-        # ESC 필드 감지
         esc_keys = []
         esc_range_type = None
-
         if esc:
             esc_d_keys = list(esc.data.keys())
             esc_keys = [k for k in esc_d_keys if "output" in k.lower() and "[" in k]
             if not esc_keys:
                 esc_keys = [k for k in esc_d_keys if any(x in k.lower() for x in ["output", "control"])]
-
             if esc_keys and len(esc.data[esc_keys[0]]) > 0:
                 sample_values = []
                 sample_count = min(100, len(esc.data[esc_keys[0]]))
@@ -220,7 +137,6 @@ async def upload_log(file: UploadFile = File(...)):
                     ]
                     if sample_raw:
                         sample_values.append(sum(sample_raw) / len(sample_raw))
-
                 if sample_values:
                     min_val = min(sample_values)
                     max_val = max(sample_values)
@@ -255,43 +171,13 @@ async def upload_log(file: UploadFile = File(...)):
         gps_sats = []
         esc_outputs = []
 
-        # -------------------------------------------------------
-        # [FIX 2] 배터리 전압 계산 수정
-        #
-        # 기존 문제:
-        #   voltage_cell_v 배열의 셀 전압을 모두 더한 총 전압(cell_voltage)을
-        #   voltages 리스트에 저장하면서, 나중에 /2 보정을 하지 않아
-        #   실제보다 2배 높은 전압이 표시됨
-        #
-        # 수정:
-        #   - voltage_cell_v 사용 시 → 셀 수 * 평균 셀전압 = 팩 총 전압 그대로 저장
-        #     (이미 총 전압이므로 추가 보정 불필요)
-        #   - voltage_v / voltage_filtered_v 사용 시 → 그대로 저장 (변경 없음)
-        #   - 이후 summary["battery_avg_voltage"] 계산 시 /2 보정 제거
-        # -------------------------------------------------------
-
-        # -------------------------------------------------------
-        # [FIX 3] 배터리 전류 계산 수정
-        #
-        # 기존 문제:
-        #   6셀 배터리에 avg_multiplier=15, max_multiplier=4 임의 배율 적용
-        #   → ULog의 current_a는 이미 실제 전류값(A)이므로 배율 불필요
-        #   → 12셀도 multiplier 1.5/2.5 적용하여 실제값과 괴리
-        #
-        # 수정:
-        #   ULog에서 읽은 전류값을 그대로 사용 (배율 제거)
-        #   단, 비정상적으로 낮은 값(센서 미보정) 필터링만 유지
-        # -------------------------------------------------------
-
         for i in range(len(pos_d["timestamp"])):
             t = rel_time(pos_d["timestamp"][i])
-
             z = float(pos_d.get("z", [0])[i]) * -1
             vx = float(pos_d.get("vx", [0])[i])
             vy = float(pos_d.get("vy", [0])[i])
             speed = math.sqrt(vx*vx + vy*vy)
 
-            # Battery
             battery_value = 0.0
             if bat_t and len(bat_t) > 0:
                 idx = bisect.bisect_left(bat_t, t)
@@ -300,11 +186,8 @@ async def upload_log(file: UploadFile = File(...)):
                 if idx < 0:
                     idx = 0
                 bat_idx = idx if idx == 0 else idx - 1
-
                 if 0 <= bat_idx < len(bat_t):
                     voltage_added = False
-
-                    # [FIX 2] voltage_cell_v: 셀 합산 = 팩 총 전압, 그대로 저장
                     if "voltage_cell_v[0]" in bat_d:
                         cell_voltage = 0.0
                         cell_count = 0
@@ -316,26 +199,21 @@ async def upload_log(file: UploadFile = File(...)):
                                     cell_voltage += cell_val
                                     cell_count += 1
                         if cell_count > 0:
-                            # 팩 총 전압 그대로 저장 (기존에는 이걸 /2 없이 저장하고
-                            # 나중에 /2 보정하려다 실수 → 이제 그냥 그대로 사용)
                             voltages.append(cell_voltage)
                             battery_value = cell_voltage
                             voltage_added = True
-
                     if not voltage_added:
                         voltage_key = None
                         if "voltage_filtered_v" in bat_d and len(bat_d["voltage_filtered_v"]) > bat_idx:
                             voltage_key = "voltage_filtered_v"
                         elif "voltage_v" in bat_d and len(bat_d["voltage_v"]) > bat_idx:
                             voltage_key = "voltage_v"
-
                         if voltage_key:
                             raw_volt = float(bat_d[voltage_key][bat_idx])
                             if 10 <= raw_volt <= 70:
                                 voltages.append(raw_volt)
                                 battery_value = raw_volt
 
-                    # [FIX 3] 전류: ULog 값 그대로 사용, 배율 제거
                     current_val = None
                     if "current_average_a" in bat_d and len(bat_d["current_average_a"]) > bat_idx:
                         v = float(bat_d["current_average_a"][bat_idx])
@@ -349,17 +227,14 @@ async def upload_log(file: UploadFile = File(...)):
                         v = float(bat_d["current_a"][bat_idx])
                         if v > 0:
                             current_val = v
-
                     if current_val is not None:
                         currents.append(current_val)
 
-            # GPS
             if gps_t and "satellites_used" in gps_d:
                 idx = bisect.bisect_left(gps_t, t)
                 if 0 < idx < len(gps_t):
                     gps_sats.append(int(gps_d["satellites_used"][idx - 1]))
 
-            # ESC Output
             if esc_t and esc_keys:
                 idx = bisect.bisect_left(esc_t, t)
                 if 0 < idx < len(esc_t):
@@ -371,7 +246,6 @@ async def upload_log(file: UploadFile = File(...)):
                     if not raw_values:
                         continue
                     avg_raw = sum(raw_values) / len(raw_values)
-
                     if esc_range_type == 'us':
                         esc_outputs.append(avg_raw)
                     elif esc_range_type == 'norm_-11':
@@ -388,7 +262,6 @@ async def upload_log(file: UploadFile = File(...)):
                             normalized = max(0.0, min(1.0, avg_raw))
                             esc_outputs.append(PWM_MIN_US + normalized * PWM_RANGE_US)
 
-            # Attitude
             if att_t and "q[0]" in att_d:
                 idx = bisect.bisect_left(att_t, t)
                 if 0 < idx < len(att_t):
@@ -407,73 +280,38 @@ async def upload_log(file: UploadFile = File(...)):
             merged.append({"time": t, "altitude": z, "speed": speed, "battery": battery_value})
 
         merged.sort(key=lambda x: x["time"])
-
         summary = {}
 
-        # -------------------------------------------------------
-        # 배터리 전압 요약 [FIX 2]
-        # 기존: avg_v, min_v 그대로 저장 + 디버그에서 /2 출력 (혼란)
-        # 수정: voltages에는 이미 올바른 팩 총 전압이 들어있으므로 그대로 사용
-        # -------------------------------------------------------
         if voltages:
             avg_v = float(statistics.mean(voltages))
             min_v = float(min(voltages))
             max_v = float(max(voltages))
-            ripple_v = max_v - min_v
-
             summary["battery_avg_voltage"] = avg_v
             summary["battery_min_voltage"] = min_v
-            summary["battery_voltage_ripple"] = ripple_v
-
-            print(f"[배터리 전압] 평균: {avg_v:.2f}V, 최소: {min_v:.2f}V, 최대: {max_v:.2f}V, 리플: {ripple_v:.2f}V")
-
-            if ripple_v > 2.0:
-                print(f"⚠️ [경고] 전압 리플 {ripple_v:.2f}V (정상 범위: 0.5~1.5V)")
+            summary["battery_voltage_ripple"] = max_v - min_v
 
         # -------------------------------------------------------
         # 배터리 전류 요약
-        # 6S2P + 센서 2개(병렬 양쪽 측정) 구성:
-        #   PX4는 battery_status 인스턴스 0번(한 쪽 병렬)만 주로 로깅
-        #   → 실제 전류 = 측정값 × 2 (양쪽 합산)
+        # ULog current_a 는 이미 실제 전류값(A)이므로 배율 없이 그대로 사용.
+        # (근거 불명확한 ×2 보정 제거 — 센서 원시 측정값을 정직하게 표시)
         # -------------------------------------------------------
         if currents:
-            raw_avg = float(statistics.mean(currents))
-            raw_peak = float(max(currents))
-
-            # 6S2P 병렬 2세트 → 센서가 한쪽만 잡으므로 ×2
-            # 단, battery_status 인스턴스가 2개 모두 기록된 경우 중복 방지
-            battery_instance_count = len(battery_list)
-            if battery_instance_count >= 2:
-                # 두 인스턴스가 모두 로깅된 경우 → 이미 합산됨, 보정 불필요
-                current_multiplier = 1.0
-                print(f"[배터리 전류] 인스턴스 {battery_instance_count}개 감지 → 배율 1.0 (이미 합산)")
-            else:
-                # 인스턴스 1개만 로깅 → 한쪽 병렬만 측정된 것 → ×2
-                current_multiplier = 2.0
-                print(f"[배터리 전류] 인스턴스 1개 감지 (6S2P 한쪽만 측정) → 배율 2.0 적용")
-
-            avg_current = raw_avg * current_multiplier
-            peak_current = raw_peak * current_multiplier
-
+            avg_current = float(statistics.mean(currents))
+            peak_current = float(max(currents))
             summary["battery_avg_current"] = avg_current
             summary["battery_peak_current"] = peak_current
+            print(f"[배터리 전류] 평균: {avg_current:.2f}A, 최대: {peak_current:.2f}A (원시값 그대로)")
 
-            print(f"[배터리 전류] 원시 평균: {raw_avg:.2f}A → 보정 후: {avg_current:.2f}A")
-            print(f"[배터리 전류] 원시 최대: {raw_peak:.2f}A → 보정 후: {peak_current:.2f}A")
-
-        # Temperature
         if battery and "temperature" in battery.data:
             temps = [float(x) for x in battery.data["temperature"]]
             summary["battery_temp_avg"] = float(np.mean(temps))
             summary["battery_temp_max"] = float(np.max(temps))
 
-        # ESC summary
         if esc_outputs:
             summary["esc_avg_output"] = float(statistics.mean(esc_outputs))
             summary["esc_max_output"] = float(max(esc_outputs))
             summary["esc_output_std"] = float(np.std(esc_outputs))
 
-        # FCC
         if roll_vals:
             summary["fcc_roll_std"] = float(np.std(roll_vals))
             summary["fcc_pitch_std"] = float(np.std(pitch_vals))
@@ -482,62 +320,37 @@ async def upload_log(file: UploadFile = File(...)):
                     max(abs(p) for p in pitch_vals)) * 180 / math.pi
             )
 
-        # GPS
         if gps_sats:
             summary["gnss_avg_sat"] = float(statistics.mean(gps_sats))
             summary["gnss_signal_loss_count"] = len([s for s in gps_sats if s <= 3])
-
         if gps and "hdop" in gps.data:
             summary["gnss_hdop"] = float(np.mean([float(x) for x in gps.data["hdop"]]))
 
-        # -------------------------------------------------------
-        # [FIX 1] 고도 표준편차: 슬라이딩 윈도우 안정 구간만 사용
-        # -------------------------------------------------------
         alt_std_computed = False
-
         if "z" in pos_d:
             rel_altitudes = [-float(z) for z in pos_d["z"]]
-            hover_std = calc_hovering_alt_std(
-                rel_altitudes,
-                min_hover_alt_m=1.5,
-                window_size=50,
-                max_window_range_m=5.0,
-            )
+            hover_std = calc_hovering_alt_std(rel_altitudes, 1.5, 50, 5.0)
             if hover_std is not None:
                 summary["gnss_alt_std"] = hover_std
                 alt_std_computed = True
-                flying_count = len([a for a in rel_altitudes if a >= 1.5])
-                print(f"[ALT STD] 계산 완료: {hover_std:.3f}m (비행 구간 샘플 {flying_count}개)")
-
         if not alt_std_computed and global_pos and "alt" in global_pos.data:
             msl_alts = [float(alt) for alt in global_pos.data["alt"] if alt is not None]
             if msl_alts:
                 ground_level = min(msl_alts)
                 rel_alts_from_msl = [a - ground_level for a in msl_alts]
-                hover_std = calc_hovering_alt_std(
-                    rel_alts_from_msl,
-                    min_hover_alt_m=1.5,
-                    window_size=50,
-                    max_window_range_m=5.0,
-                )
+                hover_std = calc_hovering_alt_std(rel_alts_from_msl, 1.5, 50, 5.0)
                 if hover_std is not None:
                     summary["gnss_alt_std"] = hover_std
-                    alt_std_computed = True
-                    print(f"[ALT STD] global_position MSL 기준(보정): {hover_std:.3f}m")
 
-        # GPS Path 추출
         path_points = []
-
         if global_pos and "lat" in global_pos.data and "lon" in global_pos.data:
             lats = global_pos.data["lat"]
             lons = global_pos.data["lon"]
             alts = global_pos.data.get("alt", [None] * len(lats))
             times = global_pos.data.get("timestamp", [None] * len(lats))
             step = max(1, len(lats) // 500)
-
             for i in range(0, len(lats), step):
-                lat = float(lats[i])
-                lon = float(lons[i])
+                lat = float(lats[i]); lon = float(lons[i])
                 if -90 <= lat <= 90 and -180 <= lon <= 180:
                     point = {"lat": lat, "lng": lon}
                     if alts[i] is not None:
@@ -545,17 +358,14 @@ async def upload_log(file: UploadFile = File(...)):
                     if times[i] is not None:
                         point["time"] = int(times[i])
                     path_points.append(point)
-
         elif gps and "lat" in gps.data and "lon" in gps.data:
             lats = gps.data["lat"]
             lons = gps.data["lon"]
             alts = gps.data.get("altitude_msl_m", [None] * len(lats))
             times = gps.data.get("timestamp", [None] * len(lats))
             step = max(1, len(lats) // 500)
-
             for i in range(0, len(lats), step):
-                lat = float(lats[i]) / 1e7
-                lon = float(lons[i]) / 1e7
+                lat = float(lats[i]) / 1e7; lon = float(lons[i]) / 1e7
                 if -90 <= lat <= 90 and -180 <= lon <= 180:
                     point = {"lat": lat, "lng": lon}
                     if alts[i] is not None:
@@ -563,20 +373,15 @@ async def upload_log(file: UploadFile = File(...)):
                     if times[i] is not None:
                         point["time"] = int(times[i])
                     path_points.append(point)
-
         if path_points:
             summary["path"] = path_points
-            print(f"[DEBUG] GPS 경로 포인트 {len(path_points)}개 추출 완료")
 
-        # Flight summary
         altitudes = [m["altitude"] for m in merged]
         speeds = [m["speed"] for m in merged]
-
         if altitudes:
             summary["max_altitude"] = float(max(altitudes))
         if speeds:
             summary["max_ground_speed"] = float(max(speeds))
-
         if len(altitudes) > 1:
             climb_rates = np.diff(altitudes)
             summary["max_climb_rate"] = float(np.max(climb_rates))
