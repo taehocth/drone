@@ -32,13 +32,28 @@ export type SimScenario = "normal" | "battery" | "gps"
 const TARGET_ALT = 50 // m
 const TARGET_SPEED = 8 // m/s
 
-// 기은리(DM4_2) 근처 — 지도 이동용 정상 비행 경로 (사각 순회)
+// -------------------------------------------------------------
+// 실제 비행 로그(log_246, 2026-03-21 / 삼길포항 DM3) 기반 경로
+//   PX4 vehicle_global_position 에서 추출한 실측 GPS 궤적을
+//   웨이포인트로 다운샘플링한 것.
+//   같은 지점에서 이륙 → 북동쪽으로 왕복 → 원지점 복귀하는
+//   실제 배송 비행 패턴이라 신빙성이 높다.
+//   (총 이동 약 1.7km, 고도 10~73m)
+// -------------------------------------------------------------
 const FLIGHT_PATH: Array<{ lat: number; lng: number }> = [
-  { lat: 36.9725, lng: 126.3765 },
-  { lat: 36.9740, lng: 126.3795 },
-  { lat: 36.9758, lng: 126.3788 },
-  { lat: 36.9752, lng: 126.3752 },
-  { lat: 36.9733, lng: 126.3748 },
+  { lat: 37.000281, lng: 126.453035 }, // 이륙 지점
+  { lat: 37.000714, lng: 126.454063 },
+  { lat: 37.00157, lng: 126.455222 },
+  { lat: 37.003412, lng: 126.456082 },
+  { lat: 37.005258, lng: 126.456942 },
+  { lat: 37.006536, lng: 126.456914 },
+  { lat: 37.006875, lng: 126.456779 }, // 최북단(배송지 인근)
+  { lat: 37.00603, lng: 126.45673 },
+  { lat: 37.004884, lng: 126.456325 },
+  { lat: 37.003014, lng: 126.455543 },
+  { lat: 37.001383, lng: 126.45486 },
+  { lat: 37.000675, lng: 126.453687 },
+  { lat: 37.000284, lng: 126.453034 }, // 착륙(원지점 복귀)
 ]
 
 const SIM_WAYPOINTS: MissionWaypoint[] = FLIGHT_PATH.map((p, i) => ({
@@ -49,10 +64,10 @@ const SIM_WAYPOINTS: MissionWaypoint[] = FLIGHT_PATH.map((p, i) => ({
   alt: TARGET_ALT,
 }))
 
-const SIM_LABEL = "DM4_2"
-const SIM_REGION = "기은리"
+const SIM_LABEL = "DM3"
+const SIM_REGION = "삼길포항"
 const SIM_LTE_IP = "121.153.47.136:51068"
-const SIM_DRONE_INDEX = 1 // DRONE_LABELS 의 DM4_2 위치(0:DM4_1,1:DM4_2,...)
+const SIM_DRONE_INDEX = 3 // DRONE_LABELS 의 DM3 위치(0:DM4_1,1:DM4_2,2:DM4_6,3:DM3)
 
 const SCENARIO_META: Record<
   SimScenario,
@@ -81,7 +96,10 @@ interface SimProps {
   onConnectionChange?: (connected: boolean) => void
   onAllDroneStates?: (states: DroneWsState[]) => void
   onMissionWaypoints?: (waypoints: MissionWaypoint[] | undefined) => void
-  onSelectedDrone?: (drone: { idx: number | null; lteIp: string | null }) => void
+  onSelectedDrone?: (drone: {
+    idx: number | null
+    lteIp: string | null
+  }) => void
   onDroneOffline?: (offline: boolean) => void
 }
 
@@ -131,7 +149,7 @@ const SimDroneSimulation: React.FC<SimProps> = ({
     segProgRef.current = 0
   }, [scenario])
 
-  // 마운트 시: 기체 선택됨 + 미션 경로 전달 (UavDashboard 가 DM4_2 를 선택한 것처럼)
+  // 마운트 시: 기체 선택됨 + 미션 경로 전달 (UavDashboard 가 DM3 을 선택한 것처럼)
   useEffect(() => {
     cbRef.current.onSelectedDrone?.({ idx: SIM_DRONE_INDEX, lteIp: SIM_LTE_IP })
     cbRef.current.onMissionWaypoints?.(SIM_WAYPOINTS)
@@ -208,10 +226,10 @@ const SimDroneSimulation: React.FC<SimProps> = ({
       }
 
       const next: DroneData = {
-        droneId: "drone-002",
+        droneId: "drone-003",
         lteIp: SIM_LTE_IP,
         online: true,
-        sysid: 2,
+        sysid: 3,
         altitude: alt,
         latitude,
         longitude,
@@ -242,7 +260,7 @@ const SimDroneSimulation: React.FC<SimProps> = ({
         lastDataAgeSec: 0,
       }
 
-      // UavDashboard 가 기대하는 4기체 배열 — DM4_2(index1)만 활성
+      // UavDashboard 가 기대하는 4기체 배열 — DM3(index3)만 활성
       const empty: DroneWsState = {
         wsConnected: false,
         droneActive: false,
@@ -252,7 +270,7 @@ const SimDroneSimulation: React.FC<SimProps> = ({
         droneOffline: false,
         lastDataAgeSec: null,
       }
-      const states = [empty, wsState, empty, empty]
+      const states = [empty, empty, empty, wsState]
 
       cbRef.current.onAllDroneStates?.(states)
       cbRef.current.onData?.(next)
