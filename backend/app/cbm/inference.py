@@ -14,6 +14,14 @@ app/cbm/inference.py  (8-feature 버전)
   - FEATURE_NAMES / FEATURE_MESSAGES 를 새 8개 기준으로 정리
   - CUSUM 단위 통일: 정규화 오차(err_norm) 기준이므로 mu0 도 '정규화 스케일'로 사용
 
+[오탐 완화 튜닝 — 정상 비행에서 잘못 울리는 문제 해결]
+  - CUSUM 전역 완화: MU0_MARGIN 1.5→3.0, DRIFT 0.10→0.25, THRESHOLD 15→30
+  - Power(volt/current) 집중 완화:
+      · fail_count 임계값 override 를 넉넉하게 (volt 0.4→0.8, current 추가 0.5)
+      · CUSUM 기준선(mu0)에 피처별 추가 배수(FEATURE_MU0_MULT) 적용
+        → 전압/전류는 비행 부하에 따라 실제 변동이 커서 더 큰 여유가 필요
+  - 자세(att) fail_count 도 자동값이 과민하지 않도록 여유 override 추가
+
 기체별 모델:
   drone-001~004 → models/UNIFIED/UNIFIED_best_model.pth  (통합 모델)
 """
@@ -42,10 +50,13 @@ DRONE_MODEL_MAP = {
 }
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
+#   [오탐 완화] 정상 비행에서 CUSUM 이 서서히 누적돼 잘못 울리던 문제를 해결.
+#   운용 기체의 오차 분포가 학습 데이터와 조금만 달라도 누적되던 것을,
+#   기준선·여유·발령선을 모두 넉넉히 잡아 정상 비행에서는 거의 울리지 않게 함.
 DETECT_FAIL_CNT = 10
-CUSUM_THRESHOLD = 15.0   # 누적 한계선 (10 → 15: 더 오래 지속돼야 경고)
-CUSUM_DRIFT     = 0.10   # 허용 여유분 (0.03 → 0.10: 기준선 위 이만큼은 정상으로 간주)
-CUSUM_MU0_MARGIN = 1.5   # 정상 기준선 여유 계수 (학습 평균 오차 × 1.5 까지 정상)
+CUSUM_THRESHOLD = 30.0   # 누적 한계선 (15 → 30: 훨씬 오래 지속돼야 경고)
+CUSUM_DRIFT     = 0.25   # 허용 여유분 (0.10 → 0.25: 매 스텝 이만큼은 정상으로 흡수)
+CUSUM_MU0_MARGIN = 3.0   # 정상 기준선 여유 계수 (1.5 → 3.0: 학습 평균오차의 3배까지 정상)
 
 # ── AI 새 인덱스(0~10) 기준 yaw unwrap 대상 ─────────────
 #   원본 5(att_cmd_yaw) → 새 2,  원본 8(att_state_yaw) → 새 5
@@ -64,13 +75,37 @@ FEATURE_NAMES = [
 ]
 
 # ── 피처별 fail count 임계값 (새 인덱스 기준) ────────────
-#   volt 만 고정 override 유지 (전압은 변동이 있어 자동값보다 넉넉한 0.4 가 적절).
-#   current 는 override 를 제거해 자동 계산값(rmse_train + sig)을 사용한다.
-#     - 이번 재학습 current RMSE=0.019 로 매우 작아, 고정 0.05 는 오히려 과민/부적절.
-#     - 자동값은 학습된 정상 변동(sig)을 반영하므로 정상 비행에서 덜 울린다.
-#   gyro·EKF·accel override 는 해당 피처들이 AI 에서 빠졌으므로 없음.
+#   [오탐 완화 · Power 집중]
+#   Power(volt/current) 는 비행 부하(이륙·상승·바람 대응)에 따라 실제 변동이 커서
+#   학습 기반 자동 임계값으로는 과민하게 울린다. 넉넉한 고정값으로 override.
+#     - volt    0.4 → 0.8
+#     - current 자동값 → 0.5 로 고정(넉넉하게)
+#   자세(att) 4종도 기동 시 예측 오차가 커 자동값이 과민할 수 있어 여유 override.
 FAIL_THRESHOLDS_OVERRIDE = {
-    0: 0.4,    # volt
+    0: 0.8,    # volt            (Power)
+    1: 0.5,    # current         (Power)
+    2: 0.6,    # att_cmd_yaw
+    3: 0.6,    # att_cmd_pitch
+    4: 0.6,    # att_cmd_roll
+    5: 0.6,    # att_state_yaw
+    6: 0.6,    # att_state_pitch
+    7: 0.6,    # att_state_roll
+}
+
+# ── 피처별 CUSUM 기준선(mu0) 추가 배수 ──────────────────
+#   [오탐 완화 · Power 집중]
+#   CUSUM_MU0_MARGIN(전역 3.0) 위에 피처별로 더 곱해 '정상 폭'을 개별 조정.
+#   Power 는 변동이 특히 커서 추가로 크게 잡는다(오탐 최소화).
+#   지정 안 된 피처는 1.0 (전역 마진만 적용).
+FEATURE_MU0_MULT = {
+    "volt":            2.0,   # Power — 전압 변동 큼
+    "current":         2.0,   # Power — 전류 변동 큼(이륙/상승 피크)
+    "att_cmd_yaw":     1.4,
+    "att_cmd_pitch":   1.4,
+    "att_cmd_roll":    1.4,
+    "att_state_yaw":   1.4,
+    "att_state_pitch": 1.4,
+    "att_state_roll":  1.4,
 }
 
 # ── 피처별 이상 메시지 (새 8개) ─────────────────────────
@@ -194,6 +229,12 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         # MU0_MARGIN 을 곱해 '정상으로 간주하는 폭'을 학습 평균 오차보다 넓게 잡는다
         # (운용 환경이 학습 데이터와 조금 달라도 누적되지 않도록 — 오탐 완화)
         cusum_mu0 = (rmse_train[:min_len] / sig[:min_len] * CUSUM_MU0_MARGIN).astype(np.float32)
+
+        # [오탐 완화 · Power 집중] 피처별 추가 배수 적용
+        for feat_idx in range(min_len):
+            fname = FEATURE_NAMES[feat_idx] if feat_idx < len(FEATURE_NAMES) else None
+            mult  = FEATURE_MU0_MULT.get(fname, 1.0) if fname else 1.0
+            cusum_mu0[feat_idx] *= mult
 
         print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out}")
         return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out,
