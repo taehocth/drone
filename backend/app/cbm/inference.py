@@ -329,6 +329,14 @@ class InferenceEngine:
         for j in range(n):
             if err[j] >= thresholds[j]:
                 state.fail_cnt[j] += 1
+                # [CBM-DIAG] volt 진단 로그 — 임계 초과 시마다 실제 오차를 기록
+                # (오탐 원인 파악용: 비행 후 Render Logs 에서 err 크기 확인)
+                if j < len(FEATURE_NAMES) and FEATURE_NAMES[j] == "volt":
+                    print(
+                        f"[CBM-DIAG] volt err={float(err[j]):.3f}V "
+                        f"threshold={float(thresholds[j]):.3f}V "
+                        f"fail_cnt={int(state.fail_cnt[j])}/{DETECT_FAIL_CNT}"
+                    )
             else:
                 state.pre_fail_cnt[j] = 0
                 state.fail_cnt[j]     = 0
@@ -347,6 +355,11 @@ class InferenceEngine:
                     "err":       round(float(err[j]), 6),
                     "threshold": round(float(thresholds[j]), 6),
                 })
+                # [CBM-DIAG] 알람 발령 시 모든 피처의 err 를 로그로 남김
+                print(
+                    f"[CBM-DIAG] 🚨 fail_count 알람: {feat_name} "
+                    f"err={float(err[j]):.4f} threshold={float(thresholds[j]):.4f}"
+                )
                 state.pre_fail_cnt[j] = 0
                 state.fail_cnt[j]     = 0
             else:
@@ -373,6 +386,12 @@ class InferenceEngine:
                         "msg":     msg,
                         "cusum":   round(float(state.S[0, j]), 4),
                     })
+                    # [CBM-DIAG] CUSUM 알람 발령 시 누적값·현재 오차 기록
+                    print(
+                        f"[CBM-DIAG] ⚠️ CUSUM 알람: {feat_name} "
+                        f"S={float(state.S[0, j]):.3f} err_norm={float(err_norm_arr[0, j]):.4f} "
+                        f"mu0={float(mu0[j]):.4f}"
+                    )
                 state.S[0, j] = 0.0
 
         return alerts
