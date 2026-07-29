@@ -39,8 +39,8 @@ DRONE_LIST = [
     {
         "drone_id":       "drone-002",
         "vehicle_name":   "drone-002",
-        "lte_connection": "tcp:121.153.47.136:51068",
-        "lte_ip":         "121.153.47.136:51068",
+        "lte_connection": "tcp:121.153.47.136:51168",
+        "lte_ip":         "121.153.47.136:51168",
     },
     {
         "drone_id":       "drone-003",
