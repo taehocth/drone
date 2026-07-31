@@ -81,13 +81,21 @@ FEATURE_NAMES = [
 #     - volt    0.4 → 0.8
 #     - current 자동값 → 0.5 로 고정(넉넉하게)
 #   자세(att) 4종도 기동 시 예측 오차가 커 자동값이 과민할 수 있어 여유 override.
+# ── AI 탐지 제외 피처 ───────────────────────────────────
+#   [실측 근거 · 2026-07 비행 CBM-DIAG 로그]
+#   volt: 예측 오차가 상시 ~16.7V (임계 0.8V의 20배, 상수 오프셋)
+#   → UNIFIED 학습 데이터와 운용 기체의 전압 도메인이 구조적으로 다름.
+#     임계값 조정으로 해결 불가 → AI 탐지에서 제외.
+#     전압 안전 감시는 규칙 기반(evaluator.voltage_danger/warning, 실측값)이 담당하므로 공백 없음.
+AI_DISABLED_FEATURES = {"volt"}
+
 FAIL_THRESHOLDS_OVERRIDE = {
-    0: 0.8,    # volt            (Power)
+    0: 0.8,    # volt            (Power) ※ AI_DISABLED_FEATURES 로 제외됨 — 값은 참고용
     1: 0.5,    # current         (Power)
-    2: 0.6,    # att_cmd_yaw
+    2: 1.2,    # att_cmd_yaw     (미션 선회 기동 시 err≈0.7 실측 → 여유 확보)
     3: 0.6,    # att_cmd_pitch
     4: 0.6,    # att_cmd_roll
-    5: 0.6,    # att_state_yaw
+    5: 1.2,    # att_state_yaw   (실측 err=0.698 로 0.6 초과 오탐 → 상향)
     6: 0.6,    # att_state_pitch
     7: 0.6,    # att_state_roll
 }
@@ -327,6 +335,11 @@ class InferenceEngine:
 
         # ── fail count (점진적 이상) — 원본 스케일 ────────
         for j in range(n):
+            # AI 탐지 제외 피처는 건너뜀 (규칙 기반이 담당)
+            if j < len(FEATURE_NAMES) and FEATURE_NAMES[j] in AI_DISABLED_FEATURES:
+                state.pre_fail_cnt[j] = 0
+                state.fail_cnt[j]     = 0
+                continue
             if err[j] >= thresholds[j]:
                 state.fail_cnt[j] += 1
                 # [CBM-DIAG] volt 진단 로그 — 임계 초과 시마다 실제 오차를 기록
@@ -372,6 +385,10 @@ class InferenceEngine:
         cusum_flags  = (state.S > CUSUM_THRESHOLD).squeeze(0)
 
         for j in range(n):
+            # AI 탐지 제외 피처는 CUSUM 도 건너뜀
+            if j < len(FEATURE_NAMES) and FEATURE_NAMES[j] in AI_DISABLED_FEATURES:
+                state.S[0, j] = 0.0
+                continue
             if cusum_flags[j]:
                 feat_name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
                 system, msg = FEATURE_MESSAGES.get(feat_name, ("Unknown", f"피처 {j} 이상"))
