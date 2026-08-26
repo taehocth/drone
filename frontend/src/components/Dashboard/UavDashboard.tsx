@@ -13,6 +13,7 @@ import { convertGRID_GPS } from "@/utils/convertGrid"
 import SimDroneSimulation from "./SimDroneSimulation"
 import { SimCBMCard } from "./SimCBMCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
+import { PreflightRiskCard } from "@/components/Dashboard/PreflightRiskCard"
 import {
   MapPin,
   Cloud,
@@ -2702,6 +2703,7 @@ export function UavDashboard() {
                   : null
               }
             />
+            <PreflightRiskCard />
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
@@ -2855,17 +2857,11 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ===== 지도 아래: 기체 실시간 정보(좌) + 비행 이벤트 로그(우) 2분할 ===== */}
-        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
-          {/* 좌측: 기체 실시간 정보 (+ 연결 안내) */}
-          <div className="space-y-8">
-            {monitorCard}
-            {helpCard}
-          </div>
-          {/* 우측: 비행 이벤트 로그 */}
-          <div>
-            <FlightLogWidget logs={logs} />
-          </div>
+        {/* ===== 지도 아래: 기체 실시간 정보 + 비행 이벤트 로그 ===== */}
+        <div className="space-y-8">
+          {monitorCard}
+          {helpCard}
+          <FlightLogWidget logs={logs} />
         </div>
       </div>
 
