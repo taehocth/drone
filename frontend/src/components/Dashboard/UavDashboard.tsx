@@ -2703,7 +2703,6 @@ export function UavDashboard() {
                   : null
               }
             />
-            <PreflightRiskCard />
           </div>
           <div className="overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm">
             <div
@@ -2857,11 +2856,16 @@ export function UavDashboard() {
           </div>
         </div>
 
-        {/* ===== 지도 아래: 기체 실시간 정보 + 비행 이벤트 로그 ===== */}
-        <div className="space-y-8">
-          {monitorCard}
-          {helpCard}
-          <FlightLogWidget logs={logs} />
+        {/* ===== 지도 아래: 기체 실시간 정보(좌) + 복합 위험 점수·비행 이벤트 로그(우) ===== */}
+        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
+          <div className="space-y-8">
+            {monitorCard}
+            {helpCard}
+          </div>
+          <div className="space-y-8">
+            <PreflightRiskCard />
+            <FlightLogWidget logs={logs} />
+          </div>
         </div>
       </div>
 
