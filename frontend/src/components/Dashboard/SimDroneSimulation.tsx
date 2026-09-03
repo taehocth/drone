@@ -33,28 +33,50 @@ const TARGET_ALT = 50 // m
 const TARGET_SPEED = 8 // m/s
 
 // -------------------------------------------------------------
-// 실제 비행 로그(log_246, 2026-03-21 / 삼길포항 DM3) 기반 경로
-//   PX4 vehicle_global_position 에서 추출한 실측 GPS 궤적을
-//   웨이포인트로 다운샘플링한 것.
-//   같은 지점에서 이륙 → 북동쪽으로 왕복 → 원지점 복귀하는
-//   실제 배송 비행 패턴이라 신빙성이 높다.
-//   (총 이동 약 1.7km, 고도 10~73m)
+// 원산도 → 효자도 왕복 배송 경로 (DM4_6)
+//   출발/도착: 충남 보령시 오천면 원산도리 968-4
+//   경유(배송지): 충남 보령시 오천면 효자도리 78
+//   ※ 아래 두 좌표는 주소 기반 근사값입니다. 정밀 좌표가 필요하면
+//     네이버지도에서 해당 지점을 우클릭 → 좌표 복사로 교체하세요.
+//     끝점만 바꾸면 중간 웨이포인트는 자동 재계산됩니다.
 // -------------------------------------------------------------
-const FLIGHT_PATH: Array<{ lat: number; lng: number }> = [
-  { lat: 37.000281, lng: 126.453035 }, // 이륙 지점
-  { lat: 37.000714, lng: 126.454063 },
-  { lat: 37.00157, lng: 126.455222 },
-  { lat: 37.003412, lng: 126.456082 },
-  { lat: 37.005258, lng: 126.456942 },
-  { lat: 37.006536, lng: 126.456914 },
-  { lat: 37.006875, lng: 126.456779 }, // 최북단(배송지 인근)
-  { lat: 37.00603, lng: 126.45673 },
-  { lat: 37.004884, lng: 126.456325 },
-  { lat: 37.003014, lng: 126.455543 },
-  { lat: 37.001383, lng: 126.45486 },
-  { lat: 37.000675, lng: 126.453687 },
-  { lat: 37.000284, lng: 126.453034 }, // 착륙(원지점 복귀)
-]
+const ROUTE_START = { lat: 36.4116, lng: 126.4483 } // 원산도리 968-4 (이륙/착륙)
+const ROUTE_DEST = { lat: 36.4292, lng: 126.457 } // 효자도리 78 (배송지)
+const OUT_STEPS = 6 // 편도 분할 수 (왕복 웨이포인트 = 2×OUT_STEPS+1)
+
+// 직선 왕복이 겹쳐 보이지 않도록 진행 방향의 수직으로 살짝 볼록한
+// 곡선(sin 보간)을 만들어 갈 때/올 때 항로를 분리한다.
+function buildRoundTrip(): Array<{ lat: number; lng: number }> {
+  const dLat = ROUTE_DEST.lat - ROUTE_START.lat
+  const dLng = ROUTE_DEST.lng - ROUTE_START.lng
+  // 수직 단위 벡터 (구면 보정 없이 근사 — 수 km 스케일에서 충분)
+  const norm = Math.sqrt(dLat * dLat + dLng * dLng) || 1
+  const perp = { lat: -dLng / norm, lng: dLat / norm }
+  const BOW = 0.0012 // 항로 벌림 폭 (도 단위, 약 130m)
+
+  const path: Array<{ lat: number; lng: number }> = []
+  // 가는 편 (원산도 → 효자도): +방향으로 볼록
+  for (let i = 0; i <= OUT_STEPS; i++) {
+    const t = i / OUT_STEPS
+    const bow = Math.sin(Math.PI * t) * BOW
+    path.push({
+      lat: ROUTE_START.lat + dLat * t + perp.lat * bow,
+      lng: ROUTE_START.lng + dLng * t + perp.lng * bow,
+    })
+  }
+  // 오는 편 (효자도 → 원산도): -방향으로 볼록 (배송지점은 중복 제외)
+  for (let i = 1; i <= OUT_STEPS; i++) {
+    const t = 1 - i / OUT_STEPS
+    const bow = Math.sin(Math.PI * t) * BOW
+    path.push({
+      lat: ROUTE_START.lat + dLat * t - perp.lat * bow,
+      lng: ROUTE_START.lng + dLng * t - perp.lng * bow,
+    })
+  }
+  return path
+}
+
+const FLIGHT_PATH: Array<{ lat: number; lng: number }> = buildRoundTrip()
 
 const SIM_WAYPOINTS: MissionWaypoint[] = FLIGHT_PATH.map((p, i) => ({
   index: i,
@@ -64,10 +86,10 @@ const SIM_WAYPOINTS: MissionWaypoint[] = FLIGHT_PATH.map((p, i) => ({
   alt: TARGET_ALT,
 }))
 
-const SIM_LABEL = "DM3"
-const SIM_REGION = "삼길포항"
-const SIM_LTE_IP = "121.153.47.136:51068"
-const SIM_DRONE_INDEX = 3 // DRONE_LABELS 의 DM3 위치(0:DM4_1,1:DM4_2,2:DM4_6,3:DM3)
+const SIM_LABEL = "DM4_6"
+const SIM_REGION = "원산도"
+const SIM_LTE_IP = "121.153.47.136:51068" // 시뮬레이션용 더미 (QGC 이벤트 필터 외 미사용)
+const SIM_DRONE_INDEX = 2 // DRONE_LABELS 의 DM4_6 위치(0:DM4_1,1:DM4_2,2:DM4_6,3:DM3)
 
 const SCENARIO_META: Record<
   SimScenario,
@@ -149,7 +171,7 @@ const SimDroneSimulation: React.FC<SimProps> = ({
     segProgRef.current = 0
   }, [scenario])
 
-  // 마운트 시: 기체 선택됨 + 미션 경로 전달 (UavDashboard 가 DM3 을 선택한 것처럼)
+  // 마운트 시: 기체 선택됨 + 미션 경로 전달 (UavDashboard 가 DM4_6 을 선택한 것처럼)
   useEffect(() => {
     cbRef.current.onSelectedDrone?.({ idx: SIM_DRONE_INDEX, lteIp: SIM_LTE_IP })
     cbRef.current.onMissionWaypoints?.(SIM_WAYPOINTS)
@@ -226,10 +248,10 @@ const SimDroneSimulation: React.FC<SimProps> = ({
       }
 
       const next: DroneData = {
-        droneId: "drone-003",
+        droneId: "drone-004", // DRONE_IDS[2] = DM4_6 원산도
         lteIp: SIM_LTE_IP,
         online: true,
-        sysid: 3,
+        sysid: 4,
         altitude: alt,
         latitude,
         longitude,
@@ -260,7 +282,7 @@ const SimDroneSimulation: React.FC<SimProps> = ({
         lastDataAgeSec: 0,
       }
 
-      // UavDashboard 가 기대하는 4기체 배열 — DM3(index3)만 활성
+      // UavDashboard 가 기대하는 4기체 배열 — DM4_6(index2)만 활성
       const empty: DroneWsState = {
         wsConnected: false,
         droneActive: false,
@@ -270,7 +292,7 @@ const SimDroneSimulation: React.FC<SimProps> = ({
         droneOffline: false,
         lastDataAgeSec: null,
       }
-      const states = [empty, empty, empty, wsState]
+      const states = [empty, empty, wsState, empty]
 
       cbRef.current.onAllDroneStates?.(states)
       cbRef.current.onData?.(next)
