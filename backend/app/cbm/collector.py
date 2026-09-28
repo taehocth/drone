@@ -59,6 +59,9 @@ _window_buffers: Dict[str, deque] = {}
 # ── 규칙 기반용 최신 텔레메트리 ─────────────────────────
 _latest_telemetry: Optional[SimpleNamespace] = None
 
+# ── 드론별 결측 피처 (텔레메트리 소스 미수신 → AI 판정 제외 + 화면 '수신 없음') ──
+_missing_features: Dict[str, set] = {}
+
 
 def _f(v, default=0.0) -> float:
     try:
@@ -137,17 +140,25 @@ def _extract_features_raw(snap: dict) -> Optional[List[float]]:
         pwm = [_f(servo_output.get(f"pwm{i}")) for i in (1, 2, 3, 4)]
         features[23:27] = pwm
 
-        # 27~30 pwm_dev (추력 비대칭) — 4개 중 하나라도 0(미수신)이면 편차 0 으로 (오탐 방지)
+        missing = set()
+        # 27~30 pwm_dev (추력 비대칭) — 4개 중 하나라도 0(미수신)이면 편차 0 + 결측 표시
         if all(p > 0 for p in pwm):
             pwm_mean = sum(pwm) / 4.0
             features[27:31] = [p - pwm_mean for p in pwm]
         else:
             features[27:31] = [0.0, 0.0, 0.0, 0.0]
+            missing.update({"pwm_dev1", "pwm_dev2", "pwm_dev3", "pwm_dev4"})
 
         # 31~36 고주파 진동 (실시간 계산 불가 → 0, AI 미사용)
-        # 37~38 PX4 진동 메트릭 (VIBRATION 메시지)
-        features[37] = _f(vibration.get("accel_metric"))
-        features[38] = _f(vibration.get("gyro_metric"))
+        # 37~38 PX4 진동 메트릭 (VIBRATION 메시지) — 미수신이면 결측 표시
+        if vibration and vibration.get("accel_metric") is not None:
+            features[37] = _f(vibration.get("accel_metric"))
+            features[38] = _f(vibration.get("gyro_metric"))
+        else:
+            missing.update({"accel_vib_metric", "gyro_vib_metric"})
+        if not battery or battery.get("current") is None:
+            missing.add("current")
+        _missing_features[snap.get("drone_id", "unknown")] = missing
 
         # 39~41 제어기 적분항 (텔레메트리 없음 → 0, AI 미사용)
         # 42 셀당 전압 (참고)
@@ -279,6 +290,11 @@ def reset_window(drone_id: str) -> None:
 
 def list_active_drones() -> list:
     return list(_window_buffers.keys())
+
+
+def get_missing_features(drone_id: str) -> set:
+    """텔레메트리 소스가 없어 값이 0 으로 채워진 피처 집합 (AI 판정 제외 대상)."""
+    return set(_missing_features.get(drone_id, set()))
 
 
 def get_latest_telemetry() -> SimpleNamespace:

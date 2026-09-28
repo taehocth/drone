@@ -33,7 +33,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from app.cbm.collector import get_window, reset_window, AI_FEATURE_COLS, MOTOR_POSITION
+from app.cbm.collector import get_window, reset_window, get_missing_features, AI_FEATURE_COLS, MOTOR_POSITION
 
 # ── 모델 기본 경로 ──────────────────────────────────────
 _BASE = Path(__file__).parent / "models"
@@ -340,6 +340,8 @@ class InferenceEngine:
         alerts: List[dict] = []
         n = min(bundle.n_out, bundle.n_feat)
         thresholds = bundle.thresholds[:n]
+        # 텔레메트리 미수신 피처는 이번 판정에서 제외 (0 으로 채워진 입력의 오차로 오탐 방지)
+        skip = set(AI_DISABLED_FEATURES) | get_missing_features(drone_id)
 
         # 화면 표시용 최근 오차 저장
         self._last_errors[drone_id] = {
@@ -350,7 +352,7 @@ class InferenceEngine:
         # ── fail_count + severe fast path ─────────────────
         for j in range(n):
             name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
-            if name in AI_DISABLED_FEATURES:
+            if name in skip:
                 state.fail_cnt[j] = 0
                 state.severe_cnt[j] = 0
                 continue
@@ -387,7 +389,7 @@ class InferenceEngine:
 
         for j in range(n):
             name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
-            if name in AI_DISABLED_FEATURES:
+            if name in skip:
                 state.S[0, j] = 0.0
                 continue
             if cusum_flags[j]:

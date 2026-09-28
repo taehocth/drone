@@ -40,6 +40,7 @@ from app.cbm.collector import (
     update_window,
     get_window_size,
     list_active_drones,
+    get_missing_features,
 )
 from app.cbm.evaluator import evaluate_cbm_state
 from app.cbm.inference import get_inference_engine
@@ -125,6 +126,10 @@ async def cbm_ws(websocket: WebSocket):
                     "has_alert":   has_alert,
                     "systems":     alerts,
                     "failsafe":    failsafe,
+                    # 피처별 최근 예측 오차/임계 (화면 타일 막대용) — {feature: {err, threshold}}
+                    "feature_errors": (engine.get_last_errors(active_id) or {}) if model_ready else {},
+                    # 텔레메트리 미수신으로 판정 제외된 피처 (화면 '수신 없음' 표시)
+                    "missing_features": sorted(get_missing_features(active_id)),
                 }
 
                 # ── 4. 전송 직전 재확인 후 전송

@@ -14,28 +14,18 @@ import {
   WifiOff,
   ChevronDown,
   ChevronUp,
-  Waves,
-  Fan,
 } from "lucide-react"
+import {
+  CbmFeatureTiles,
+  overallLevel,
+  type AiAlert,
+  type FeatureErrors,
+} from "@/components/Dashboard/CbmFeatureTiles"
 
 interface RuleSystem {
   system: string
   level: "safe" | "warning" | "danger"
   msg: string
-}
-
-interface AiAlert {
-  system: string
-  level: "warning" | "danger"
-  source: string
-  method: string // "fail_count" | "cusum" | "severe"
-  feature: string
-  msg: string
-  position?: string // 모터 물리 위치 (pwm_dev 알람에만)
-  err?: number
-  threshold?: number
-  cusum?: number
-  severity_ratio?: number
 }
 
 interface CbmWsPayload {
@@ -46,6 +36,8 @@ interface CbmWsPayload {
   systems: AiAlert[]
   cusum_values: Record<string, number> | null
   fail_counts: Record<string, number> | null
+  feature_errors?: FeatureErrors
+  missing_features?: string[]
 }
 
 interface RealtimeCBMStatusCardProps {
@@ -65,49 +57,6 @@ const API_BASE_URL =
 
 const WS_RECONNECT_DELAY_MS = 5000
 const ALERT_HOLD_MS = 10000
-
-// AI가 감시하는 표시 그룹 — 14피처 모델 기준
-//   Power: volt/current · Roll/Pitch/Yaw: 자세 명령/상태 · Motor: pwm_dev1~4 · Vibration: 진동 메트릭
-interface AiDisplayGroup {
-  name: string
-  label: string
-  match: (feature: string) => boolean
-}
-
-const AI_DISPLAY_GROUPS: AiDisplayGroup[] = [
-  { name: "Power", label: "전원", match: (f) => f === "volt" || f === "current" },
-  { name: "Roll", label: "Roll", match: (f) => f.startsWith("att_") && f.endsWith("roll") },
-  { name: "Pitch", label: "Pitch", match: (f) => f.startsWith("att_") && f.endsWith("pitch") },
-  { name: "Yaw", label: "Yaw", match: (f) => f.startsWith("att_") && f.endsWith("yaw") },
-  { name: "Motor", label: "모터 편차", match: (f) => f.startsWith("pwm_dev") },
-  { name: "Vibration", label: "진동", match: (f) => f.endsWith("_vib_metric") },
-]
-
-// 모터 번호 → 물리 위치 (서버 position 이 없을 때의 fallback, PX4 Quad X 표준)
-const MOTOR_POSITION: Record<string, string> = {
-  pwm_dev1: "전방 우측",
-  pwm_dev2: "후방 좌측",
-  pwm_dev3: "전방 좌측",
-  pwm_dev4: "후방 우측",
-}
-
-function matchGroup(group: AiDisplayGroup, feature: string | undefined): boolean {
-  if (typeof feature !== "string" || feature.length === 0) return false
-  return group.match(feature)
-}
-
-function methodLabel(method: string): string {
-  switch (method) {
-    case "severe":
-      return "즉시 확정"
-    case "cusum":
-      return "누적 이탈"
-    case "fail_count":
-      return "연속 초과"
-    default:
-      return method
-  }
-}
 
 function calcRuleSystems(
   connected: boolean,
@@ -200,9 +149,7 @@ function aiOverallLevel(
 ): "safe" | "warning" | "danger" | "off" {
   if (!modelReady) return "off"
   if (windowSize < 20) return "off"
-  if (alerts.some((a) => a.level === "danger")) return "danger"
-  if (alerts.some((a) => a.level === "warning")) return "warning"
-  return "safe"
+  return overallLevel(alerts)
 }
 
 export function RealtimeCBMStatusCard({
@@ -300,19 +247,8 @@ export function RealtimeCBMStatusCard({
   const aiAlerts = cbmPayload?.systems ?? []
   const aiLevel = aiOverallLevel(aiAlerts, modelReady, windowSize)
 
-  const alertsByGroup = AI_DISPLAY_GROUPS.reduce<Record<string, AiAlert[]>>((acc, g) => {
-    acc[g.name] = aiAlerts.filter((a) => matchGroup(g, a.feature))
-    return acc
-  }, {})
-
-  const systemIconMap: Record<string, JSX.Element> = {
-    Power: <Battery className="h-4 w-4 text-amber-500" />,
-    Roll: <Activity className="h-4 w-4 text-blue-500" />,
-    Pitch: <Activity className="h-4 w-4 text-indigo-500" />,
-    Yaw: <Activity className="h-4 w-4 text-violet-500" />,
-    Motor: <Fan className="h-4 w-4 text-red-500" />,
-    Vibration: <Waves className="h-4 w-4 text-orange-500" />,
-  }
+  const featureErrors: FeatureErrors = cbmPayload?.feature_errors ?? {}
+  const missingFeatures = new Set<string>(cbmPayload?.missing_features ?? [])
 
   const aiActive = modelReady && windowSize >= 20
 
@@ -418,82 +354,13 @@ export function RealtimeCBMStatusCard({
                     </div>
                   )}
 
-                  {aiActive &&
-                    AI_DISPLAY_GROUPS.map((group) => {
-                      const alerts = alertsByGroup[group.name] ?? []
-                      const hasDanger = alerts.some((a) => a.level === "danger")
-                      const hasWarning = alerts.some((a) => a.level === "warning")
-                      const tone = hasDanger
-                        ? "border-rose-200/70 bg-rose-50/60"
-                        : hasWarning
-                          ? "border-amber-200/70 bg-amber-50/60"
-                          : "border-emerald-200/70 bg-emerald-50/60"
-                      const labelColor = hasDanger
-                        ? "text-rose-700"
-                        : hasWarning
-                          ? "text-amber-700"
-                          : "text-emerald-700"
-
-                      return (
-                        <div
-                          key={group.name}
-                          className={`rounded-xl border px-3 py-2 text-xs ${tone}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              {systemIconMap[group.name] ?? (
-                                <CheckCircle className="h-4 w-4 text-slate-400" />
-                              )}
-                              <span className={`font-semibold ${labelColor}`}>{group.label}</span>
-                            </div>
-                            {alerts.length === 0 && (
-                              <span className="flex items-center gap-1 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
-                                <CheckCircle className="h-3 w-3" />
-                                정상
-                              </span>
-                            )}
-                          </div>
-
-                          {alerts.length > 0 && (
-                            <div className="mt-1.5 space-y-1">
-                              {alerts.map((a, i) => {
-                                const pos = a.position ?? MOTOR_POSITION[a.feature]
-                                const isSevere = a.method === "severe"
-                                return (
-                                  <div key={i} className="flex items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <span className="text-slate-700">{a.msg}</span>
-                                      {pos && group.name === "Motor" && (
-                                        <span className="ml-1 rounded bg-rose-100 px-1 py-0.5 text-[10px] font-semibold text-rose-700">
-                                          {pos} 점검
-                                        </span>
-                                      )}
-                                      {typeof a.err === "number" && typeof a.threshold === "number" && (
-                                        <div className="text-[10px] text-slate-500 tabular-nums">
-                                          오차 {a.err.toFixed(2)} / 임계 {a.threshold.toFixed(2)}
-                                          {typeof a.severity_ratio === "number" && ` (${a.severity_ratio}×)`}
-                                        </div>
-                                      )}
-                                    </div>
-                                    <span
-                                      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                                        isSevere
-                                          ? "bg-rose-600 text-white"
-                                          : a.level === "danger"
-                                            ? "bg-rose-100 text-rose-700"
-                                            : "bg-amber-100 text-amber-700"
-                                      }`}
-                                    >
-                                      {methodLabel(a.method)}
-                                    </span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                  {aiActive && (
+                    <CbmFeatureTiles
+                      alerts={aiAlerts}
+                      featureErrors={featureErrors}
+                      missingFeatures={missingFeatures}
+                    />
+                  )}
                 </>
               )}
             </div>
