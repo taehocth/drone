@@ -10,6 +10,15 @@ app/api/routes/cbm_ws.py
   6. GET /cbm/status            — 현재 상태 REST 조회
   7. POST /cbm/reset/{drone_id} — 세션 전환 시 CUSUM·버퍼·Failsafe 초기화
 
+  ★ 샘플링 주기 / 송신 주기 분리 (시간 축 정합):
+     - 학습 데이터(1초/줄)와 동일하게 윈도우 샘플 추가·AI 판정은 SAMPLE_INTERVAL(1.0초) 고정.
+     - WebSocket 송신 주기만 상태별 가변(0.5/1/2초) — UI 반응성 유지.
+     - 이전에는 한 sleep 이 둘을 겸해, 정상 시 2초·알람 시 0.5초 간격으로 샘플이 쌓여
+       모델이 학습한 시간 폭(20줄=20초)이 40초/10초로 왜곡되고, 알람 여부가 판정 조건을
+       바꾸는 되먹임이 생겼음. 또한 0.5초 루프에서 같은 윈도우로 판정이 2회 돌아
+       fail_count/CUSUM 이 실제보다 2배 빨리 누적되는 문제도 함께 제거.
+     - GET /cbm/status 는 더 이상 윈도우에 샘플을 추가하지 않음(조회 전용).
+
   ★ 연결 종료 처리 개선:
      - 이미 닫힌 소켓에 전송 시 발생하던
        "unable to perform operation ... the handler is closed" 무한 반복 제거.
@@ -21,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
@@ -37,12 +47,15 @@ from app.cbm.failsafe import reset_failsafe
 
 router = APIRouter()
 
-# 정상 상태 전송 주기 (초)
-NORMAL_INTERVAL = 2.0
-# 이상 감지 후 재확인 주기 (초)
-ALERT_INTERVAL  = 0.5
-# 윈도우 미충족 시 전송 주기 (초)
-WARMUP_INTERVAL = 1.0
+# ── 윈도우 샘플링 · AI 판정 주기 (초) ──────────────────
+#   학습 데이터(ulg_to_csv: 약 1초/줄)와 반드시 동일해야 함. 상태에 따라 바꾸지 말 것.
+#   윈도우 20개 = 20초, fail_count 10회 = 10초 가 학습·리플레이·실시간에서 모두 같아진다.
+SAMPLE_INTERVAL = 1.0
+
+# ── WebSocket 송신 주기 (초) — UI 반응성용, 샘플링과 무관 ──
+NORMAL_INTERVAL = 2.0   # 정상 상태
+ALERT_INTERVAL  = 0.5   # 이상 감지 중 (화면 빠른 갱신)
+WARMUP_INTERVAL = 1.0   # 윈도우 미충족
 
 
 def _is_connected(websocket: WebSocket) -> bool:
@@ -70,6 +83,11 @@ async def cbm_ws(websocket: WebSocket):
 
     engine = get_inference_engine()
 
+    # 샘플링 타이머 / 최근 판정 캐시 (샘플링 사이의 송신은 캐시를 재사용)
+    last_sample_t: float = 0.0
+    active_id: str = drone_id or "unknown"
+    results: dict | None = None
+
     try:
         while True:
             # ── 연결이 살아있는지 먼저 확인 (닫혔으면 조용히 종료) ──
@@ -78,16 +96,21 @@ async def cbm_ws(websocket: WebSocket):
                 break
 
             try:
-                # ── 1. 슬라이딩 윈도우 버퍼 갱신
-                resolved_id = update_window(drone_id)
-                active_id   = resolved_id or drone_id or "unknown"
+                now = time.monotonic()
+
+                # ── 1. 샘플링 주기(1초)에 도달했을 때만: 윈도우 갱신 + 판정 1회
+                #      (새 샘플 1개 = 판정 1회 — fail_count/CUSUM 누적 속도가 학습·리플레이와 일치)
+                if results is None or (now - last_sample_t) >= SAMPLE_INTERVAL:
+                    resolved_id = update_window(drone_id)
+                    active_id   = resolved_id or drone_id or "unknown"
+                    data        = get_latest_telemetry()
+                    results     = evaluate_cbm_state(data, drone_id=active_id)
+                    last_sample_t = now
+
                 win_size    = get_window_size(active_id)
                 model_ready = engine.ready
 
-                # ── 2. 최신 텔레메트리 + 통합 평가 + Failsafe 판정
-                data    = get_latest_telemetry()
-                results = evaluate_cbm_state(data, drone_id=active_id)
-
+                # ── 2. 최근 판정 결과 (샘플링 사이에는 캐시 재사용)
                 alerts         = results["alerts"]
                 failsafe       = results["failsafe"]
                 has_alert      = len(alerts) > 0
@@ -128,7 +151,7 @@ async def cbm_ws(websocket: WebSocket):
                         f"window={win_size}/20"
                     )
 
-                # ── 5. 전송 주기 조정
+                # ── 5. 송신 주기 조정 (UI 용 — 샘플링 주기와 무관)
                 if win_size < 20:
                     await asyncio.sleep(WARMUP_INTERVAL)
                 elif failsafe_level in ("rtl", "land") or has_alert:
@@ -168,7 +191,10 @@ async def cbm_ws(websocket: WebSocket):
 @router.get("/status")
 async def get_cbm_status(drone_id: str | None = None):
     engine    = get_inference_engine()
-    active_id = update_window(drone_id) or drone_id or "unknown"
+    # 조회 전용: 여기서 update_window() 를 호출하면 REST 호출마다 윈도우에 샘플이 추가되어
+    # 1초 샘플링 시간 축이 깨지므로, 활성 드론 목록으로 id 만 결정한다.
+    actives   = list_active_drones()
+    active_id = drone_id or (actives[-1] if actives else "unknown")
     win_size  = get_window_size(active_id)
 
     data    = get_latest_telemetry()

@@ -1,29 +1,26 @@
 """
-app/cbm/inference.py  (8-feature 버전)
+app/cbm/inference.py  (14-feature 배포 버전)
 
 역할:
   1. 서버 시작 시 drone_id별 CNN-LSTM 모델 + 정규화 통계 로드
-  2. collector.py 의 슬라이딩 윈도우(20, 8)를 받아 추론
-  3. 드론별 상태 유지형 CUSUM + fail count 로 이상 탐지
-  4. 탐지 결과를 evaluator.py 가 사용할 수 있는 형태로 반환
+  2. collector.py 의 슬라이딩 윈도우(20, 14)를 받아 추론
+  3. 드론별 상태 유지형 판정: fail_count(연속 초과) + CUSUM(누적) + severe(심각도 가중 즉시 확정)
+  4. 탐지 결과를 evaluator.py / cbm_ws.py 가 사용할 수 있는 형태로 반환
 
-[이번 수정의 핵심]
-  - 입력 차원 27 → 8 (collector / cnnlstm_retrain 와 동일한 AI_FEATURE_COLS 순서)
-  - yaw unwrap 대상 인덱스: (원본 5,8) → (새 2,5)
-  - FAIL_THRESHOLDS_OVERRIDE 정리(volt 만 고정, current 는 자동값)
-  - FEATURE_NAMES / FEATURE_MESSAGES 를 새 8개 기준으로 정리
-  - CUSUM 단위 통일: 정규화 오차(err_norm) 기준이므로 mu0 도 '정규화 스케일'로 사용
+[14피처 구성] collector.AI_FEATURE_COLS 와 동일 순서
+  new 0  volt            new 1  current
+  new 2~4  att_cmd yaw/pitch/roll     new 5~7  att_state yaw/pitch/roll
+  new 8~11 pwm_dev1~4 (모터 출력 편차 = 각 모터 − 4모터 평균)
+  new 12   accel_vib_metric  new 13  gyro_vib_metric  (PX4 VIBRATION)
 
-[오탐 완화 튜닝 — 정상 비행에서 잘못 울리는 문제 해결]
-  - CUSUM 전역 완화: MU0_MARGIN 1.5→3.0, DRIFT 0.10→0.25, THRESHOLD 15→30
-  - Power(volt/current) 집중 완화:
-      · fail_count 임계값 override 를 넉넉하게 (volt 0.4→0.8, current 추가 0.5)
-      · CUSUM 기준선(mu0)에 피처별 추가 배수(FEATURE_MU0_MULT) 적용
-        → 전압/전류는 비행 부하에 따라 실제 변동이 커서 더 큰 여유가 필요
-  - 자세(att) fail_count 도 자동값이 과민하지 않도록 여유 override 추가
+[판정 로직 — 사고 로그(2026-09-11) 리플레이로 검증된 설정]
+  - fail_count: 임계 초과가 N회 연속. 기존 피처 10회, 파생(pwm_dev·진동) 5회
+  - severe fast path: 파생 피처가 임계의 2배 이상을 2회 연속 → 즉시 확정
+    (리플레이: 확정 경보 841→837초로 단축, 정상 비행 오탐 0 유지)
+  - CUSUM: 임계 아래의 지속 이탈 누적 (기존과 동일)
+  - 알람에 모터 물리 위치(position) 포함 → 화면에 "후방 우측 모터" 로 표시
 
-기체별 모델:
-  drone-001~004 → models/UNIFIED/UNIFIED_best_model.pth  (통합 모델)
+[유지] volt 는 6S/12S 혼재로 AI 제외(규칙 기반 담당). 셀당 전압 라운드 후 복귀 검토.
 """
 
 from __future__ import annotations
@@ -36,12 +33,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from app.cbm.collector import get_window, reset_window, AI_FEATURE_COLS
+from app.cbm.collector import get_window, reset_window, AI_FEATURE_COLS, MOTOR_POSITION
 
 # ── 모델 기본 경로 ──────────────────────────────────────
 _BASE = Path(__file__).parent / "models"
 
-# ── 기체별 모델 경로 매핑 ───────────────────────────────
 DRONE_MODEL_MAP = {
     "drone-001": (_BASE / "UNIFIED" / "UNIFIED_best_model.pth", _BASE / "UNIFIED" / "UNIFIED_stats.pkl"),
     "drone-002": (_BASE / "UNIFIED" / "UNIFIED_best_model.pth", _BASE / "UNIFIED" / "UNIFIED_stats.pkl"),
@@ -50,83 +46,87 @@ DRONE_MODEL_MAP = {
 }
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
-#   [오탐 완화] 정상 비행에서 CUSUM 이 서서히 누적돼 잘못 울리던 문제를 해결.
-#   운용 기체의 오차 분포가 학습 데이터와 조금만 달라도 누적되던 것을,
-#   기준선·여유·발령선을 모두 넉넉히 잡아 정상 비행에서는 거의 울리지 않게 함.
-DETECT_FAIL_CNT = 10
-CUSUM_THRESHOLD = 30.0   # 누적 한계선 (15 → 30: 훨씬 오래 지속돼야 경고)
-CUSUM_DRIFT     = 0.25   # 허용 여유분 (0.10 → 0.25: 매 스텝 이만큼은 정상으로 흡수)
-CUSUM_MU0_MARGIN = 3.0   # 정상 기준선 여유 계수 (1.5 → 3.0: 학습 평균오차의 3배까지 정상)
+DETECT_FAIL_CNT  = 10     # 기존 피처(전원·자세) 연속 초과 횟수
+DERIVED_FAIL_CNT = 5      # 파생 피처(pwm_dev·진동) 연속 초과 횟수 — 리플레이 검증값
+CUSUM_THRESHOLD  = 30.0
+CUSUM_DRIFT      = 0.25
+CUSUM_MU0_MARGIN = 3.0
 
-# ── AI 새 인덱스(0~10) 기준 yaw unwrap 대상 ─────────────
-#   원본 5(att_cmd_yaw) → 새 2,  원본 8(att_state_yaw) → 새 5
-YAW_COLS_NEW = [AI_FEATURE_COLS.index(5), AI_FEATURE_COLS.index(8)]  # = [2, 5]
+# severe fast path (파생 피처 전용): 임계 × SEVERE_MULT 이상이 SEVERE_FAIL_CNT 회 연속 → 즉시 확정
+SEVERE_MULT     = 2.0
+SEVERE_FAIL_CNT = 2
 
-# ── 피처 이름 (새 8개, AI_FEATURE_COLS 순서) ───────────
+# ── 피처 이름 (AI_FEATURE_COLS 순서) ────────────────────
 FEATURE_NAMES = [
-    "volt",            # new0  (orig 0)
-    "current",         # new1  (orig 1)
-    "att_cmd_yaw",     # new2  (orig 5)
-    "att_cmd_pitch",   # new3  (orig 6)
-    "att_cmd_roll",    # new4  (orig 7)
-    "att_state_yaw",   # new5  (orig 8)
-    "att_state_pitch", # new6  (orig 9)
-    "att_state_roll",  # new7  (orig 10)
+    "volt", "current",
+    "att_cmd_yaw", "att_cmd_pitch", "att_cmd_roll",
+    "att_state_yaw", "att_state_pitch", "att_state_roll",
+    "pwm_dev1", "pwm_dev2", "pwm_dev3", "pwm_dev4",
+    "accel_vib_metric", "gyro_vib_metric",
 ]
 
-# ── 피처별 fail count 임계값 (새 인덱스 기준) ────────────
-#   [오탐 완화 · Power 집중]
-#   Power(volt/current) 는 비행 부하(이륙·상승·바람 대응)에 따라 실제 변동이 커서
-#   학습 기반 자동 임계값으로는 과민하게 울린다. 넉넉한 고정값으로 override.
-#     - volt    0.4 → 0.8
-#     - current 자동값 → 0.5 로 고정(넉넉하게)
-#   자세(att) 4종도 기동 시 예측 오차가 커 자동값이 과민할 수 있어 여유 override.
+# yaw unwrap 대상 (새 인덱스)
+YAW_COLS_NEW = [AI_FEATURE_COLS.index(5), AI_FEATURE_COLS.index(8)]  # = [2, 5]
+
 # ── AI 탐지 제외 피처 ───────────────────────────────────
-#   [실측 근거 · 2026-07 비행 CBM-DIAG 로그]
-#   volt: 예측 오차가 상시 ~16.7V (임계 0.8V의 20배, 상수 오프셋)
-#   → UNIFIED 학습 데이터와 운용 기체의 전압 도메인이 구조적으로 다름.
-#     임계값 조정으로 해결 불가 → AI 탐지에서 제외.
-#     전압 안전 감시는 규칙 기반(evaluator.voltage_danger/warning, 실측값)이 담당하므로 공백 없음.
 AI_DISABLED_FEATURES = {"volt"}
 
+# ── 피처별 fail_count 임계값 override (없으면 자동값 rmse+sig) ──
+#   기존 8개는 배포본 실측 튠 유지. 파생 피처는 자동값 사용 (리플레이에서 원안 임계로 검증됨).
 FAIL_THRESHOLDS_OVERRIDE = {
-    0: 0.8,    # volt            (Power) ※ AI_DISABLED_FEATURES 로 제외됨 — 값은 참고용
-    1: 0.5,    # current         (Power)
-    2: 1.2,    # att_cmd_yaw     (미션 선회 기동 시 err≈0.7 실측 → 여유 확보)
+    0: 0.8,    # volt (AI 제외 — 참고)
+    1: 0.5,    # current
+    2: 1.2,    # att_cmd_yaw
     3: 0.6,    # att_cmd_pitch
     4: 0.6,    # att_cmd_roll
-    5: 1.2,    # att_state_yaw   (실측 err=0.698 로 0.6 초과 오탐 → 상향)
+    5: 1.2,    # att_state_yaw
     6: 0.6,    # att_state_pitch
     7: 0.6,    # att_state_roll
 }
 
-# ── 피처별 CUSUM 기준선(mu0) 추가 배수 ──────────────────
-#   [오탐 완화 · Power 집중]
-#   CUSUM_MU0_MARGIN(전역 3.0) 위에 피처별로 더 곱해 '정상 폭'을 개별 조정.
-#   Power 는 변동이 특히 커서 추가로 크게 잡는다(오탐 최소화).
-#   지정 안 된 피처는 1.0 (전역 마진만 적용).
+# ── 피처별 CUSUM 기준선 배수 ────────────────────────────
 FEATURE_MU0_MULT = {
-    "volt":            2.0,   # Power — 전압 변동 큼
-    "current":         2.0,   # Power — 전류 변동 큼(이륙/상승 피크)
-    "att_cmd_yaw":     1.4,
-    "att_cmd_pitch":   1.4,
-    "att_cmd_roll":    1.4,
-    "att_state_yaw":   1.4,
-    "att_state_pitch": 1.4,
-    "att_state_roll":  1.4,
+    "volt": 2.0, "current": 2.0,
+    "att_cmd_yaw": 1.4, "att_cmd_pitch": 1.4, "att_cmd_roll": 1.4,
+    "att_state_yaw": 1.4, "att_state_pitch": 1.4, "att_state_roll": 1.4,
+    "pwm_dev1": 1.4, "pwm_dev2": 1.4, "pwm_dev3": 1.4, "pwm_dev4": 1.4,
+    "accel_vib_metric": 1.4, "gyro_vib_metric": 1.4,
 }
 
-# ── 피처별 이상 메시지 (새 8개) ─────────────────────────
+# ── 피처별 (시스템, 메시지) ──────────────────────────────
 FEATURE_MESSAGES = {
-    "volt":            ("Power",  "전압 이상 감지"),
-    "current":         ("Power",  "전류 이상 감지"),
-    "att_cmd_yaw":     ("Flight", "Yaw 명령 이상"),
-    "att_cmd_pitch":   ("Flight", "Pitch 명령 이상"),
-    "att_cmd_roll":    ("Flight", "Roll 명령 이상"),
-    "att_state_yaw":   ("Flight", "Yaw 상태 이상"),
-    "att_state_pitch": ("Flight", "Pitch 상태 이상"),
-    "att_state_roll":  ("Flight", "Roll 상태 이상"),
+    "volt":             ("Power",     "전압 이상 감지"),
+    "current":          ("Power",     "전류 이상 감지"),
+    "att_cmd_yaw":      ("Flight",    "Yaw 명령 이상"),
+    "att_cmd_pitch":    ("Flight",    "Pitch 명령 이상"),
+    "att_cmd_roll":     ("Flight",    "Roll 명령 이상"),
+    "att_state_yaw":    ("Flight",    "Yaw 상태 이상"),
+    "att_state_pitch":  ("Flight",    "Pitch 상태 이상"),
+    "att_state_roll":   ("Flight",    "Roll 상태 이상"),
+    "pwm_dev1":         ("Motor",     f"모터1({MOTOR_POSITION[1]}) 출력 편차 이상"),
+    "pwm_dev2":         ("Motor",     f"모터2({MOTOR_POSITION[2]}) 출력 편차 이상"),
+    "pwm_dev3":         ("Motor",     f"모터3({MOTOR_POSITION[3]}) 출력 편차 이상"),
+    "pwm_dev4":         ("Motor",     f"모터4({MOTOR_POSITION[4]}) 출력 편차 이상"),
+    "accel_vib_metric": ("Vibration", "가속도 진동 이상 (결합부·프롭 점검)"),
+    "gyro_vib_metric":  ("Vibration", "자이로 진동 이상 (결합부·프롭 점검)"),
 }
+
+
+def _is_derived(name: str) -> bool:
+    return name.startswith(("pwm_dev", "accel_vib", "gyro_vib"))
+
+
+def _fail_cnt_for(name: str) -> int:
+    return DERIVED_FAIL_CNT if _is_derived(name) else DETECT_FAIL_CNT
+
+
+def _position_for(name: str) -> Optional[str]:
+    if name.startswith("pwm_dev"):
+        try:
+            return MOTOR_POSITION.get(int(name[-1]))
+        except ValueError:
+            return None
+    return None
 
 
 # ════════════════════════════════════════════════════════
@@ -161,21 +161,17 @@ class CNNLSTM(nn.Module):
 class _DroneState:
     def __init__(self, num_features, cusum_mu0):
         self.n = num_features
-        # CUSUM 기준치: 정규화 스케일이어야 err_norm 과 단위가 맞음
         self.err_mu0 = np.array(cusum_mu0, dtype=np.float32)
-        self.fail_cnt     = np.zeros(num_features, dtype=np.int32)
-        self.pre_fail_cnt = np.zeros(num_features, dtype=np.int32)
+        self.fail_cnt   = np.zeros(num_features, dtype=np.int32)
+        self.severe_cnt = np.zeros(num_features, dtype=np.int32)
         self.S = np.zeros((1, num_features), dtype=np.float32)
 
     def reset(self):
-        self.fail_cnt[:]     = 0
-        self.pre_fail_cnt[:] = 0
-        self.S[:]            = 0.0
+        self.fail_cnt[:]   = 0
+        self.severe_cnt[:] = 0
+        self.S[:]          = 0.0
 
 
-# ════════════════════════════════════════════════════════
-# 단일 모델 컨테이너
-# ════════════════════════════════════════════════════════
 class _ModelBundle:
     def __init__(self, model, device, mu, sig, win_s, n_feat, n_out,
                  rmse_train, thresholds, cusum_mu0):
@@ -186,9 +182,9 @@ class _ModelBundle:
         self.win_s      = win_s
         self.n_feat     = n_feat
         self.n_out      = n_out
-        self.rmse_train = rmse_train     # 원본 스케일 (fail_count threshold 계산용)
-        self.thresholds = thresholds     # 원본 스케일 (err 와 비교)
-        self.cusum_mu0  = cusum_mu0      # 정규화 스케일 (err_norm 과 비교)
+        self.rmse_train = rmse_train
+        self.thresholds = thresholds
+        self.cusum_mu0  = cusum_mu0
 
 
 def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_ModelBundle]:
@@ -203,13 +199,12 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         with open(pkl_path, "rb") as f:
             stats = pickle.load(f)
 
-        mu  = np.array(stats["mu"]).squeeze()    # (8,)
-        sig = np.array(stats["sig"]).squeeze()   # (8,)
+        mu  = np.array(stats["mu"]).squeeze()
+        sig = np.array(stats["sig"]).squeeze()
         sig[sig == 0] = 1e-7
         win_s  = int(stats["win_s"])
         n_feat = mu.shape[0]
 
-        # 학습 측 feature_cols 와 collector 측 AI_FEATURE_COLS 일치 검증
         train_cols = stats.get("feature_cols")
         if train_cols is not None and list(train_cols) != list(AI_FEATURE_COLS):
             print(f"[inference] ⚠️ feature_cols 불일치! 학습={train_cols} vs collector={AI_FEATURE_COLS}")
@@ -224,27 +219,22 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         model.load_state_dict(ckpt["model_state_dict"])
         model.eval()
 
-        rmse_train = np.array(ckpt["rmse_train_list"], dtype=np.float32)   # 원본 스케일
+        rmse_train = np.array(ckpt["rmse_train_list"], dtype=np.float32)
         min_len    = min(len(rmse_train), len(sig))
 
-        # fail_count 임계값: 원본 스케일 (rmse_train + sig), 일부 override
         thresholds = rmse_train[:min_len] + sig[:min_len]
         for feat_idx, override_val in FAIL_THRESHOLDS_OVERRIDE.items():
             if feat_idx < min_len:
                 thresholds[feat_idx] = override_val
 
-        # CUSUM 기준치: 정규화 스케일. rmse_train(원본)을 sig 로 나눠 정규화 단위로 변환
-        # MU0_MARGIN 을 곱해 '정상으로 간주하는 폭'을 학습 평균 오차보다 넓게 잡는다
-        # (운용 환경이 학습 데이터와 조금 달라도 누적되지 않도록 — 오탐 완화)
         cusum_mu0 = (rmse_train[:min_len] / sig[:min_len] * CUSUM_MU0_MARGIN).astype(np.float32)
-
-        # [오탐 완화 · Power 집중] 피처별 추가 배수 적용
         for feat_idx in range(min_len):
             fname = FEATURE_NAMES[feat_idx] if feat_idx < len(FEATURE_NAMES) else None
-            mult  = FEATURE_MU0_MULT.get(fname, 1.0) if fname else 1.0
-            cusum_mu0[feat_idx] *= mult
+            cusum_mu0[feat_idx] *= FEATURE_MU0_MULT.get(fname, 1.0) if fname else 1.0
 
         print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out}")
+        print(f"[inference]    임계값: " + ", ".join(
+            f"{FEATURE_NAMES[i]}={thresholds[i]:.3f}" for i in range(min(min_len, len(FEATURE_NAMES)))))
         return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out,
                             rmse_train, thresholds, cusum_mu0)
 
@@ -260,6 +250,7 @@ class InferenceEngine:
     def __init__(self):
         self._bundles: Dict[str, _ModelBundle] = {}
         self._drone_states: Dict[str, _DroneState] = {}
+        self._last_errors: Dict[str, dict] = {}   # 화면 표시용 최근 오차 (feature → err/threshold)
         self._load_all()
 
     def _load_all(self):
@@ -285,9 +276,6 @@ class InferenceEngine:
 
     @staticmethod
     def _fix_yaw(X):
-        """새 인덱스(YAW_COLS_NEW=[2,5]) 기준 yaw unwrap.
-           학습(cnnlstm_retrain)은 원본 좌표계에서 unwrap 했고,
-           추론은 이미 8개로 슬라이스된 윈도우를 받으므로 새 인덱스로 보정한다."""
         X = X.copy()
         for col in YAW_COLS_NEW:
             if col >= X.shape[1]:
@@ -304,19 +292,39 @@ class InferenceEngine:
                         X[j, col] = t
         return X
 
+    @staticmethod
+    def _make_alert(feat_name: str, level: str, method: str, err: float, thr: float, extra: dict = None) -> dict:
+        system, msg = FEATURE_MESSAGES.get(feat_name, ("Unknown", f"{feat_name} 이상"))
+        alert = {
+            "system":    system,
+            "level":     level,
+            "source":    "cnn_lstm",
+            "method":    method,
+            "feature":   feat_name,
+            "msg":       msg,
+            "err":       round(float(err), 6),
+            "threshold": round(float(thr), 6),
+        }
+        pos = _position_for(feat_name)
+        if pos:
+            alert["position"] = pos
+        if extra:
+            alert.update(extra)
+        return alert
+
     def run(self, drone_id: str) -> List[dict]:
         bundle = self._get_bundle(drone_id)
         if bundle is None:
             return []
 
-        window = get_window(drone_id)   # (20, 8)
+        window = get_window(drone_id)   # (20, 14)
         if window is None:
             return []
 
         state = self._get_state(drone_id, bundle)
 
         window_fixed = self._fix_yaw(window)
-        x_norm       = (window_fixed - bundle.mu) / bundle.sig  # (20, 8)
+        x_norm       = (window_fixed - bundle.mu) / bundle.sig
 
         y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
         x_tensor    = torch.tensor(x_norm, dtype=torch.float32).unsqueeze(0).to(bundle.device)
@@ -329,86 +337,64 @@ class InferenceEngine:
         err      = np.abs(y_pred - y_true)
         err_norm = np.abs(y_pred_norm.numpy() - y_true_norm.numpy())
 
-        alerts = []
+        alerts: List[dict] = []
         n = min(bundle.n_out, bundle.n_feat)
         thresholds = bundle.thresholds[:n]
 
-        # ── fail count (점진적 이상) — 원본 스케일 ────────
+        # 화면 표시용 최근 오차 저장
+        self._last_errors[drone_id] = {
+            FEATURE_NAMES[j]: {"err": round(float(err[j]), 4), "threshold": round(float(thresholds[j]), 4)}
+            for j in range(min(n, len(FEATURE_NAMES)))
+        }
+
+        # ── fail_count + severe fast path ─────────────────
         for j in range(n):
-            # AI 탐지 제외 피처는 건너뜀 (규칙 기반이 담당)
-            if j < len(FEATURE_NAMES) and FEATURE_NAMES[j] in AI_DISABLED_FEATURES:
-                state.pre_fail_cnt[j] = 0
-                state.fail_cnt[j]     = 0
+            name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
+            if name in AI_DISABLED_FEATURES:
+                state.fail_cnt[j] = 0
+                state.severe_cnt[j] = 0
                 continue
-            if err[j] >= thresholds[j]:
+
+            over = err[j] >= thresholds[j]
+            if over:
                 state.fail_cnt[j] += 1
-                # [CBM-DIAG] volt 진단 로그 — 임계 초과 시마다 실제 오차를 기록
-                # (오탐 원인 파악용: 비행 후 Render Logs 에서 err 크기 확인)
-                if j < len(FEATURE_NAMES) and FEATURE_NAMES[j] == "volt":
-                    print(
-                        f"[CBM-DIAG] volt err={float(err[j]):.3f}V "
-                        f"threshold={float(thresholds[j]):.3f}V "
-                        f"fail_cnt={int(state.fail_cnt[j])}/{DETECT_FAIL_CNT}"
-                    )
+                if state.fail_cnt[j] >= _fail_cnt_for(name):
+                    alerts.append(self._make_alert(name, "danger", "fail_count", err[j], thresholds[j]))
+                    print(f"[CBM-DIAG] 🚨 fail_count 알람: {name} err={float(err[j]):.4f} thr={float(thresholds[j]):.4f}")
+                    state.fail_cnt[j] = 0
             else:
-                state.pre_fail_cnt[j] = 0
-                state.fail_cnt[j]     = 0
-                continue
+                state.fail_cnt[j] = 0
 
-            if state.fail_cnt[j] >= DETECT_FAIL_CNT:
-                feat_name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
-                system, msg = FEATURE_MESSAGES.get(feat_name, ("Unknown", f"피처 {j} 이상"))
-                alerts.append({
-                    "system":    system,
-                    "level":     "danger",
-                    "source":    "cnn_lstm",
-                    "method":    "fail_count",
-                    "feature":   feat_name,
-                    "msg":       msg,
-                    "err":       round(float(err[j]), 6),
-                    "threshold": round(float(thresholds[j]), 6),
-                })
-                # [CBM-DIAG] 알람 발령 시 모든 피처의 err 를 로그로 남김
-                print(
-                    f"[CBM-DIAG] 🚨 fail_count 알람: {feat_name} "
-                    f"err={float(err[j]):.4f} threshold={float(thresholds[j]):.4f}"
-                )
-                state.pre_fail_cnt[j] = 0
-                state.fail_cnt[j]     = 0
-            else:
-                state.pre_fail_cnt[j] = state.fail_cnt[j]
+            # severe: 파생 피처가 임계의 SEVERE_MULT배 이상을 SEVERE_FAIL_CNT회 연속
+            if _is_derived(name):
+                if err[j] >= SEVERE_MULT * thresholds[j]:
+                    state.severe_cnt[j] += 1
+                    if state.severe_cnt[j] >= SEVERE_FAIL_CNT:
+                        if not any(a["feature"] == name for a in alerts):
+                            alerts.append(self._make_alert(name, "danger", "severe", err[j], thresholds[j],
+                                                           {"severity_ratio": round(float(err[j] / max(thresholds[j], 1e-9)), 2)}))
+                            print(f"[CBM-DIAG] 🚨 severe 알람: {name} err={float(err[j]):.4f} = {float(err[j]/max(thresholds[j],1e-9)):.1f}× thr")
+                        state.severe_cnt[j] = 0
+                        state.fail_cnt[j] = 0
+                else:
+                    state.severe_cnt[j] = 0
 
-        # ── CUSUM (순간적 이상) — 정규화 스케일로 통일 ────
+        # ── CUSUM (정규화 스케일) ─────────────────────────
         err_norm_arr = err_norm[:n].reshape(1, n)
-        mu0          = bundle.cusum_mu0[:n]    # ← 정규화 스케일 (단위 통일)
+        mu0          = bundle.cusum_mu0[:n]
         state.S      = np.maximum(0, state.S + (err_norm_arr - mu0 - CUSUM_DRIFT))
         cusum_flags  = (state.S > CUSUM_THRESHOLD).squeeze(0)
 
         for j in range(n):
-            # AI 탐지 제외 피처는 CUSUM 도 건너뜀
-            if j < len(FEATURE_NAMES) and FEATURE_NAMES[j] in AI_DISABLED_FEATURES:
+            name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
+            if name in AI_DISABLED_FEATURES:
                 state.S[0, j] = 0.0
                 continue
             if cusum_flags[j]:
-                feat_name = FEATURE_NAMES[j] if j < len(FEATURE_NAMES) else f"feature_{j}"
-                system, msg = FEATURE_MESSAGES.get(feat_name, ("Unknown", f"피처 {j} 이상"))
-                already = any(a["feature"] == feat_name and a["method"] == "fail_count" for a in alerts)
-                if not already:
-                    alerts.append({
-                        "system":  system,
-                        "level":   "warning",
-                        "source":  "cnn_lstm",
-                        "method":  "cusum",
-                        "feature": feat_name,
-                        "msg":     msg,
-                        "cusum":   round(float(state.S[0, j]), 4),
-                    })
-                    # [CBM-DIAG] CUSUM 알람 발령 시 누적값·현재 오차 기록
-                    print(
-                        f"[CBM-DIAG] ⚠️ CUSUM 알람: {feat_name} "
-                        f"S={float(state.S[0, j]):.3f} err_norm={float(err_norm_arr[0, j]):.4f} "
-                        f"mu0={float(mu0[j]):.4f}"
-                    )
+                if not any(a["feature"] == name for a in alerts):
+                    alerts.append(self._make_alert(name, "warning", "cusum", err[j], thresholds[j],
+                                                   {"cusum": round(float(state.S[0, j]), 4)}))
+                    print(f"[CBM-DIAG] ⚠️ CUSUM 알람: {name} S={float(state.S[0, j]):.3f}")
                 state.S[0, j] = 0.0
 
         return alerts
@@ -417,6 +403,7 @@ class InferenceEngine:
         if drone_id in self._drone_states:
             self._drone_states[drone_id].reset()
         reset_window(drone_id)
+        self._last_errors.pop(drone_id, None)
         print(f"[inference] {drone_id} 상태 초기화 완료")
 
     def reset_all(self) -> None:
@@ -439,10 +426,11 @@ class InferenceEngine:
         return {FEATURE_NAMES[i]: int(state.fail_cnt[i])
                 for i in range(min(bundle.n_out, len(FEATURE_NAMES)))}
 
+    def get_last_errors(self, drone_id: str) -> Optional[dict]:
+        """화면 표시용: 피처별 최근 예측 오차와 임계값."""
+        return self._last_errors.get(drone_id)
 
-# ════════════════════════════════════════════════════════
-# 싱글턴 접근자
-# ════════════════════════════════════════════════════════
+
 _engine: Optional[InferenceEngine] = None
 
 def get_inference_engine() -> InferenceEngine:

@@ -14,7 +14,8 @@ import {
   WifiOff,
   ChevronDown,
   ChevronUp,
-  Radio,
+  Waves,
+  Fan,
 } from "lucide-react"
 
 interface RuleSystem {
@@ -27,12 +28,14 @@ interface AiAlert {
   system: string
   level: "warning" | "danger"
   source: string
-  method: string
+  method: string // "fail_count" | "cusum" | "severe"
   feature: string
   msg: string
+  position?: string // 모터 물리 위치 (pwm_dev 알람에만)
   err?: number
   threshold?: number
   cusum?: number
+  severity_ratio?: number
 }
 
 interface CbmWsPayload {
@@ -61,27 +64,49 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1"
 
 const WS_RECONNECT_DELAY_MS = 5000
-const ALERT_HOLD_MS = 10000 // 알람 유지 시간 (10초)
+const ALERT_HOLD_MS = 10000
 
-// AI가 감시하는 표시 그룹 (항상 화면에 표시: 정상이면 초록, 이상이면 알람)
-// 8피처 모델 기준 — Power(volt,current), 자세는 Roll/Pitch/Yaw 축별로 분리 표시
-// 각 그룹은 알람의 feature 이름으로 매칭한다 (예: att_cmd_roll, att_state_roll → Roll)
+// AI가 감시하는 표시 그룹 — 14피처 모델 기준
+//   Power: volt/current · Roll/Pitch/Yaw: 자세 명령/상태 · Motor: pwm_dev1~4 · Vibration: 진동 메트릭
 interface AiDisplayGroup {
   name: string
+  label: string
   match: (feature: string) => boolean
 }
 
 const AI_DISPLAY_GROUPS: AiDisplayGroup[] = [
-  { name: "Power", match: (f) => f === "volt" || f === "current" },
-  { name: "Roll", match: (f) => f.endsWith("roll") },
-  { name: "Pitch", match: (f) => f.endsWith("pitch") },
-  { name: "Yaw", match: (f) => f.endsWith("yaw") },
+  { name: "Power", label: "전원", match: (f) => f === "volt" || f === "current" },
+  { name: "Roll", label: "Roll", match: (f) => f.startsWith("att_") && f.endsWith("roll") },
+  { name: "Pitch", label: "Pitch", match: (f) => f.startsWith("att_") && f.endsWith("pitch") },
+  { name: "Yaw", label: "Yaw", match: (f) => f.startsWith("att_") && f.endsWith("yaw") },
+  { name: "Motor", label: "모터 편차", match: (f) => f.startsWith("pwm_dev") },
+  { name: "Vibration", label: "진동", match: (f) => f.endsWith("_vib_metric") },
 ]
 
-// feature 문자열이 없는 알람(서버 형식 차이 등)으로부터 화면 크래시를 방지하는 안전 매칭
+// 모터 번호 → 물리 위치 (서버 position 이 없을 때의 fallback, PX4 Quad X 표준)
+const MOTOR_POSITION: Record<string, string> = {
+  pwm_dev1: "전방 우측",
+  pwm_dev2: "후방 좌측",
+  pwm_dev3: "전방 좌측",
+  pwm_dev4: "후방 우측",
+}
+
 function matchGroup(group: AiDisplayGroup, feature: string | undefined): boolean {
   if (typeof feature !== "string" || feature.length === 0) return false
   return group.match(feature)
+}
+
+function methodLabel(method: string): string {
+  switch (method) {
+    case "severe":
+      return "즉시 확정"
+    case "cusum":
+      return "누적 이탈"
+    case "fail_count":
+      return "연속 초과"
+    default:
+      return method
+  }
 }
 
 function calcRuleSystems(
@@ -113,16 +138,8 @@ function calcRuleSystems(
       b > 80
         ? { system: "Battery", level: "safe", msg: `정상 (${b.toFixed(1)}%)` }
         : b > 50
-          ? {
-              system: "Battery",
-              level: "warning",
-              msg: `주의 (${b.toFixed(1)}%)`,
-            }
-          : {
-              system: "Battery",
-              level: "danger",
-              msg: `위험 (${b.toFixed(1)}%)`,
-            },
+          ? { system: "Battery", level: "warning", msg: `주의 (${b.toFixed(1)}%)` }
+          : { system: "Battery", level: "danger", msg: `위험 (${b.toFixed(1)}%)` },
     )
   } else {
     systems.push({ system: "Battery", level: "warning", msg: "데이터 없음" })
@@ -134,16 +151,8 @@ function calcRuleSystems(
       s <= 20
         ? { system: "ESC", level: "safe", msg: `정상 (${s.toFixed(1)} m/s)` }
         : s <= 30
-          ? {
-              system: "ESC",
-              level: "warning",
-              msg: `주의 (${s.toFixed(1)} m/s)`,
-            }
-          : {
-              system: "ESC",
-              level: "danger",
-              msg: `위험 (${s.toFixed(1)} m/s)`,
-            },
+          ? { system: "ESC", level: "warning", msg: `주의 (${s.toFixed(1)} m/s)` }
+          : { system: "ESC", level: "danger", msg: `위험 (${s.toFixed(1)} m/s)` },
     )
   } else {
     systems.push({ system: "ESC", level: "warning", msg: "데이터 없음" })
@@ -175,11 +184,7 @@ function calcRuleSystems(
     systems.push(
       fixType >= 3
         ? { system: "GNSS", level: "safe", msg: "정상" }
-        : {
-            system: "GNSS",
-            level: "warning",
-            msg: `신호 약함 (Fix ${fixType})`,
-          },
+        : { system: "GNSS", level: "warning", msg: `신호 약함 (Fix ${fixType})` },
     )
   } else {
     systems.push({ system: "GNSS", level: "warning", msg: "데이터 없음" })
@@ -207,11 +212,10 @@ export function RealtimeCBMStatusCard({
 }: RealtimeCBMStatusCardProps) {
   const ruleSystems = calcRuleSystems(connected, droneData)
 
-  // ── useRef는 반드시 컴포넌트 최상단에서 선언 ──
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastAlertRef = useRef<CbmWsPayload | null>(null) // ← 최상단으로 이동
-  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null) // ← 최상단으로 이동
+  const lastAlertRef = useRef<CbmWsPayload | null>(null)
+  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [wsConnected, setWsConnected] = useState(false)
   const [cbmPayload, setCbmPayload] = useState<CbmWsPayload | null>(null)
@@ -229,10 +233,7 @@ export function RealtimeCBMStatusCard({
     }
 
     const protocol = API_BASE_URL.startsWith("https") ? "wss" : "ws"
-    const host = API_BASE_URL.replace(/^https?:\/\//, "").replace(
-      /\/api\/v1$/,
-      "",
-    )
+    const host = API_BASE_URL.replace(/^https?:\/\//, "").replace(/\/api\/v1$/, "")
     const url = `${protocol}://${host}/api/v1/cbm/ws/cbm?drone_id=${droneId}`
 
     const connect = () => {
@@ -252,18 +253,14 @@ export function RealtimeCBMStatusCard({
         try {
           const payload: CbmWsPayload = JSON.parse(e.data)
           if (payload.has_alert) {
-            // 이상 감지 시 10초간 알람 유지
             lastAlertRef.current = payload
             if (alertTimerRef.current) clearTimeout(alertTimerRef.current)
             alertTimerRef.current = setTimeout(() => {
               lastAlertRef.current = null
             }, ALERT_HOLD_MS)
             setCbmPayload(payload)
-          } else {
-            // 정상 신호: 알람 유지 중이면 마지막 알람 상태 유지
-            if (!lastAlertRef.current) {
-              setCbmPayload(payload)
-            }
+          } else if (!lastAlertRef.current) {
+            setCbmPayload(payload)
           }
         } catch {}
       }
@@ -303,29 +300,20 @@ export function RealtimeCBMStatusCard({
   const aiAlerts = cbmPayload?.systems ?? []
   const aiLevel = aiOverallLevel(aiAlerts, modelReady, windowSize)
 
-  // 알람을 표시 그룹(Power/Roll/Pitch/Yaw)별로 분류 — feature 이름 기준
-  const alertsByGroup = AI_DISPLAY_GROUPS.reduce<Record<string, AiAlert[]>>(
-    (acc, g) => {
-      acc[g.name] = aiAlerts.filter((a) => matchGroup(g, a.feature))
-      return acc
-    },
-    {},
-  )
+  const alertsByGroup = AI_DISPLAY_GROUPS.reduce<Record<string, AiAlert[]>>((acc, g) => {
+    acc[g.name] = aiAlerts.filter((a) => matchGroup(g, a.feature))
+    return acc
+  }, {})
 
   const systemIconMap: Record<string, JSX.Element> = {
     Power: <Battery className="h-4 w-4 text-amber-500" />,
     Roll: <Activity className="h-4 w-4 text-blue-500" />,
     Pitch: <Activity className="h-4 w-4 text-indigo-500" />,
     Yaw: <Activity className="h-4 w-4 text-violet-500" />,
-    GPS: <Satellite className="h-4 w-4 text-sky-500" />,
-    Flight: <Activity className="h-4 w-4 text-blue-500" />,
-    EKF: <Radio className="h-4 w-4 text-purple-500" />,
-    Gyro: <Zap className="h-4 w-4 text-rose-500" />,
-    Accel: <Cpu className="h-4 w-4 text-orange-500" />,
-    Motor: <Zap className="h-4 w-4 text-red-500" />,
+    Motor: <Fan className="h-4 w-4 text-red-500" />,
+    Vibration: <Waves className="h-4 w-4 text-orange-500" />,
   }
 
-  // AI 모델이 추론 중(수집 완료 + 모델 준비)일 때만 시스템별 정상/이상을 신뢰 표시
   const aiActive = modelReady && windowSize >= 20
 
   return (
@@ -367,7 +355,7 @@ export function RealtimeCBMStatusCard({
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-indigo-500" />
               <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                AI 이상 탐지 (CNN-LSTM)
+                AI 이상 탐지 (CNN-LSTM · 14피처)
               </p>
               {connected &&
                 droneId &&
@@ -409,9 +397,7 @@ export function RealtimeCBMStatusCard({
                             style={{ width: `${(windowSize / 20) * 100}%` }}
                           />
                         </div>
-                        <span className="text-[10px] tabular-nums">
-                          {windowSize}/20
-                        </span>
+                        <span className="text-[10px] tabular-nums">{windowSize}/20</span>
                       </div>
                       <span className="font-semibold">
                         {aiLevel === "off"
@@ -425,24 +411,18 @@ export function RealtimeCBMStatusCard({
                     </div>
                   </div>
 
-                  {/* 수집 중(off): 아직 추론 전이라 시스템별 상태를 신뢰할 수 없음 */}
                   {aiLevel === "off" && (
                     <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/60 px-3 py-2 text-xs text-slate-500">
                       <Activity className="h-4 w-4 shrink-0 animate-pulse" />
-                      데이터 수집 중입니다 (20개 채워지면 탐지 시작)
+                      데이터 수집 중입니다 (1초 간격 20개 채워지면 탐지 시작)
                     </div>
                   )}
 
-                  {/* 추론 활성: 감시 그룹(Power·Roll·Pitch·Yaw)을 항상 표시.
-                      이상 없으면 초록 '정상', 있으면 해당 그룹만 알람 상세 */}
                   {aiActive &&
                     AI_DISPLAY_GROUPS.map((group) => {
-                      const sysName = group.name
-                      const alerts = alertsByGroup[sysName] ?? []
+                      const alerts = alertsByGroup[group.name] ?? []
                       const hasDanger = alerts.some((a) => a.level === "danger")
-                      const hasWarning = alerts.some(
-                        (a) => a.level === "warning",
-                      )
+                      const hasWarning = alerts.some((a) => a.level === "warning")
                       const tone = hasDanger
                         ? "border-rose-200/70 bg-rose-50/60"
                         : hasWarning
@@ -456,19 +436,16 @@ export function RealtimeCBMStatusCard({
 
                       return (
                         <div
-                          key={sysName}
+                          key={group.name}
                           className={`rounded-xl border px-3 py-2 text-xs ${tone}`}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1.5">
-                              {systemIconMap[sysName] ?? (
+                              {systemIconMap[group.name] ?? (
                                 <CheckCircle className="h-4 w-4 text-slate-400" />
                               )}
-                              <span className={`font-semibold ${labelColor}`}>
-                                {sysName}
-                              </span>
+                              <span className={`font-semibold ${labelColor}`}>{group.label}</span>
                             </div>
-                            {/* 정상일 때: 초록 체크 + '정상' 배지 */}
                             {alerts.length === 0 && (
                               <span className="flex items-center gap-1 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
                                 <CheckCircle className="h-3 w-3" />
@@ -477,22 +454,41 @@ export function RealtimeCBMStatusCard({
                             )}
                           </div>
 
-                          {/* 이상일 때: 기존 알람 상세 목록 */}
                           {alerts.length > 0 && (
                             <div className="mt-1.5 space-y-1">
-                              {alerts.map((a, i) => (
-                                <div
-                                  key={i}
-                                  className="flex items-start justify-between gap-2"
-                                >
-                                  <span className="text-slate-600">{a.msg}</span>
-                                  <span
-                                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${a.level === "danger" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}
-                                  >
-                                    {a.method === "cusum" ? "CUSUM" : "연속 초과"}
-                                  </span>
-                                </div>
-                              ))}
+                              {alerts.map((a, i) => {
+                                const pos = a.position ?? MOTOR_POSITION[a.feature]
+                                const isSevere = a.method === "severe"
+                                return (
+                                  <div key={i} className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <span className="text-slate-700">{a.msg}</span>
+                                      {pos && group.name === "Motor" && (
+                                        <span className="ml-1 rounded bg-rose-100 px-1 py-0.5 text-[10px] font-semibold text-rose-700">
+                                          {pos} 점검
+                                        </span>
+                                      )}
+                                      {typeof a.err === "number" && typeof a.threshold === "number" && (
+                                        <div className="text-[10px] text-slate-500 tabular-nums">
+                                          오차 {a.err.toFixed(2)} / 임계 {a.threshold.toFixed(2)}
+                                          {typeof a.severity_ratio === "number" && ` (${a.severity_ratio}×)`}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <span
+                                      className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                                        isSevere
+                                          ? "bg-rose-600 text-white"
+                                          : a.level === "danger"
+                                            ? "bg-rose-100 text-rose-700"
+                                            : "bg-amber-100 text-amber-700"
+                                      }`}
+                                    >
+                                      {methodLabel(a.method)}
+                                    </span>
+                                  </div>
+                                )
+                              })}
                             </div>
                           )}
                         </div>

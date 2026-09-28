@@ -57,7 +57,9 @@ EARLY_STOP_PATIENCE = 15
 #   5,6,7,8,9,10: 자세 6개 (5,8 = yaw 계열 / 나머지는 roll·pitch 계열)
 #   17,18,19: sensor_gyro x/y/z
 # (이 순서가 그대로 새 인덱스 0~10 이 됩니다. collector/inference도 동일 순서로 맞출 것)
-FEATURE_COLS = [0, 1, 5, 6, 7, 8, 9, 10]
+FEATURE_COLS = [0, 1, 5, 6, 7, 8, 9, 10,
+                27, 28, 29, 30,               # pwm_dev1~4
+                37, 38]                       # accel_vib_metric, gyro_vib_metric
 
 # yaw unwrap 대상 (원본 좌표계 기준 컬럼)
 YAW_COLS_ORIG = [5, 8]
@@ -302,7 +304,8 @@ if __name__ == "__main__":
                   "att_5", "att_6", "att_7", "att_8", "att_9", "att_10"]
     print("[RMSE] 피처별 결과 (새 인덱스 : 원본컬럼 : 이름):")
     for i, r in enumerate(rmse_list):
-        print(f"  new{i:2d} (orig {FEATURE_COLS[i]:2d}, {feat_names[i]:8s}): {r:.6f}")
+        name = feat_names[i] if i < len(feat_names) else f"col{FEATURE_COLS[i]}"
+        print(f"  new {i:2d} (orig {FEATURE_COLS[i]:2d}, {name:8s}): {r:.6f}")
 
     # ── 8. 저장 ──────────────────────────────────
     os.makedirs(os.path.dirname(PKL_PATH), exist_ok=True)
