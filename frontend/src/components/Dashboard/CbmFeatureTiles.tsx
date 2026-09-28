@@ -46,7 +46,7 @@ export const FEATURE_SECTIONS: FeatureSection[] = [
     cols: 2,
     tiles: [
       { feature: "current", label: "전류" },
-      { feature: "volt", label: "전압", sub: "규칙 감시" },
+      { feature: "volt", label: "전압" },
     ],
   },
   {
@@ -262,10 +262,6 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                 const missing = !disabled && (missingFeatures?.has(t.feature) ?? false)
                 const health = healthOf(fe)
                 const st: TileState = missing || disabled ? "normal" : tileStateOf(a, health)
-                const barColor =
-                  st === "alarm" ? (a?.level === "danger" ? "bg-rose-500" : "bg-amber-500")
-                  : st === "caution" ? "bg-amber-400"
-                  : "bg-emerald-500"
                 const tileTone =
                   disabled || missing
                     ? "border-slate-200/60 bg-slate-50/60 text-slate-400"
@@ -288,7 +284,11 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                         {t.label}
                         {t.sub && <span className="ml-1 text-[10px] font-normal opacity-70">{t.sub}</span>}
                       </span>
-                      {!disabled && !missing && (
+                      {disabled ? (
+                        <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold bg-slate-100 text-slate-500">규칙 감시</span>
+                      ) : missing ? (
+                        <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold bg-slate-100 text-slate-500">수신 없음</span>
+                      ) : (
                         <span
                           className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold ${
                             st === "alarm"
@@ -306,18 +306,6 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                         </span>
                       )}
                     </div>
-                    {disabled ? (
-                      <div className="mt-1 text-[10px]">AI 제외 · 규칙 감시</div>
-                    ) : missing ? (
-                      <div className="mt-1 text-[10px]">수신 없음</div>
-                    ) : (
-                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/70">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                          style={{ width: `${health ?? 0}%` }}
-                        />
-                      </div>
-                    )}
                   </div>
                 )
               })}
