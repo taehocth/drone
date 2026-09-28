@@ -111,6 +111,70 @@ const SECTION_ICON: Record<string, JSX.Element> = {
 
 export type Level = "safe" | "warning" | "danger"
 
+// ── 타일 상태어 체계 ──────────────────────────────────
+//   정상: 건전도 ≥ WARN_HEALTH   주의: 건전도 < WARN_HEALTH (임계 근접, 판정 전)   경보: 판정 로직 확정
+//   주의 기준 30% — 정상 비행의 기동 구간에서 주의가 자주 뜨지 않도록 보수적으로 둔다.
+export const WARN_HEALTH = 30
+
+export type TileState = "normal" | "caution" | "alarm"
+
+/** 피처별 경보 시 조치 문구 (사고 조사 보고서 재발 방지 권고 기반) */
+export const FEATURE_ACTION: Record<string, string> = {
+  current: "전원 계통 점검",
+  att_cmd_roll: "제어 이상 — 수동 전환 대기", att_cmd_pitch: "제어 이상 — 수동 전환 대기", att_cmd_yaw: "제어 이상 — 수동 전환 대기",
+  att_state_roll: "자세 불안정 — 착륙 검토", att_state_pitch: "자세 불안정 — 착륙 검토", att_state_yaw: "자세 불안정 — 착륙 검토",
+  pwm_dev1: "즉시 착륙 후 전방 우측 암·모터 점검",
+  pwm_dev2: "즉시 착륙 후 후방 좌측 암·모터 점검",
+  pwm_dev3: "즉시 착륙 후 전방 좌측 암·모터 점검",
+  pwm_dev4: "즉시 착륙 후 후방 우측 암·모터 점검",
+  accel_vib_metric: "프롭·결합부 점검",
+  gyro_vib_metric: "프롭·결합부 점검",
+}
+
+/** 타일 라벨 (사람이 읽는 이름) */
+export const FEATURE_LABEL: Record<string, string> = Object.fromEntries(
+  FEATURE_SECTIONS.flatMap((s) => s.tiles.map((t) => [t.feature, t.sub ? `${t.label} (${t.sub})` : t.label])),
+)
+
+/** 건전도(0~100) 계산 — 100 = 예측 정확, 0 = 오차가 경보 임계 도달 */
+export function healthOf(fe?: { err: number; threshold: number }): number | null {
+  if (!fe || fe.threshold <= 0) return null
+  return Math.max(0, Math.round((1 - fe.err / fe.threshold) * 100))
+}
+
+/** 타일 상태: 알람 있으면 경보, 건전도가 기준 미만이면 주의, 그 외 정상 */
+export function tileStateOf(alert: AiAlert | undefined, health: number | null): TileState {
+  if (alert) return "alarm"
+  if (health !== null && health < WARN_HEALTH) return "caution"
+  return "normal"
+}
+
+/**
+ * 카드 상단 한 줄 요약(조치어).
+ *  - 경보가 있으면 가장 심각한 것 1건: "모터 4 (후방 우측) 경보 — 즉시 착륙 후 …"
+ *  - 주의만 있으면: "모터 4 (후방 우측) 주의 — 추이 관찰"
+ *  - 없으면: "모든 항목 정상"
+ */
+export function summarize(alerts: AiAlert[], featureErrors: FeatureErrors, missing?: Set<string>): { level: Level; text: string } {
+  const byFeature = indexAlertsByFeature(alerts)
+  const danger = Object.values(byFeature).find((a) => a.level === "danger")
+  const warn = Object.values(byFeature).find((a) => a.level === "warning")
+  const top = danger ?? warn
+  if (top) {
+    const name = FEATURE_LABEL[top.feature] ?? top.feature
+    const action = FEATURE_ACTION[top.feature] ?? "점검 필요"
+    return { level: top.level, text: `${name} 경보 — ${action}` }
+  }
+  let worst: { f: string; h: number } | null = null
+  for (const f of ALL_FEATURES) {
+    if (AI_DISABLED_FEATURES.has(f) || missing?.has(f)) continue
+    const h = healthOf(featureErrors[f])
+    if (h !== null && h < WARN_HEALTH && (!worst || h < worst.h)) worst = { f, h }
+  }
+  if (worst) return { level: "warning", text: `${FEATURE_LABEL[worst.f] ?? worst.f} 주의 — 추이 관찰` }
+  return { level: "safe", text: "모든 항목 정상" }
+}
+
 /** 알람 목록 → 피처별 대표 알람 (danger 우선) */
 export function indexAlertsByFeature(alerts: AiAlert[]): Record<string, AiAlert> {
   return alerts.reduce<Record<string, AiAlert>>((acc, a) => {
@@ -152,11 +216,19 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
   return (
     <>
       <p className="px-1 text-[10px] text-slate-400">
-        건전도 = 경보 임계까지의 여유 (100% 정상 · 0% 도달이 지속되면 경보)
+        정상 · 주의(경보 기준 근접, 추이 관찰) · 경보(판정 확정, 조치 필요)
       </p>
 
       {FEATURE_SECTIONS.map((sec) => {
-        const lv = sectionLevel(sec, alertByFeature)
+        let lv = sectionLevel(sec, alertByFeature)
+        if (lv === "safe") {
+          const anyCaution = sec.tiles.some((t) => {
+            if (AI_DISABLED_FEATURES.has(t.feature) || missingFeatures?.has(t.feature)) return false
+            const h = healthOf(featureErrors[t.feature])
+            return h !== null && h < WARN_HEALTH
+          })
+          if (anyCaution) lv = "warning"
+        }
         const tone =
           lv === "danger"
             ? "border-rose-200/70 bg-rose-50/40"
@@ -188,49 +260,49 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                 const fe = featureErrors[t.feature]
                 const disabled = AI_DISABLED_FEATURES.has(t.feature)
                 const missing = !disabled && (missingFeatures?.has(t.feature) ?? false)
-                // 건전도(Health) = 100 − 오차/임계 비율. 100% = 예측이 정확히 맞음, 0% = 오차가 경보 임계 도달
-                const ratio = fe && fe.threshold > 0 ? fe.err / fe.threshold : 0
-                const health = Math.max(0, Math.round((1 - ratio) * 100))
-                const barColor = a
-                  ? a.level === "danger"
-                    ? "bg-rose-500"
-                    : "bg-amber-500"
-                  : health < 20
-                    ? "bg-rose-400"
-                    : health < 50
-                      ? "bg-amber-400"
-                      : "bg-emerald-500"
+                const health = healthOf(fe)
+                const st: TileState = missing || disabled ? "normal" : tileStateOf(a, health)
+                const barColor =
+                  st === "alarm" ? (a?.level === "danger" ? "bg-rose-500" : "bg-amber-500")
+                  : st === "caution" ? "bg-amber-400"
+                  : "bg-emerald-500"
                 const tileTone =
                   disabled || missing
                     ? "border-slate-200/60 bg-slate-50/60 text-slate-400"
-                    : a
-                      ? a.level === "danger"
+                    : st === "alarm"
+                      ? a?.level === "danger"
                         ? "border-rose-300 bg-rose-50 text-rose-800"
                         : "border-amber-300 bg-amber-50 text-amber-800"
-                      : "border-slate-200/60 bg-white/70 text-slate-700"
+                      : st === "caution"
+                        ? "border-amber-200 bg-amber-50/60 text-amber-800"
+                        : "border-slate-200/60 bg-white/70 text-slate-700"
 
                 return (
                   <div
                     key={t.feature}
                     className={`rounded-lg border px-2 py-1.5 text-[11px] ${tileTone}`}
-                    title={fe ? `건전도 ${health}% — 예측 오차 ${fe.err} / 경보 임계 ${fe.threshold}` : undefined}
+                    title={fe && health !== null ? `건전도 ${health}% — 예측 오차 ${fe.err} / 경보 임계 ${fe.threshold}` : undefined}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-semibold">
                         {t.label}
                         {t.sub && <span className="ml-1 text-[10px] font-normal opacity-70">{t.sub}</span>}
                       </span>
-                      {a && !missing && (
+                      {!disabled && !missing && (
                         <span
                           className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold ${
-                            a.method === "severe"
-                              ? "bg-rose-600 text-white"
-                              : a.level === "danger"
-                                ? "bg-rose-200 text-rose-800"
-                                : "bg-amber-200 text-amber-800"
+                            st === "alarm"
+                              ? a?.method === "severe"
+                                ? "bg-rose-600 text-white"
+                                : a?.level === "danger"
+                                  ? "bg-rose-200 text-rose-800"
+                                  : "bg-amber-200 text-amber-800"
+                              : st === "caution"
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-emerald-100 text-emerald-700"
                           }`}
                         >
-                          {methodLabel(a.method)}
+                          {st === "alarm" ? `경보 · ${methodLabel(a?.method ?? "")}` : st === "caution" ? "주의" : "정상"}
                         </span>
                       )}
                     </div>
@@ -239,16 +311,11 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                     ) : missing ? (
                       <div className="mt-1 text-[10px]">수신 없음</div>
                     ) : (
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/70">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                            style={{ width: `${fe ? health : 0}%` }}
-                          />
-                        </div>
-                        <span className="w-9 text-right text-[10px] tabular-nums opacity-80">
-                          {fe ? `${health}%` : "–"}
-                        </span>
+                      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/70">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                          style={{ width: `${health ?? 0}%` }}
+                        />
                       </div>
                     )}
                   </div>

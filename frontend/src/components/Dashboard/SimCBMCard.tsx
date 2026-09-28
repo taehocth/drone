@@ -15,6 +15,7 @@ import {
   ALL_FEATURES,
   AI_DISABLED_FEATURES,
   overallLevel,
+  summarize,
   type AiAlert,
   type FeatureErrors,
 } from "@/components/Dashboard/CbmFeatureTiles"
@@ -161,6 +162,7 @@ export function SimCBMCard({ droneId = "drone-002", data }: SimCBMCardProps) {
   }, [aiActive, batteryStatus, featureErrors])
 
   const worst = aiActive ? overallLevel(alerts) : "safe"
+  const summary = summarize(alerts, featureErrors)
   const modelLabel = !aiActive ? "수집 중" : worst === "danger" ? "이상 감지" : worst === "warning" ? "주의" : "정상"
   const modelTone = !aiActive
     ? "bg-slate-50/60 border-slate-200/60 text-slate-500"
@@ -240,6 +242,21 @@ export function SimCBMCard({ droneId = "drone-002", data }: SimCBMCardProps) {
                 <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/60 px-3 py-2 text-xs text-slate-500">
                   <Activity className="h-4 w-4 shrink-0 animate-pulse" />
                   데이터 수집 중입니다 (1초 간격 20개 채워지면 탐지 시작)
+                </div>
+              )}
+
+              {aiActive && (
+                <div
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
+                    summary.level === "danger"
+                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                      : summary.level === "warning"
+                        ? "border-amber-300 bg-amber-50 text-amber-800"
+                        : "border-emerald-200/70 bg-emerald-50/60 text-emerald-700"
+                  }`}
+                >
+                  {summary.level === "safe" ? <CheckCircle className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+                  <span>{summary.text}</span>
                 </div>
               )}
 
