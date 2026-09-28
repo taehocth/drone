@@ -152,7 +152,7 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
   return (
     <>
       <p className="px-1 text-[10px] text-slate-400">
-        막대 = 예측 오차 ÷ 경보 임계 (100% 도달·지속 시 경보)
+        건전도 = 경보 임계까지의 여유 (100% 정상 · 0% 도달이 지속되면 경보)
       </p>
 
       {FEATURE_SECTIONS.map((sec) => {
@@ -188,15 +188,18 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                 const fe = featureErrors[t.feature]
                 const disabled = AI_DISABLED_FEATURES.has(t.feature)
                 const missing = !disabled && (missingFeatures?.has(t.feature) ?? false)
-                const ratio = fe && fe.threshold > 0 ? Math.min(fe.err / fe.threshold, 1.5) : 0
-                const pct = Math.round(Math.min(ratio, 1) * 100)
+                // 건전도(Health) = 100 − 오차/임계 비율. 100% = 예측이 정확히 맞음, 0% = 오차가 경보 임계 도달
+                const ratio = fe && fe.threshold > 0 ? fe.err / fe.threshold : 0
+                const health = Math.max(0, Math.round((1 - ratio) * 100))
                 const barColor = a
                   ? a.level === "danger"
                     ? "bg-rose-500"
                     : "bg-amber-500"
-                  : ratio >= 0.8
-                    ? "bg-amber-400"
-                    : "bg-emerald-500"
+                  : health < 20
+                    ? "bg-rose-400"
+                    : health < 50
+                      ? "bg-amber-400"
+                      : "bg-emerald-500"
                 const tileTone =
                   disabled || missing
                     ? "border-slate-200/60 bg-slate-50/60 text-slate-400"
@@ -210,7 +213,7 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                   <div
                     key={t.feature}
                     className={`rounded-lg border px-2 py-1.5 text-[11px] ${tileTone}`}
-                    title={fe ? `오차 ${fe.err} / 임계 ${fe.threshold}` : undefined}
+                    title={fe ? `건전도 ${health}% — 예측 오차 ${fe.err} / 경보 임계 ${fe.threshold}` : undefined}
                   >
                     <div className="flex items-center justify-between gap-1">
                       <span className="font-semibold">
@@ -240,11 +243,11 @@ export function CbmFeatureTiles({ alerts, featureErrors, missingFeatures }: CbmF
                         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/70">
                           <div
                             className={`h-full rounded-full transition-all duration-500 ${barColor}`}
-                            style={{ width: `${pct}%` }}
+                            style={{ width: `${fe ? health : 0}%` }}
                           />
                         </div>
                         <span className="w-9 text-right text-[10px] tabular-nums opacity-80">
-                          {fe ? `${Math.round(ratio * 100)}%` : "–"}
+                          {fe ? `${health}%` : "–"}
                         </span>
                       </div>
                     )}
