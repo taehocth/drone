@@ -13,7 +13,7 @@ import { convertGRID_GPS } from "@/utils/convertGrid"
 import SimDroneSimulation from "./SimDroneSimulation"
 import { SimCBMCard } from "./SimCBMCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
-import { PreflightRiskCard } from "@/components/Dashboard/PreflightRiskCard"
+import { PreflightRiskCard, type PreflightWeather } from "@/components/Dashboard/PreflightRiskCard"
 import {
   MapPin,
   Cloud,
@@ -1820,6 +1820,8 @@ export function UavDashboard() {
   const [selectedLteIp, setSelectedLteIp] = useState<string | null>(null)
   const [chatOpen, setChatOpen] = useState(false)
   const [simMode, setSimMode] = useState(false)
+  // 기상 카드가 조회한 최신 값 (비행 전 복합 위험 점수 자동 입력용)
+  const [weatherSnapshot, setWeatherSnapshot] = useState<PreflightWeather | null>(null)
   const [simScenario, setSimScenario] = useState<"normal" | "battery" | "gps">(
     "normal",
   )
@@ -2732,7 +2734,10 @@ export function UavDashboard() {
             </div>
             {!collapseTopPanel && (
               <div className="p-3">
-                <WeatherInfoCard clickedCoordinates={clickedCoordinates} />
+                <WeatherInfoCard
+                  clickedCoordinates={clickedCoordinates}
+                  onWeatherChange={setWeatherSnapshot}
+                />
               </div>
             )}
           </div>
@@ -2863,7 +2868,19 @@ export function UavDashboard() {
             {helpCard}
           </div>
           <div className="space-y-8">
-            <PreflightRiskCard />
+            <PreflightRiskCard
+              connected={droneConnected && !isDroneOffline}
+              droneData={
+                droneData && !isDroneOffline
+                  ? {
+                      battery: droneData.battery,
+                      gpsSatellites: droneData.gpsSatellites,
+                      gpsFixType: droneData.gpsFixType,
+                    }
+                  : undefined
+              }
+              weather={weatherSnapshot ?? undefined}
+            />
             <FlightLogWidget logs={logs} />
           </div>
         </div>

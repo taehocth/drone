@@ -17,6 +17,7 @@ import {
   Cloudy,
   CloudSnow,
 } from "lucide-react"
+import type { PreflightWeather } from "@/components/Dashboard/PreflightRiskCard"
 
 interface WeatherData {
   temperature: number
@@ -82,15 +83,9 @@ async function fetchKpIndex() {
 }
 
 // ✅ API URL 헬퍼 — VITE_API_URL 값이 무엇이든 항상 /api/v1 을 한 번만 붙인다.
-//   - "https://host"            → "https://host/api/v1{path}"
-//   - "https://host/api/v1"     → "https://host/api/v1{path}"
-//   - "https://host/api/v1/"    → "https://host/api/v1{path}"
-//   - 미설정                     → "/api/v1{path}"
 function buildApiUrl(path: string): string {
   const raw = import.meta.env.VITE_API_URL || "/api/v1"
-  // 끝 슬래시 제거
   let base = raw.replace(/\/+$/, "")
-  // 끝에 /api/v1 이 없으면 붙인다
   if (!base.endsWith("/api/v1")) {
     base = `${base}/api/v1`
   }
@@ -99,9 +94,16 @@ function buildApiUrl(path: string): string {
 
 interface WeatherInfoCardProps {
   clickedCoordinates?: { nx: number; ny: number } | null
+  /**
+   * ★ 조회한 기상값을 부모(UavDashboard)에 전달 — 비행 전 복합 위험 점수 자동 입력용.
+   *   기상청 초단기실황 기준: WSD=풍속(m/s) · T1H=기온(°C) · RN1=강수량(mm/h).
+   *   돌풍(순간풍속)은 초단기실황에 없으므로 windGust 는 null 로 전달한다.
+   *   데이터 없음(resultCode=10 등) 시 빈 객체를 전달해 카드가 수동 모드로 내려가게 한다.
+   */
+  onWeatherChange?: (w: PreflightWeather) => void
 }
 
-export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
+export function WeatherInfoCard({ clickedCoordinates, onWeatherChange }: WeatherInfoCardProps) {
   const [selectedRegion, setSelectedRegion] = useState<Region>(REGIONS[2])
   const [showDropdown, setShowDropdown] = useState(false)
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
@@ -111,7 +113,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
     try {
       // ✅ 기상청은 최근 1일 내 데이터만 제공하므로 현재 시각 기준으로 요청
       const now = new Date()
-      now.setMinutes(0, 0, 0) // 정각 단위 맞춤
+      now.setMinutes(0, 0, 0)
       const base_date = now.toISOString().slice(0, 10).replace(/-/g, "")
       const base_time = now.getHours().toString().padStart(2, "0") + "00"
 
@@ -128,6 +130,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
       if (data?.response?.header?.resultCode === "10" || items.length === 0) {
         console.warn("⚠️ 기상청 데이터 없음 (최근 1일만 제공)")
         setWeatherData(null)
+        onWeatherChange?.({})
         return
       }
 
@@ -232,8 +235,20 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
       })
 
       setWindHistory((prev) => [...prev.slice(-5), windSpeed])
+
+      // ★ 부모로 기상값 전달 (복합 위험 점수 자동 입력)
+      //    PTY(강수형태) 가 0이 아니면 RN1 이 0 이어도 강수로 간주 — 킬러 '강수' 감지용
+      onWeatherChange?.({
+        windSpeed: Number.isFinite(windSpeed) ? windSpeed : null, // m/s (변환 불필요)
+        windGust: null,                                            // 초단기실황 미제공
+        temperature: Number.isFinite(temperature) ? temperature : null,
+        precipitation: Number.isFinite(precipitationAmount)
+          ? Math.max(precipitationAmount, pty > 0 ? 0.1 : 0)
+          : null,
+      })
     } catch (err) {
       console.error("날씨 불러오기 실패:", err)
+      onWeatherChange?.({})
     }
   }
 
@@ -258,6 +273,7 @@ export function WeatherInfoCard({ clickedCoordinates }: WeatherInfoCardProps) {
     fetchWeather(target)
     const interval = setInterval(() => fetchWeather(target), 1000 * 60 * 10)
     return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRegion, clickedCoordinates])
 
   const getWeatherIcon = (condition: string) => {
