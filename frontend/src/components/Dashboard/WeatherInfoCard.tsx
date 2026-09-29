@@ -1,368 +1,275 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
-  Cloud,
-  Droplets,
-  Wind,
-  Eye,
-  CloudRain,
-  MapPin,
-  ChevronDown,
-  AlertTriangle,
-  Activity,
-  ArrowUp,
-  Sun,
-  CloudSun,
-  Cloudy,
-  CloudSnow,
+  Cloud, Wind, Eye, CloudRain, MapPin, ChevronDown, AlertTriangle,
+  Activity, ArrowUp, Sun, CloudSun, Cloudy, CloudSnow, CloudLightning, Waves, Clock,
 } from "lucide-react"
 import type { PreflightWeather } from "@/components/Dashboard/PreflightRiskCard"
 
-interface WeatherData {
-  temperature: number
-  condition: string
-  precipitation: string
-  humidity: number
-  windSpeed: number
-  windDirection: string
-  visibility: number
-  precipitationAmount: number
-  pop: number
-  safetyLevel: "safe" | "caution" | "danger"
-  safetyMessage: string
+/* =============================================================
+ * WeatherInfoCard — Open-Meteo 단일 소스 (무료, 키 불필요, 위경도 직접 조회)
+ * -------------------------------------------------------------
+ *  - 시간별 예보 6시간: 풍속·돌풍·강수·강수확률·기온·뇌우(weather_code)·시정
+ *  - Marine API 파고(해상 좌표일 때)
+ *  - NOAA Kp 지수 (기존 유지)
+ *  - onWeatherChange: "비행 시간 창" 안의 최악값을 부모(복합 위험 점수)로 전달
+ *    → 지금 값이 아니라 비행 중 예상 최악 조건으로 판정
+ *  ※ 수치예보 모델(ECMWF 등) 기반 — 국지 실황과 차이 가능. 화면에 표기.
+ *  ※ 기존 기상청 초단기실황 버전은 WeatherInfoCard_KMA_backup.tsx 로 보관.
+ * ============================================================= */
+
+export interface WeatherLocation {
+  lat: number
+  lng: number
+  label?: string
+}
+
+interface HourRow {
+  time: string
+  hour: string
+  temp: number
+  wind: number        // m/s
+  gust: number        // m/s
+  precip: number      // mm
+  precipProb: number  // %
+  code: number        // WMO weather code
+  visibility: number  // km
+  wave: number | null // m
+}
+
+interface WeatherView {
+  current: HourRow
+  hours: HourRow[]
+  kpIndex: number | null
   lastUpdate: string
-  kpIndex?: number | null
-  kpTime?: string | null
-  windHistory?: number[]
 }
 
-interface Region {
-  id: string
-  name: string
-  description: string
-  nx: number
-  ny: number
-}
-
+interface Region extends WeatherLocation { id: string; description: string }
 const REGIONS: Region[] = [
-  {
-    id: "seosan",
-    name: "서산",
-    description: "충청남도 서산시",
-    nx: 51,
-    ny: 110,
-  },
-  {
-    id: "taean",
-    name: "태안",
-    description: "충청남도 태안군",
-    nx: 48,
-    ny: 109,
-  },
-  { id: "seoul", name: "서울", description: "서울특별시", nx: 60, ny: 127 },
-  { id: "suwon", name: "수원", description: "경기도 수원시", nx: 60, ny: 121 },
-  { id: "daegu", name: "대구", description: "대구광역시", nx: 89, ny: 90 },
-  { id: "busan", name: "부산", description: "부산광역시", nx: 98, ny: 76 },
-  { id: "daejeon", name: "대전", description: "대전광역시", nx: 67, ny: 100 },
+  { id: "wonsan", label: "원산도", description: "충남 보령시 오천면", lat: 36.3695, lng: 126.4248 },
+  { id: "taean", label: "태안", description: "충청남도 태안군", lat: 36.7456, lng: 126.2979 },
+  { id: "seosan", label: "서산", description: "충청남도 서산시", lat: 36.7849, lng: 126.4503 },
+  { id: "seoul", label: "서울", description: "서울특별시", lat: 37.5665, lng: 126.978 },
+  { id: "daejeon", label: "대전", description: "대전광역시", lat: 36.3504, lng: 127.3845 },
+  { id: "busan", label: "부산", description: "부산광역시", lat: 35.1796, lng: 129.0756 },
 ]
 
-// ✅ NOAA Kp Index 가져오기
-async function fetchKpIndex() {
+const KILL_GUST = 12
+const isThunder = (code: number) => code >= 95 && code <= 99
+
+function codeToCondition(code: number): string {
+  if (code === 0) return "맑음"
+  if (code <= 2) return "구름 조금"
+  if (code === 3) return "흐림"
+  if (code === 45 || code === 48) return "안개"
+  if (code >= 51 && code <= 57) return "이슬비"
+  if (code >= 61 && code <= 67) return "비"
+  if (code >= 71 && code <= 77) return "눈"
+  if (code >= 80 && code <= 82) return "소나기"
+  if (code >= 85 && code <= 86) return "눈보라"
+  if (isThunder(code)) return "뇌우"
+  return "알 수 없음"
+}
+
+function conditionIcon(code: number, cls = "h-8 w-8") {
+  if (isThunder(code)) return <CloudLightning className={`${cls} text-purple-600`} />
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return <CloudSnow className={`${cls} text-blue-300`} />
+  if (code >= 51) return <CloudRain className={`${cls} text-blue-600`} />
+  if (code === 45 || code === 48) return <Cloudy className={`${cls} text-gray-400`} />
+  if (code === 3) return <Cloudy className={`${cls} text-gray-500`} />
+  if (code >= 1) return <CloudSun className={`${cls} text-gray-400`} />
+  return <Sun className={`${cls} text-yellow-400`} />
+}
+
+async function fetchKpIndex(): Promise<number | null> {
   try {
-    const res = await fetch(
-      "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json",
-    )
+    const res = await fetch("https://services.swpc.noaa.gov/json/planetary_k_index_1m.json")
     const data = await res.json()
-    const latest = data[data.length - 1]
-    return { kp: latest.kp_index, time: latest.time_tag }
-  } catch (err) {
-    console.error("Kp Index 불러오기 실패:", err)
-    return { kp: null, time: null }
+    return data[data.length - 1]?.kp_index ?? null
+  } catch {
+    return null
   }
 }
 
-// ✅ API URL 헬퍼 — VITE_API_URL 값이 무엇이든 항상 /api/v1 을 한 번만 붙인다.
-function buildApiUrl(path: string): string {
-  const raw = import.meta.env.VITE_API_URL || "/api/v1"
-  let base = raw.replace(/\/+$/, "")
-  if (!base.endsWith("/api/v1")) {
-    base = `${base}/api/v1`
+async function fetchOpenMeteo(loc: WeatherLocation): Promise<Omit<WeatherView, "kpIndex" | "lastUpdate">> {
+  const params = new URLSearchParams({
+    latitude: loc.lat.toFixed(4),
+    longitude: loc.lng.toFixed(4),
+    hourly: "temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,weather_code,visibility",
+    wind_speed_unit: "ms",
+    timezone: "Asia/Seoul",
+    forecast_days: "2",
+  })
+  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`)
+  if (!res.ok) throw new Error(`Open-Meteo ${res.status}`)
+  const d = await res.json()
+  const h = d.hourly
+
+  // 파고 (해상 좌표일 때만 값이 옴; 내륙은 오류/NaN → null)
+  let waves: (number | null)[] = []
+  try {
+    const mp = new URLSearchParams({
+      latitude: loc.lat.toFixed(4), longitude: loc.lng.toFixed(4),
+      hourly: "wave_height", timezone: "Asia/Seoul", forecast_days: "2",
+    })
+    const mr = await fetch(`https://marine-api.open-meteo.com/v1/marine?${mp}`)
+    if (mr.ok) {
+      const md = await mr.json()
+      waves = (md.hourly?.wave_height ?? []) as (number | null)[]
+    }
+  } catch { /* 내륙 등 — 파고 없음 */ }
+
+  // 현재 시각이 속한 시간 슬롯부터 6개
+  const now = Date.now()
+  const times: string[] = h.time
+  let idx = times.findIndex((t) => new Date(t).getTime() > now - 3600_000)
+  if (idx < 0) idx = 0
+
+  const rows: HourRow[] = []
+  for (let i = idx; i < Math.min(idx + 6, times.length); i++) {
+    const t = new Date(times[i])
+    rows.push({
+      time: times[i],
+      hour: `${t.getHours()}시`,
+      temp: h.temperature_2m[i],
+      wind: h.wind_speed_10m[i],
+      gust: h.wind_gusts_10m[i],
+      precip: h.precipitation[i] ?? 0,
+      precipProb: h.precipitation_probability?.[i] ?? 0,
+      code: h.weather_code[i],
+      visibility: (h.visibility?.[i] ?? 10000) / 1000,
+      wave: typeof waves[i] === "number" && Number.isFinite(waves[i]) ? (waves[i] as number) : null,
+    })
   }
-  return `${base}${path}`
+  return { current: rows[0], hours: rows }
 }
 
 interface WeatherInfoCardProps {
-  clickedCoordinates?: { nx: number; ny: number } | null
-  /**
-   * ★ 조회한 기상값을 부모(UavDashboard)에 전달 — 비행 전 복합 위험 점수 자동 입력용.
-   *   기상청 초단기실황 기준: WSD=풍속(m/s) · T1H=기온(°C) · RN1=강수량(mm/h).
-   *   돌풍(순간풍속)은 초단기실황에 없으므로 windGust 는 null 로 전달한다.
-   *   데이터 없음(resultCode=10 등) 시 빈 객체를 전달해 카드가 수동 모드로 내려가게 한다.
-   */
+  /** 조회 좌표 (지도 클릭 위치 또는 드론 위치). 없으면 지역 드롭다운 */
+  location?: WeatherLocation | null
+  /** 비행 시간 창(시간) — 이 안의 최악값을 복합 위험 점수로 전달. 기본 1 */
+  flightWindowHours?: number
   onWeatherChange?: (w: PreflightWeather) => void
 }
 
-export function WeatherInfoCard({ clickedCoordinates, onWeatherChange }: WeatherInfoCardProps) {
-  const [selectedRegion, setSelectedRegion] = useState<Region>(REGIONS[2])
+export function WeatherInfoCard({ location, flightWindowHours = 1, onWeatherChange }: WeatherInfoCardProps) {
+  const [selectedRegion, setSelectedRegion] = useState<Region>(REGIONS[0])
   const [showDropdown, setShowDropdown] = useState(false)
-  const [weatherData, setWeatherData] = useState<WeatherData | null>(null)
-  const [windHistory, setWindHistory] = useState<number[]>([])
+  const [view, setView] = useState<WeatherView | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [windowH, setWindowH] = useState(flightWindowHours)
 
-  const fetchWeather = async (region: Region) => {
-    try {
-      // ✅ 기상청은 최근 1일 내 데이터만 제공하므로 현재 시각 기준으로 요청
-      const now = new Date()
-      now.setMinutes(0, 0, 0)
-      const base_date = now.toISOString().slice(0, 10).replace(/-/g, "")
-      const base_time = now.getHours().toString().padStart(2, "0") + "00"
+  const target: WeatherLocation = location ?? selectedRegion
 
-      const url = buildApiUrl(
-        `/weather/?nx=${region.nx}&ny=${region.ny}&base_date=${base_date}&base_time=${base_time}`,
-      )
-      const res = await fetch(url)
-      if (!res.ok) throw new Error("API 요청 실패")
-
-      const data = await res.json()
-      const items = data?.response?.body?.items?.item ?? []
-
-      // ✅ resultCode=10 ("최근 1일만 제공") 처리
-      if (data?.response?.header?.resultCode === "10" || items.length === 0) {
-        console.warn("⚠️ 기상청 데이터 없음 (최근 1일만 제공)")
-        setWeatherData(null)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const [om, kp] = await Promise.all([fetchOpenMeteo(target), fetchKpIndex()])
+        if (cancelled) return
+        setError(null)
+        setView({
+          ...om, kpIndex: kp,
+          lastUpdate: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }),
+        })
+      } catch (e) {
+        if (cancelled) return
+        console.error("Open-Meteo 불러오기 실패:", e)
+        setError("기상 데이터를 불러오지 못했습니다")
+        setView(null)
         onWeatherChange?.({})
-        return
       }
-
-      let temperature = 0
-      let humidity = 0
-      let windSpeed = 0
-      let windDirection = "북"
-      let precipitationAmount = 0
-      let sky = 1
-      let pty = 0
-      let windDegree = 0
-
-      for (const item of items) {
-        switch (item.category) {
-          case "T1H":
-            temperature = parseFloat(item.obsrValue)
-            break
-          case "REH":
-            humidity = parseFloat(item.obsrValue)
-            break
-          case "WSD":
-            windSpeed = parseFloat(item.obsrValue)
-            break
-          case "VEC":
-            windDegree = parseFloat(item.obsrValue)
-            const dirs = [
-              "북",
-              "북동",
-              "동",
-              "남동",
-              "남",
-              "남서",
-              "서",
-              "북서",
-            ]
-            windDirection = dirs[Math.round(windDegree / 45) % 8]
-            break
-          case "RN1":
-            precipitationAmount = parseFloat(item.obsrValue)
-            break
-          case "SKY":
-            sky = parseInt(item.obsrValue)
-            break
-          case "PTY":
-            pty = parseInt(item.obsrValue)
-            break
-        }
-      }
-
-      const kpData = await fetchKpIndex()
-
-      const condition =
-        pty === 1
-          ? "비"
-          : pty === 2
-            ? "비/눈"
-            : pty === 3
-              ? "눈"
-              : sky <= 5
-                ? "맑음"
-                : sky <= 8
-                  ? "구름 많음"
-                  : "흐림"
-
-      const safetyLevel =
-        precipitationAmount > 0 || windSpeed > 8
-          ? "danger"
-          : windSpeed > 5
-            ? "caution"
-            : "safe"
-
-      const safetyMessage =
-        precipitationAmount > 0
-          ? "비가 오고 있습니다. 비행 금지."
-          : windSpeed > 8
-            ? "풍속이 매우 높습니다. 비행 금지."
-            : windSpeed > 5
-              ? "바람이 조금 강합니다. 주의하세요."
-              : "비행하기 좋은 날씨입니다."
-
-      setWeatherData({
-        temperature,
-        humidity,
-        windSpeed,
-        windDirection,
-        visibility: 10,
-        precipitationAmount,
-        condition,
-        precipitation: precipitationAmount > 0 ? "비" : "없음",
-        pop: precipitationAmount > 0 ? 60 : 0,
-        safetyLevel,
-        safetyMessage,
-        lastUpdate: new Date().toLocaleTimeString("ko-KR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hour12: true,
-        }),
-        kpIndex: kpData.kp,
-        kpTime: kpData.time,
-        windHistory,
-      })
-
-      setWindHistory((prev) => [...prev.slice(-5), windSpeed])
-
-      // ★ 부모로 기상값 전달 (복합 위험 점수 자동 입력)
-      //    PTY(강수형태) 가 0이 아니면 RN1 이 0 이어도 강수로 간주 — 킬러 '강수' 감지용
-      onWeatherChange?.({
-        windSpeed: Number.isFinite(windSpeed) ? windSpeed : null, // m/s (변환 불필요)
-        windGust: null,                                            // 초단기실황 미제공
-        temperature: Number.isFinite(temperature) ? temperature : null,
-        precipitation: Number.isFinite(precipitationAmount)
-          ? Math.max(precipitationAmount, pty > 0 ? 0.1 : 0)
-          : null,
-      })
-    } catch (err) {
-      console.error("날씨 불러오기 실패:", err)
-      onWeatherChange?.({})
     }
-  }
-
-  // 🚨 위험 시 알림음
-  useEffect(() => {
-    if (weatherData?.safetyLevel === "danger") {
-      const audio = new Audio("/sounds/warning.mp3")
-      audio.play().catch(() => {})
-    }
-  }, [weatherData?.safetyLevel])
-
-  useEffect(() => {
-    const target = clickedCoordinates
-      ? {
-          id: "clicked",
-          name: "클릭한 위치",
-          description: `격자 (${clickedCoordinates.nx}, ${clickedCoordinates.ny})`,
-          nx: clickedCoordinates.nx,
-          ny: clickedCoordinates.ny,
-        }
-      : selectedRegion
-    fetchWeather(target)
-    const interval = setInterval(() => fetchWeather(target), 1000 * 60 * 10)
-    return () => clearInterval(interval)
+    load()
+    const id = setInterval(load, 10 * 60_000)
+    return () => { cancelled = true; clearInterval(id) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRegion, clickedCoordinates])
+  }, [target.lat, target.lng])
 
-  const getWeatherIcon = (condition: string) => {
-    switch (condition) {
-      case "맑음":
-        return <Sun className="h-8 w-8 text-yellow-400" />
-      case "구름 많음":
-        return <CloudSun className="h-8 w-8 text-gray-400" />
-      case "흐림":
-        return <Cloudy className="h-8 w-8 text-gray-500" />
-      case "비":
-        return <CloudRain className="h-8 w-8 text-blue-600" />
-      case "눈":
-        return <CloudSnow className="h-8 w-8 text-blue-300" />
-      default:
-        return <Cloud className="h-8 w-8 text-gray-400" />
+  // 비행 시간 창 내 최악값
+  const worst = useMemo(() => {
+    if (!view) return null
+    const rows = view.hours.slice(0, Math.max(1, Math.min(6, windowH + 1)))
+    return {
+      wind: Math.max(...rows.map((r) => r.wind)),
+      gust: Math.max(...rows.map((r) => r.gust)),
+      precip: Math.max(...rows.map((r) => r.precip)),
+      precipProb: Math.max(...rows.map((r) => r.precipProb)),
+      thunder: rows.some((r) => isThunder(r.code)),
+      temp: view.current.temp,
+      wave: rows.some((r) => r.wave !== null) ? Math.max(...rows.map((r) => r.wave ?? 0)) : null,
     }
-  }
+  }, [view, windowH])
 
-  const getSafetyColor = () =>
-    weatherData?.safetyLevel === "safe"
-      ? "text-green-600"
-      : weatherData?.safetyLevel === "caution"
-        ? "text-yellow-600"
-        : "text-red-600"
+  useEffect(() => {
+    if (!worst) return
+    onWeatherChange?.({
+      windSpeed: worst.wind,
+      windGust: worst.gust,
+      temperature: worst.temp,
+      precipitation: worst.precip,
+      precipitationProbability: worst.precipProb,
+      lightning: worst.thunder,
+      waveHeight: worst.wave,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worst])
+
+  const safety: "safe" | "caution" | "danger" = !worst
+    ? "safe"
+    : worst.thunder || worst.precip > 0 || worst.gust > KILL_GUST || worst.wind > 8
+      ? "danger"
+      : worst.wind > 5 || worst.precipProb >= 50
+        ? "caution"
+        : "safe"
+  const safetyMsg = !worst
+    ? ""
+    : worst.thunder ? "비행 시간 내 뇌우 예보 — 비행 금지"
+    : worst.precip > 0 ? "비행 시간 내 강수 예보 — 비행 금지"
+    : worst.gust > KILL_GUST ? `돌풍 ${worst.gust.toFixed(1)} m/s 예보 — 비행 금지`
+    : worst.wind > 8 ? "풍속이 매우 높습니다 — 비행 금지"
+    : worst.wind > 5 ? "바람이 조금 강합니다 — 주의"
+    : worst.precipProb >= 50 ? `강수 확률 ${worst.precipProb}% — 주의`
+    : "비행하기 좋은 조건입니다"
+  const safetyColor = safety === "safe" ? "text-green-600" : safety === "caution" ? "text-yellow-600" : "text-red-600"
+
+  useEffect(() => {
+    if (safety === "danger") { new Audio("/sounds/warning.mp3").play().catch(() => {}) }
+  }, [safety])
 
   return (
-    <Card className="w-full rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/70 backdrop-blur-xl transition-all duration-300 hover:shadow-lg motion-safe:hover:-translate-y-0.5 dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
+    <Card className="w-full rounded-3xl border border-slate-200/70 bg-white/80 shadow-[0_18px_42px_-34px_rgba(15,23,42,0.35)] ring-1 ring-white/70 backdrop-blur-xl transition-all duration-300 hover:shadow-lg dark:border-slate-800/60 dark:bg-slate-900/70 dark:ring-slate-800/70">
       <CardHeader className="border-b border-slate-200/60 pb-4 dark:border-slate-800/60">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Cloud className="h-5 w-5" />
-            기상 정보
-          </CardTitle>
-          <Badge
-            variant="outline"
-            className="border-slate-200/70 text-xs dark:border-slate-700/60"
-          >
-            {weatherData?.lastUpdate || "--:--:--"}
-          </Badge>
+          <CardTitle className="flex items-center gap-2"><Cloud className="h-5 w-5" />기상 정보</CardTitle>
+          <div className="flex items-center gap-1.5">
+            <Badge variant="outline" className="border-slate-200/70 text-[10px] text-slate-400 dark:border-slate-700/60">Open-Meteo 예보</Badge>
+            <Badge variant="outline" className="border-slate-200/70 text-xs dark:border-slate-700/60">{view?.lastUpdate || "--:--:--"}</Badge>
+          </div>
         </div>
 
-        {/* 지역 선택 드롭다운 */}
         <div className="relative mt-2">
           <button
-            onClick={() =>
-              !clickedCoordinates && setShowDropdown(!showDropdown)
-            }
-            disabled={!!clickedCoordinates}
-            className="flex w-full items-center justify-between rounded-xl border border-slate-200/70 bg-white/80 p-2 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/40 dark:border-slate-700/70 dark:bg-slate-900/70 dark:hover:bg-slate-800"
+            onClick={() => !location && setShowDropdown(!showDropdown)}
+            disabled={!!location}
+            className="flex w-full items-center justify-between rounded-xl border border-slate-200/70 bg-white/80 p-2 transition hover:bg-slate-50 dark:border-slate-700/70 dark:bg-slate-900/70"
           >
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-gray-500" />
-              <div>
-                <div className="font-medium">
-                  {clickedCoordinates ? "클릭한 위치" : selectedRegion.name}
-                </div>
-                <div className="text-xs text-gray-500">
-                  {clickedCoordinates
-                    ? `격자 (${clickedCoordinates.nx}, ${clickedCoordinates.ny})`
-                    : selectedRegion.description}
-                </div>
+              <div className="text-left">
+                <div className="font-medium">{location ? (location.label ?? "선택 위치") : selectedRegion.label}</div>
+                <div className="text-xs text-gray-500">{target.lat.toFixed(4)}, {target.lng.toFixed(4)}{!location && ` · ${selectedRegion.description}`}</div>
               </div>
             </div>
-            <ChevronDown
-              className={`h-4 w-4 transition-transform ${
-                showDropdown ? "rotate-180" : ""
-              }`}
-            />
+            {!location && <ChevronDown className={`h-4 w-4 transition-transform ${showDropdown ? "rotate-180" : ""}`} />}
           </button>
-
           {showDropdown && (
             <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-xl border border-slate-200/70 bg-white/95 shadow-xl backdrop-blur dark:border-slate-700/70 dark:bg-slate-900/95">
-              {REGIONS.map((region) => (
-                <button
-                  key={region.id}
-                  onClick={() => {
-                    setSelectedRegion(region)
-                    setShowDropdown(false)
-                  }}
-                  className="flex w-full items-center gap-2 p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
+              {REGIONS.map((r) => (
+                <button key={r.id} onClick={() => { setSelectedRegion(r); setShowDropdown(false) }} className="flex w-full items-center gap-2 p-2 transition hover:bg-slate-100 dark:hover:bg-slate-800">
                   <MapPin className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <div className="font-medium">{region.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {region.description}
-                    </div>
-                  </div>
+                  <div className="text-left"><div className="font-medium">{r.label}</div><div className="text-xs text-gray-500">{r.description}</div></div>
                 </button>
               ))}
             </div>
@@ -371,144 +278,97 @@ export function WeatherInfoCard({ clickedCoordinates, onWeatherChange }: Weather
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {weatherData ? (
+        {error && <div className="p-3 text-center text-sm text-red-500">{error}</div>}
+        {!error && !view && <div className="animate-pulse p-3 text-center text-gray-500">날씨 데이터를 불러오는 중...</div>}
+        {view && worst && (
           <>
-            {/* 주요 기상 요약 */}
-            <div
-              className={`flex items-center justify-between rounded-2xl border border-transparent p-4 ${
-                weatherData.safetyLevel === "safe"
-                  ? "bg-green-50 dark:bg-green-900/20"
-                  : weatherData.safetyLevel === "caution"
-                    ? "bg-yellow-50 dark:bg-yellow-900/20"
-                    : "bg-red-50 dark:bg-red-900/20"
-              }`}
-            >
+            <div className={`flex items-center justify-between rounded-2xl p-4 ${safety === "safe" ? "bg-green-50 dark:bg-green-900/20" : safety === "caution" ? "bg-yellow-50 dark:bg-yellow-900/20" : "bg-red-50 dark:bg-red-900/20"}`}>
               <div className="flex items-center gap-3">
-                {getWeatherIcon(weatherData.condition)}
+                {conditionIcon(view.current.code)}
                 <div>
-                  <div className="text-2xl font-bold">
-                    {weatherData.temperature}°C
-                  </div>
-                  <div className="text-sm text-gray-600">
-                    {weatherData.condition} • {weatherData.precipitation}
-                  </div>
+                  <div className="text-2xl font-bold">{view.current.temp.toFixed(1)}°C</div>
+                  <div className="text-sm text-gray-600">{codeToCondition(view.current.code)} • 강수확률 {view.current.precipProb}%</div>
                 </div>
               </div>
               <div className="text-right">
-                <div className={`text-sm font-semibold ${getSafetyColor()}`}>
-                  {weatherData.safetyLevel === "safe"
-                    ? "비행 가능"
-                    : weatherData.safetyLevel === "caution"
-                      ? "비행 주의"
-                      : "비행 금지"}
-                </div>
-                <div className="text-xs text-gray-500">
-                  강수확률 {weatherData.pop}%
-                </div>
+                <div className={`text-sm font-semibold ${safetyColor}`}>{safety === "safe" ? "비행 가능" : safety === "caution" ? "비행 주의" : "비행 금지"}</div>
+                <div className="text-xs text-gray-500">비행 창 {windowH}시간 기준</div>
               </div>
             </div>
 
-            {/* 세부 데이터 */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
-                <Droplets className="h-4 w-4 text-blue-500" />
-                <div>
-                  <div className="text-xs text-gray-600">습도</div>
-                  <div className="font-semibold">{weatherData.humidity}%</div>
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <Wind className="h-4 w-4 text-green-500" />
-                <div>
-                  <div className="text-xs text-gray-600">풍속</div>
-                  <div className="font-semibold">
-                    {weatherData.windSpeed}m/s
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
-                    <ArrowUp
-                      className="h-3 w-3 text-gray-500"
-                      style={{
-                        transform: `rotate(${
-                          weatherData.windDirection.includes("북")
-                            ? 0
-                            : weatherData.windDirection.includes("동")
-                              ? 90
-                              : weatherData.windDirection.includes("남")
-                                ? 180
-                                : 270
-                        }deg)`,
-                      }}
-                    />
-                    {weatherData.windDirection}
-                  </div>
-                </div>
+                <div><div className="text-xs text-gray-600">풍속 (최대)</div><div className="font-semibold">{worst.wind.toFixed(1)} m/s</div></div>
               </div>
-
               <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
-                <Eye className="h-4 w-4 text-purple-500" />
-                <div>
-                  <div className="text-xs text-gray-600">시정</div>
-                  <div className="font-semibold">
-                    {weatherData.visibility}km
-                  </div>
-                </div>
+                <ArrowUp className={`h-4 w-4 ${worst.gust > KILL_GUST ? "text-red-500" : "text-emerald-500"}`} />
+                <div><div className="text-xs text-gray-600">돌풍 (최대)</div><div className={`font-semibold ${worst.gust > KILL_GUST ? "text-red-600" : ""}`}>{worst.gust.toFixed(1)} m/s</div></div>
               </div>
-
               <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <CloudRain className="h-4 w-4 text-blue-600" />
-                <div>
-                  <div className="text-xs text-gray-600">강수량</div>
-                  <div className="font-semibold">
-                    {weatherData.precipitationAmount}mm
-                  </div>
-                </div>
+                <div><div className="text-xs text-gray-600">강수 (최대)</div><div className="font-semibold">{worst.precip.toFixed(1)} mm · {worst.precipProb}%</div></div>
               </div>
-
-              <div className="col-span-1 flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 sm:col-span-2 dark:border-slate-700/60 dark:bg-slate-800/70">
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
+                <Eye className="h-4 w-4 text-purple-500" />
+                <div><div className="text-xs text-gray-600">시정</div><div className="font-semibold">{view.current.visibility.toFixed(0)} km</div></div>
+              </div>
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
+                <Waves className="h-4 w-4 text-sky-500" />
+                <div><div className="text-xs text-gray-600">파고 (최대)</div><div className="font-semibold">{worst.wave !== null ? `${worst.wave.toFixed(1)} m` : "내륙"}</div></div>
+              </div>
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-slate-50/80 p-3 dark:border-slate-700/60 dark:bg-slate-800/70">
                 <Activity className="h-4 w-4 text-red-500" />
-                <div>
-                  <div className="text-xs text-gray-600">자기장 (Kp)</div>
-                  <div className="font-semibold">
-                    {weatherData.kpIndex ?? "--"}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {weatherData.kpIndex
-                      ? weatherData.kpIndex >= 6
-                        ? "⚠️ 매우 높음 (비행 금지)"
-                        : weatherData.kpIndex >= 4
-                          ? "주의 필요"
-                          : "안정"
-                      : "데이터 없음"}
-                  </div>
+                <div><div className="text-xs text-gray-600">자기장 (Kp)</div><div className="font-semibold">{view.kpIndex ?? "--"} <span className="text-xs font-normal text-gray-500">{view.kpIndex == null ? "" : view.kpIndex >= 6 ? "매우 높음" : view.kpIndex >= 4 ? "주의" : "안정"}</span></div></div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+              <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> 6시간 예보</span>
+                <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                  비행 창
+                  {[1, 2, 3].map((h) => (
+                    <button key={h} type="button" onClick={() => setWindowH(h)}
+                      className={`rounded px-1.5 py-0.5 font-semibold ${windowH === h ? "bg-sky-500 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}>
+                      {h}h
+                    </button>
+                  ))}
                 </div>
               </div>
+              <table className="w-full text-[11px]">
+                <thead className="text-slate-400">
+                  <tr><th className="py-1 pl-3 text-left font-medium">시각</th><th className="font-medium">날씨</th><th className="font-medium">풍속</th><th className="font-medium">돌풍</th><th className="font-medium">강수</th><th className="pr-3 font-medium">기온</th></tr>
+                </thead>
+                <tbody>
+                  {view.hours.map((r, i) => {
+                    const inWindow = i <= windowH
+                    const bad = isThunder(r.code) || r.precip > 0 || r.gust > KILL_GUST
+                    return (
+                      <tr key={r.time} className={`border-t border-slate-100 dark:border-slate-800 ${inWindow ? "bg-sky-50/60 dark:bg-sky-900/20" : ""} ${bad ? "text-red-600" : "text-slate-700"}`}>
+                        <td className="py-1 pl-3 font-semibold">{r.hour}{i === 0 && <span className="ml-1 text-[9px] font-normal text-slate-400">지금</span>}</td>
+                        <td className="text-center"><span className="inline-flex items-center gap-1">{conditionIcon(r.code, "h-3.5 w-3.5")}{codeToCondition(r.code)}</span></td>
+                        <td className="text-center tabular-nums">{r.wind.toFixed(1)}</td>
+                        <td className={`text-center tabular-nums ${r.gust > KILL_GUST ? "font-bold" : ""}`}>{r.gust.toFixed(1)}</td>
+                        <td className="text-center tabular-nums">{r.precip > 0 ? `${r.precip.toFixed(1)}mm` : `${r.precipProb}%`}</td>
+                        <td className="pr-3 text-right tabular-nums">{r.temp.toFixed(0)}°</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            {/* 안전 메시지 */}
-            <div className="rounded-xl border border-l-4 border-yellow-500 bg-yellow-50 p-3 dark:border-yellow-800/60 dark:bg-yellow-900/20">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className={`h-4 w-4 ${getSafetyColor()}`} />
-                <span className={`font-medium ${getSafetyColor()}`}>
-                  드론 비행 안전도
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                {weatherData.safetyMessage}
-              </p>
+            <div className={`rounded-xl border border-l-4 p-3 ${safety === "danger" ? "border-red-500 bg-red-50 dark:bg-red-900/20" : safety === "caution" ? "border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20" : "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20"}`}>
+              <div className="flex items-center gap-2"><AlertTriangle className={`h-4 w-4 ${safetyColor}`} /><span className={`font-medium ${safetyColor}`}>드론 비행 안전도 (비행 창 {windowH}시간)</span></div>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{safetyMsg}</p>
             </div>
 
-            {/* 자기장 경보 */}
-            {weatherData.kpIndex != null && weatherData.kpIndex >= 5 && (
-              <div className="rounded border border-red-200/80 bg-red-100 p-2 text-center text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/30 dark:text-red-200">
-                ⚠️ 지자기 폭풍 경보: GPS 이상 가능성 있음
-              </div>
+            {view.kpIndex != null && view.kpIndex >= 5 && (
+              <div className="rounded border border-red-200/80 bg-red-100 p-2 text-center text-sm text-red-700">⚠️ 지자기 폭풍 경보: GPS 이상 가능성 있음</div>
             )}
+            <p className="text-[10px] text-slate-400">※ 수치예보 모델 기반(Open-Meteo)이며 국지 실황과 차이가 있을 수 있습니다.</p>
           </>
-        ) : (
-          <div className="animate-pulse p-3 text-center text-gray-500">
-            날씨 데이터를 불러오는 중...
-          </div>
         )}
       </CardContent>
     </Card>

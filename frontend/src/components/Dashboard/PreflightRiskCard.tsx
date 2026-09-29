@@ -38,10 +38,13 @@ import {
 // 입력 데이터 인터페이스
 // =====================================================
 export interface PreflightWeather {
-  windSpeed?: number | null     // 지속풍속 m/s
-  windGust?: number | null      // 순간풍속(돌풍) m/s
-  temperature?: number | null   // 기온 °C
-  precipitation?: number | null // 강수량 mm/h (0 이면 없음)
+  windSpeed?: number | null               // 지속풍속 m/s (비행 창 내 최대)
+  windGust?: number | null                // 순간풍속(돌풍) m/s (비행 창 내 최대)
+  temperature?: number | null             // 기온 °C
+  precipitation?: number | null           // 강수량 mm/h (비행 창 내 최대)
+  precipitationProbability?: number | null // 강수 확률 %
+  lightning?: boolean | null              // 비행 창 내 뇌우 예보 여부
+  waveHeight?: number | null              // 파고 m (해상, 참고)
 }
 export interface PreflightDroneData {
   battery?: number | null        // 잔량 %
@@ -103,7 +106,8 @@ const KILL_GPS = 10       // 위성
 
 const KILLERS = [
   { id: "gust", short: "돌풍", label: "돌풍 — 순간풍속 12 m/s 초과", auto: "weather" },
-  { id: "precip", short: "강수", label: "강수 — 뇌우·우박·비·강설", auto: "weather" },
+  { id: "precip", short: "강수", label: "강수 — 비·강설 (비행 창 내 예보)", auto: "weather" },
+  { id: "lightning", short: "뇌우", label: "뇌우 — 비행 창 내 낙뢰 예보", auto: "weather" },
   { id: "battery", short: "배터리", label: "배터리 — 여유 20% 미만 또는 셀 편차 0.1V 초과", auto: "drone" },
   { id: "gps", short: "GPS", label: "GPS — 가시 위성 10개 미만", auto: "drone" },
   { id: "airspace", short: "공역", label: "공역 — 금지/제한구역 침범, 관제권 미승인", auto: null },
@@ -192,6 +196,7 @@ export function PreflightRiskCard({ connected = false, droneData, weather }: Pre
   const autoGust = isNum(weather?.windGust) ? weather!.windGust! : null
   const autoTemp = isNum(weather?.temperature) ? weather!.temperature! : null
   const autoPrecip = isNum(weather?.precipitation) ? weather!.precipitation! : null
+  const autoLightning = typeof weather?.lightning === "boolean" ? weather!.lightning! : null
   const autoBatt = connected && isNum(droneData?.battery) ? droneData!.battery! : null
   const autoSat = connected && isNum(droneData?.gpsSatellites) ? droneData!.gpsSatellites! : null
 
@@ -245,6 +250,7 @@ export function PreflightRiskCard({ connected = false, droneData, weather }: Pre
     const autoKillers: Record<KillerId, boolean> = {
       gust: autoGust !== null && autoGust > KILL_GUST,
       precip: autoPrecip !== null && autoPrecip > KILL_PRECIP,
+      lightning: autoLightning === true,
       battery: margin < KILL_BATT_MARGIN,
       gps: num(gpsSat, 30) < KILL_GPS,
       airspace: manualKillers.airspace,
@@ -264,7 +270,7 @@ export function PreflightRiskCard({ connected = false, droneData, weather }: Pre
       ],
       weighted, worstScore, finalScore, killerHit, verdict,
     }
-  }, [wind, temp, battRemain, battRequired, battTemp, battCycle, gpsSat, rssi, popGrade, obsGrade, manualKillers, autoGust, autoPrecip])
+  }, [wind, temp, battRemain, battRequired, battTemp, battCycle, gpsSat, rssi, popGrade, obsGrade, manualKillers, autoGust, autoPrecip, autoLightning])
 
   const verdictConfig = {
     go: { label: "비행 가능", sublabel: "정상 비행 실시", icon: <ShieldCheck className="h-8 w-8" />, bg: "from-emerald-500 to-teal-400", border: "border-emerald-200/60", bg2: "bg-emerald-50/80", text: "text-emerald-700" },
@@ -342,7 +348,7 @@ export function PreflightRiskCard({ connected = false, droneData, weather }: Pre
           {/* 0단계: 킬러 — 자동 감지 4 + 수동 2 */}
           <div className="rounded-2xl border border-slate-200/60 bg-slate-50/60 p-3.5">
             <p className="mb-2 text-xs font-semibold text-slate-600">
-              0단계 · 절대 금지 조건 <span className="font-normal text-slate-400">(돌풍·강수·배터리·GPS 자동 감지 / 공역·자가진단 체크)</span>
+              0단계 · 절대 금지 조건 <span className="font-normal text-slate-400">(돌풍·강수·뇌우·배터리·GPS 자동 감지 / 공역·자가진단 체크)</span>
             </p>
             <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
               {KILLERS.map((k) => {
@@ -352,6 +358,7 @@ export function PreflightRiskCard({ connected = false, droneData, weather }: Pre
                 const hasData =
                   k.id === "gust" ? autoGust !== null
                   : k.id === "precip" ? autoPrecip !== null
+                  : k.id === "lightning" ? autoLightning !== null
                   : k.id === "battery" ? true
                   : k.id === "gps" ? true
                   : true
@@ -387,7 +394,12 @@ export function PreflightRiskCard({ connected = false, droneData, weather }: Pre
               <NumRow label="기온" unit="°C" value={temp} onChange={setTemp} grade={r.g.temp}
                 source="weather" autoValue={autoTemp} overridden={ovr.temp} onToggleOverride={() => setOvr({ ...ovr, temp: !ovr.temp })} />
               {autoGust !== null && (
-                <p className="mt-1 text-[10px] text-slate-400">돌풍 {autoGust.toFixed(1)} m/s (킬러 기준 {KILL_GUST}) · 강수 {autoPrecip !== null ? `${autoPrecip.toFixed(1)} mm/h` : "–"}</p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  비행 창 최대 — 돌풍 {autoGust.toFixed(1)} m/s (기준 {KILL_GUST}) · 강수 {autoPrecip !== null ? `${autoPrecip.toFixed(1)} mm` : "–"}
+                  {isNum(weather?.precipitationProbability) && ` · 확률 ${weather!.precipitationProbability}%`}
+                  {autoLightning ? " · ⚡ 뇌우" : ""}
+                  {isNum(weather?.waveHeight) && ` · 파고 ${weather!.waveHeight!.toFixed(1)} m`}
+                </p>
               )}
             </div>
 

@@ -1822,6 +1822,14 @@ export function UavDashboard() {
   const [simMode, setSimMode] = useState(false)
   // 기상 카드가 조회한 최신 값 (비행 전 복합 위험 점수 자동 입력용)
   const [weatherSnapshot, setWeatherSnapshot] = useState<PreflightWeather | null>(null)
+  // 기상 조회 위치: 드론 연결 시 드론 GPS 우선, 아니면 지도 클릭 격자의 중심 위경도(역변환)
+  const weatherLocation = (() => {
+    if (clickedCoordinates) {
+      const ll = convertGRID_GPS("toLL", clickedCoordinates.nx, clickedCoordinates.ny)
+      return { lat: ll.lat, lng: ll.lng, label: "지도 선택 위치" }
+    }
+    return null
+  })()
   const [simScenario, setSimScenario] = useState<"normal" | "battery" | "gps">(
     "normal",
   )
@@ -2735,7 +2743,8 @@ export function UavDashboard() {
             {!collapseTopPanel && (
               <div className="p-3">
                 <WeatherInfoCard
-                  clickedCoordinates={clickedCoordinates}
+                  location={weatherLocation}
+                  flightWindowHours={1}
                   onWeatherChange={setWeatherSnapshot}
                 />
               </div>
