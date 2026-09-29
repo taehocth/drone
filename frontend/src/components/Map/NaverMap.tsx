@@ -1715,33 +1715,21 @@ export function NaverMap({
 
   const fetchWeatherData = async (nx: number, ny: number) => {
     try {
-      const now = new Date()
-      now.setMinutes(now.getMinutes() - 40)
-      const yy = now.getFullYear()
-      const mm = String(now.getMonth() + 1).padStart(2, "0")
-      const dd = String(now.getDate()).padStart(2, "0")
-      const hh = String(now.getHours()).padStart(2, "0")
-      const res = await fetch(
-        `${API_BASE_URL}/weather/?nx=${nx}&ny=${ny}&base_date=${yy}${mm}${dd}&base_time=${hh}00`,
-      )
+      // Open-Meteo 프록시 (레거시 격자 호환 엔드포인트) — 서버가 격자→위경도 변환 후 예보 반환
+      const res = await fetch(`${API_BASE_URL}/api/v1/weather/?nx=${nx}&ny=${ny}&hours=1`)
       if (!res.ok) return
       const data = await res.json()
-      const items = data?.response?.body?.items?.item ?? []
-      let temperature = 0,
-        windSpeed = 0,
-        precipitationAmount = 0
-      for (const item of items) {
-        if (item.category === "T1H") temperature = parseFloat(item.obsrValue)
-        if (item.category === "WSD") windSpeed = parseFloat(item.obsrValue)
-        if (item.category === "RN1")
-          precipitationAmount = parseFloat(item.obsrValue)
-      }
-      setWeatherData({ temperature, windSpeed, precipitationAmount })
+      const cur = data?.current
+      if (!cur) return
+      setWeatherData({
+        temperature: Number(cur.temp ?? 0),
+        windSpeed: Number(cur.wind ?? 0),
+        precipitationAmount: Number(cur.precip ?? 0),
+      })
     } catch (err) {
       console.error("날씨 API 실패:", err)
     }
   }
-
   const handleSearch = async () => {
     if (!mapInstance.current) return
     try {

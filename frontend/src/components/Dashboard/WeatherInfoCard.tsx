@@ -8,8 +8,10 @@ import {
 import type { PreflightWeather } from "@/components/Dashboard/PreflightRiskCard"
 
 /* =============================================================
- * WeatherInfoCard — Open-Meteo 단일 소스 (무료, 키 불필요, 위경도 직접 조회)
+ * WeatherInfoCard — Open-Meteo 단일 소스 (백엔드 프록시 /weather/forecast 경유)
  * -------------------------------------------------------------
+ *  - 브라우저가 Open-Meteo 를 직접 부르지 않고 서버(weather.py)가 대신 호출
+ *    → 관제 PC 가 외부 API 차단망에 있어도 동작, 소스 교체는 서버 한 곳만
  *  - 시간별 예보 6시간: 풍속·돌풍·강수·강수확률·기온·뇌우(weather_code)·시정
  *  - Marine API 파고(해상 좌표일 때)
  *  - NOAA Kp 지수 (기존 유지)
@@ -82,67 +84,38 @@ function conditionIcon(code: number, cls = "h-8 w-8") {
   return <Sun className={`${cls} text-yellow-400`} />
 }
 
-async function fetchKpIndex(): Promise<number | null> {
-  try {
-    const res = await fetch("https://services.swpc.noaa.gov/json/planetary_k_index_1m.json")
-    const data = await res.json()
-    return data[data.length - 1]?.kp_index ?? null
-  } catch {
-    return null
-  }
+// ✅ API URL 헬퍼 — VITE_API_URL 값이 무엇이든 항상 /api/v1 을 한 번만 붙인다.
+function buildApiUrl(path: string): string {
+  const raw = (import.meta.env.VITE_API_URL as string | undefined) || "/api/v1"
+  let base = raw.replace(/\/+$/, "")
+  if (!base.endsWith("/api/v1")) base = `${base}/api/v1`
+  return `${base}${path}`
 }
 
-async function fetchOpenMeteo(loc: WeatherLocation): Promise<Omit<WeatherView, "kpIndex" | "lastUpdate">> {
-  const params = new URLSearchParams({
-    latitude: loc.lat.toFixed(4),
-    longitude: loc.lng.toFixed(4),
-    hourly: "temperature_2m,precipitation,precipitation_probability,wind_speed_10m,wind_gusts_10m,weather_code,visibility",
-    wind_speed_unit: "ms",
-    timezone: "Asia/Seoul",
-    forecast_days: "2",
-  })
-  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`)
-  if (!res.ok) throw new Error(`Open-Meteo ${res.status}`)
-  const d = await res.json()
-  const h = d.hourly
+interface ProxyHour {
+  time: string; hour: string; temp: number; wind: number; gust: number; wind_dir: number
+  precip: number; precip_prob: number; code: number; condition: string; visibility_km: number; wave: number | null
+}
+interface ProxyResponse {
+  source: string
+  hours: ProxyHour[]
+  current: ProxyHour | null
+  kp_index: number | null
+  fetched_at: string
+}
 
-  // 파고 (해상 좌표일 때만 값이 옴; 내륙은 오류/NaN → null)
-  let waves: (number | null)[] = []
-  try {
-    const mp = new URLSearchParams({
-      latitude: loc.lat.toFixed(4), longitude: loc.lng.toFixed(4),
-      hourly: "wave_height", timezone: "Asia/Seoul", forecast_days: "2",
-    })
-    const mr = await fetch(`https://marine-api.open-meteo.com/v1/marine?${mp}`)
-    if (mr.ok) {
-      const md = await mr.json()
-      waves = (md.hourly?.wave_height ?? []) as (number | null)[]
-    }
-  } catch { /* 내륙 등 — 파고 없음 */ }
-
-  // 현재 시각이 속한 시간 슬롯부터 6개
-  const now = Date.now()
-  const times: string[] = h.time
-  let idx = times.findIndex((t) => new Date(t).getTime() > now - 3600_000)
-  if (idx < 0) idx = 0
-
-  const rows: HourRow[] = []
-  for (let i = idx; i < Math.min(idx + 6, times.length); i++) {
-    const t = new Date(times[i])
-    rows.push({
-      time: times[i],
-      hour: `${t.getHours()}시`,
-      temp: h.temperature_2m[i],
-      wind: h.wind_speed_10m[i],
-      gust: h.wind_gusts_10m[i],
-      precip: h.precipitation[i] ?? 0,
-      precipProb: h.precipitation_probability?.[i] ?? 0,
-      code: h.weather_code[i],
-      visibility: (h.visibility?.[i] ?? 10000) / 1000,
-      wave: typeof waves[i] === "number" && Number.isFinite(waves[i]) ? (waves[i] as number) : null,
-    })
-  }
-  return { current: rows[0], hours: rows }
+async function fetchForecast(loc: WeatherLocation): Promise<Omit<WeatherView, "lastUpdate">> {
+  const url = buildApiUrl(`/weather/forecast?lat=${loc.lat.toFixed(4)}&lon=${loc.lng.toFixed(4)}&hours=6`)
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`weather proxy ${res.status}`)
+  const d: ProxyResponse = await res.json()
+  if (!d.hours?.length) throw new Error("예보 데이터 없음")
+  const rows: HourRow[] = d.hours.map((r) => ({
+    time: r.time, hour: r.hour, temp: r.temp, wind: r.wind, gust: r.gust,
+    precip: r.precip ?? 0, precipProb: r.precip_prob ?? 0, code: r.code,
+    visibility: r.visibility_km ?? 10, wave: r.wave,
+  }))
+  return { current: rows[0], hours: rows, kpIndex: d.kp_index }
 }
 
 interface WeatherInfoCardProps {
@@ -166,16 +139,16 @@ export function WeatherInfoCard({ location, flightWindowHours = 1, onWeatherChan
     let cancelled = false
     const load = async () => {
       try {
-        const [om, kp] = await Promise.all([fetchOpenMeteo(target), fetchKpIndex()])
+        const fc = await fetchForecast(target)
         if (cancelled) return
         setError(null)
         setView({
-          ...om, kpIndex: kp,
+          ...fc,
           lastUpdate: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }),
         })
       } catch (e) {
         if (cancelled) return
-        console.error("Open-Meteo 불러오기 실패:", e)
+        console.error("기상 예보 불러오기 실패:", e)
         setError("기상 데이터를 불러오지 못했습니다")
         setView(null)
         onWeatherChange?.({})
