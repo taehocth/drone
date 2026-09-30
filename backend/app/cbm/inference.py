@@ -1,11 +1,20 @@
 """
-app/cbm/inference.py  (14-feature 배포 버전)
+app/cbm/inference.py  (14-feature 배포 버전 / 예측 대상 정합 수정판)
 
 역할:
   1. 서버 시작 시 drone_id별 CNN-LSTM 모델 + 정규화 통계 로드
-  2. collector.py 의 슬라이딩 윈도우(20, 14)를 받아 추론
+  2. collector.py 의 버퍼(21, 14)를 받아 "앞 20행 → 다음 1행" 예측 후 실측과 비교
   3. 드론별 상태 유지형 판정: fail_count(연속 초과) + CUSUM(누적) + severe(심각도 가중 즉시 확정)
   4. 탐지 결과를 evaluator.py / cbm_ws.py 가 사용할 수 있는 형태로 반환
+
+[★ 수정: 학습/추론 예측 대상 정합]
+  학습:  입력 seg[0:20]  →  정답 seg[20]   (다음 시점 예측)
+  이전 추론: 입력 window[0:20] → 비교 window[19]  (입력에 포함된 현재 시점과 비교 — 불일치)
+  수정 추론: 입력 window[0:20] → 비교 window[20]  (학습과 동일)
+  - yaw unwrap 도 학습처럼 21행 전체에 대해 수행한 뒤 입력/정답으로 분할.
+  - 오차의 의미가 "1초 변화량"에서 "진짜 예측 오차"로 바뀌므로
+    FAIL_THRESHOLDS_OVERRIDE 는 정상 비행 리플레이로 반드시 재튜닝할 것.
+    (자동 임계값 rmse_train + sig 는 학습과 같은 정의라 그대로 유효)
 
 [14피처 구성] collector.AI_FEATURE_COLS 와 동일 순서
   new 0  volt            new 1  current
@@ -13,11 +22,10 @@ app/cbm/inference.py  (14-feature 배포 버전)
   new 8~11 pwm_dev1~4 (모터 출력 편차 = 각 모터 − 4모터 평균)
   new 12   accel_vib_metric  new 13  gyro_vib_metric  (PX4 VIBRATION)
 
-[판정 로직 — 사고 로그(2026-09-11) 리플레이로 검증된 설정]
+[판정 로직]
   - fail_count: 임계 초과가 N회 연속. 기존 피처 10회, 파생(pwm_dev·진동) 5회
   - severe fast path: 파생 피처가 임계의 2배 이상을 2회 연속 → 즉시 확정
-    (리플레이: 확정 경보 841→837초로 단축, 정상 비행 오탐 0 유지)
-  - CUSUM: 임계 아래의 지속 이탈 누적 (기존과 동일)
+  - CUSUM: 임계 아래의 지속 이탈 누적
   - 알람에 모터 물리 위치(position) 포함 → 화면에 "후방 우측 모터" 로 표시
 
 [유지] volt 는 6S/12S 혼재로 AI 제외(규칙 기반 담당). 셀당 전압 라운드 후 복귀 검토.
@@ -33,7 +41,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from app.cbm.collector import get_window, reset_window, get_missing_features, AI_FEATURE_COLS, MOTOR_POSITION
+from app.cbm.collector import (
+    get_window, reset_window, get_missing_features,
+    AI_FEATURE_COLS, MOTOR_POSITION, WIN_SIZE, BUF_SIZE,
+)
 
 # ── 모델 기본 경로 ──────────────────────────────────────
 _BASE = Path(__file__).parent / "models"
@@ -47,7 +58,7 @@ DRONE_MODEL_MAP = {
 
 # ── 이상 탐지 파라미터 ──────────────────────────────────
 DETECT_FAIL_CNT  = 10     # 기존 피처(전원·자세) 연속 초과 횟수
-DERIVED_FAIL_CNT = 5      # 파생 피처(pwm_dev·진동) 연속 초과 횟수 — 리플레이 검증값
+DERIVED_FAIL_CNT = 5      # 파생 피처(pwm_dev·진동) 연속 초과 횟수
 CUSUM_THRESHOLD  = 30.0
 CUSUM_DRIFT      = 0.25
 CUSUM_MU0_MARGIN = 3.0
@@ -72,7 +83,10 @@ YAW_COLS_NEW = [AI_FEATURE_COLS.index(5), AI_FEATURE_COLS.index(8)]  # = [2, 5]
 AI_DISABLED_FEATURES = {"volt"}
 
 # ── 피처별 fail_count 임계값 override (없으면 자동값 rmse+sig) ──
-#   기존 8개는 배포본 실측 튠 유지. 파생 피처는 자동값 사용 (리플레이에서 원안 임계로 검증됨).
+#   ⚠️ 아래 값들은 "예측 대상 불일치" 상태에서 튜닝된 값이다.
+#      수정 후 오차 분포가 달라지므로 정상 비행 리플레이로 재튜닝 필요.
+#      재튜닝 전까지는 USE_THRESHOLD_OVERRIDE = False 로 자동 임계값을 쓰는 것도 방법.
+USE_THRESHOLD_OVERRIDE = True
 FAIL_THRESHOLDS_OVERRIDE = {
     0: 0.8,    # volt (AI 제외 — 참고)
     1: 0.5,    # current
@@ -130,7 +144,7 @@ def _position_for(name: str) -> Optional[str]:
 
 
 # ════════════════════════════════════════════════════════
-# CNN-LSTM 모델
+# CNN-LSTM 모델 (학습 코드와 동일 구조)
 # ════════════════════════════════════════════════════════
 class CNNLSTM(nn.Module):
     def __init__(self, win_s, num_features, output_dim,
@@ -205,11 +219,16 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         win_s  = int(stats["win_s"])
         n_feat = mu.shape[0]
 
+        # ── 학습/수집 설정 동기화 검증 ──
         train_cols = stats.get("feature_cols")
         if train_cols is not None and list(train_cols) != list(AI_FEATURE_COLS):
             print(f"[inference] ⚠️ feature_cols 불일치! 학습={train_cols} vs collector={AI_FEATURE_COLS}")
         if n_feat != len(AI_FEATURE_COLS):
             print(f"[inference] ⚠️ 피처 수 불일치! stats={n_feat} vs collector={len(AI_FEATURE_COLS)}")
+        if win_s != WIN_SIZE:
+            # ★ 학습 win_s 와 collector 버퍼 크기가 다르면 입력/정답 분할이 어긋난다
+            print(f"[inference] ❌ win_s 불일치! 학습={win_s} vs collector WIN_SIZE={WIN_SIZE} → 로드 중단")
+            return None
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ckpt   = torch.load(model_path, map_location=device, weights_only=False)
@@ -223,16 +242,18 @@ def _load_bundle(model_path: Path, pkl_path: Path, label: str) -> Optional[_Mode
         min_len    = min(len(rmse_train), len(sig))
 
         thresholds = rmse_train[:min_len] + sig[:min_len]
-        for feat_idx, override_val in FAIL_THRESHOLDS_OVERRIDE.items():
-            if feat_idx < min_len:
-                thresholds[feat_idx] = override_val
+        if USE_THRESHOLD_OVERRIDE:
+            for feat_idx, override_val in FAIL_THRESHOLDS_OVERRIDE.items():
+                if feat_idx < min_len:
+                    thresholds[feat_idx] = override_val
 
         cusum_mu0 = (rmse_train[:min_len] / sig[:min_len] * CUSUM_MU0_MARGIN).astype(np.float32)
         for feat_idx in range(min_len):
             fname = FEATURE_NAMES[feat_idx] if feat_idx < len(FEATURE_NAMES) else None
             cusum_mu0[feat_idx] *= FEATURE_MU0_MULT.get(fname, 1.0) if fname else 1.0
 
-        print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} n_feat={n_feat} n_out={n_out}")
+        print(f"[inference] ✅ [{label}] 모델 로드 완료 win_s={win_s} (버퍼 {BUF_SIZE}행: 입력 {win_s} + 정답 1) "
+              f"n_feat={n_feat} n_out={n_out}")
         print(f"[inference]    임계값: " + ", ".join(
             f"{FEATURE_NAMES[i]}={thresholds[i]:.3f}" for i in range(min(min_len, len(FEATURE_NAMES)))))
         return _ModelBundle(model, device, mu, sig, win_s, n_feat, n_out,
@@ -276,6 +297,7 @@ class InferenceEngine:
 
     @staticmethod
     def _fix_yaw(X):
+        """학습의 convert_yawSign 과 동일 로직. 21행(입력+정답) 전체에 대해 적용."""
         X = X.copy()
         for col in YAW_COLS_NEW:
             if col >= X.shape[1]:
@@ -317,25 +339,31 @@ class InferenceEngine:
         if bundle is None:
             return []
 
-        window = get_window(drone_id)   # (20, 14)
+        window = get_window(drone_id)   # (21, 14) = 입력 20 + 정답 1
         if window is None:
+            return []
+        if window.shape[0] != bundle.win_s + 1:
+            print(f"[inference] ⚠️ 버퍼 크기 불일치: {window.shape[0]} != win_s+1({bundle.win_s + 1})")
             return []
 
         state = self._get_state(drone_id, bundle)
 
+        # ── ★ 학습과 동일: 21행 전체 unwrap → 정규화 → [앞 20행 | 마지막 1행] 분할 ──
         window_fixed = self._fix_yaw(window)
         x_norm       = (window_fixed - bundle.mu) / bundle.sig
 
-        y_true_norm = torch.tensor(x_norm[-1], dtype=torch.float32)
-        x_tensor    = torch.tensor(x_norm, dtype=torch.float32).unsqueeze(0).to(bundle.device)
+        x_input_norm = x_norm[:-1]                        # (20, 14)  모델 입력 (t-19 ~ t)
+        y_true_norm  = x_norm[-1, :bundle.n_out]          # (14,)     정답 (t+1 실측)
+
+        x_tensor = torch.tensor(x_input_norm, dtype=torch.float32).unsqueeze(0).to(bundle.device)
 
         with torch.no_grad():
-            y_pred_norm = bundle.model(x_tensor).squeeze(0).cpu()
+            y_pred_norm = bundle.model(x_tensor).squeeze(0).cpu().numpy()   # (14,) t+1 예측
 
-        y_pred   = y_pred_norm.numpy() * bundle.sig[:bundle.n_out] + bundle.mu[:bundle.n_out]
-        y_true   = y_true_norm.numpy() * bundle.sig[:bundle.n_out] + bundle.mu[:bundle.n_out]
-        err      = np.abs(y_pred - y_true)
-        err_norm = np.abs(y_pred_norm.numpy() - y_true_norm.numpy())
+        y_pred   = y_pred_norm * bundle.sig[:bundle.n_out] + bundle.mu[:bundle.n_out]
+        y_true   = y_true_norm * bundle.sig[:bundle.n_out] + bundle.mu[:bundle.n_out]
+        err      = np.abs(y_pred - y_true)            # 원본 스케일 오차 (fail_count / severe 용)
+        err_norm = np.abs(y_pred_norm - y_true_norm)  # 정규화 스케일 오차 (CUSUM 용)
 
         alerts: List[dict] = []
         n = min(bundle.n_out, bundle.n_feat)

@@ -1,15 +1,22 @@
 """
-app/cbm/collector.py  (14-feature 배포 버전)
+app/cbm/collector.py  (14-feature 배포 버전 / 예측 대상 정합 수정판)
 
 역할:
   1. vehicle_registry 에서 실시간 드론 데이터를 가져옴
   2. CNN-LSTM 입력 피처를 매핑·추출
-     - 내부적으로 학습 CSV(ulg_to_csv v3, 43컬럼)와 같은 43개 슬롯을 만들되,
+     - 내부적으로 학습 CSV(ulg_to_csv v3)와 같은 슬롯 배치(43개)를 만들되,
        AI(CNN-LSTM)에 넘기는 윈도우는 AI_FEATURE_COLS 14개만 슬라이스한다.
-     - 실시간으로 계산 불가한 슬롯(고주파 진동 34~36, 제어기 적분항 39~41 등)은 0 으로 채움.
+     - 실시간으로 계산 불가한 슬롯(고주파 진동 31~36, 제어기 적분항 39~41 등)은 0 으로 채움.
        → 이 슬롯들은 AI_FEATURE_COLS 에 포함하지 않으므로 모델 입력에 영향 없음.
-  3. 드론 ID별 슬라이딩 윈도우 버퍼(deque, win_s=20) 관리 → AI용 14피처
+  3. 드론 ID별 슬라이딩 윈도우 버퍼(deque, BUF_SIZE=21) 관리 → AI용 14피처
   4. 규칙 기반 evaluator 용 SimpleNamespace 도 함께 반환
+
+[★ 수정: 학습/추론 예측 대상 정합]
+  학습(cnnlstm_retrain.py)은  X = seg[0:20] (입력 20행),  Y = seg[20] (21번째 행 = 다음 시점).
+  이전 추론은 20행을 전부 입력으로 넣고 입력의 마지막 행과 비교 → "t+1 예측 vs t 실측" 불일치.
+  → 버퍼를 WIN_SIZE + 1 = 21 로 늘려,
+       앞 20행 = 모델 입력,  마지막 1행 = 정답(실측)
+    으로 학습과 동일하게 맞춘다. (분할은 inference.py 에서 수행)
 
 [중요] AI 학습(cnnlstm_retrain.py) / 추론(inference.py) 과 반드시 동일해야 하는 약속:
   AI_FEATURE_COLS = [0,1,5,6,7,8,9,10, 27,28,29,30, 37,38]
@@ -35,8 +42,9 @@ import numpy as np
 from app.mavlink.manager import get_vehicle_registry
 
 # ── 상수 ────────────────────────────────────────────────
-WIN_SIZE = 20              # CNN-LSTM 윈도우 크기 (학습 시 win_s=20)
-NUM_FEATURES_RAW = 43      # _extract_features_raw 가 만드는 원본 슬롯 수 (학습 CSV 43컬럼과 동일)
+WIN_SIZE = 20              # CNN-LSTM 입력 윈도우 크기 (학습 시 win_s=20)
+BUF_SIZE = WIN_SIZE + 1    # ★ 입력 20행 + 정답 1행 (학습의 seg[k:k+win_s+1] 과 동일)
+NUM_FEATURES_RAW = 43      # _extract_features_raw 가 만드는 원본 슬롯 수
 
 # ── AI(CNN-LSTM)에 실제로 넘길 원본 컬럼 인덱스 ──────────
 #   cnnlstm_retrain.py 의 FEATURE_COLS, inference.py 의 FEATURE_NAMES 와 100% 동일해야 함.
@@ -76,7 +84,7 @@ def _f(v, default=0.0) -> float:
 def _extract_features_raw(snap: dict) -> Optional[List[float]]:
     """
     vehicle_registry.latest_flattened() 스냅샷에서 43개 원본 슬롯을 만든다.
-    (학습 CSV ulg_to_csv v3 의 컬럼 순서와 동일)
+    (학습 CSV ulg_to_csv v3 의 컬럼 순서와 동일, 42번은 실시간 전용 참고값)
 
      0  volt                  1  current
      2~4  gps lat/lon/alt                          (AI 미사용)
@@ -221,7 +229,6 @@ def _build_rule_namespace(snap: dict, raw: Optional[List[float]] = None) -> Simp
         pwm2          = pwm2,
         pwm3          = pwm3,
         pwm4          = pwm4,
-        # 신규: 모터 편차·진동 메트릭 (표시/규칙용)
         pwm_dev1      = pwm_dev[0],
         pwm_dev2      = pwm_dev[1],
         pwm_dev3      = pwm_dev[2],
@@ -238,7 +245,7 @@ def _build_rule_namespace(snap: dict, raw: Optional[List[float]] = None) -> Simp
 def update_window(drone_id: Optional[str] = None) -> Optional[str]:
     """
     vehicle_registry에서 최신 스냅샷을 가져와
-    해당 드론의 슬라이딩 윈도우 버퍼(AI용 14피처)에 추가.
+    해당 드론의 슬라이딩 윈도우 버퍼(AI용 14피처, 최대 BUF_SIZE=21행)에 추가.
     ※ 호출 주기는 cbm_ws.py 의 SAMPLE_INTERVAL(1초) — 학습 데이터(1Hz)와 동일해야 함.
     """
     global _latest_telemetry
@@ -261,7 +268,7 @@ def update_window(drone_id: Optional[str] = None) -> Optional[str]:
     ai_features = _slice_ai_features(raw)   # len == 14
 
     if did not in _window_buffers:
-        _window_buffers[did] = deque(maxlen=WIN_SIZE)
+        _window_buffers[did] = deque(maxlen=BUF_SIZE)   # ★ 20 → 21
     _window_buffers[did].append(ai_features)
 
     _latest_telemetry = _build_rule_namespace(snap, raw)
@@ -270,9 +277,13 @@ def update_window(drone_id: Optional[str] = None) -> Optional[str]:
 
 
 def get_window(drone_id: str) -> Optional[np.ndarray]:
-    """윈도우가 WIN_SIZE(20)개 채워진 경우에만 반환. shape: (20, 14)"""
+    """
+    버퍼가 BUF_SIZE(21)개 채워진 경우에만 반환. shape: (21, 14)
+      [:-1] (앞 20행) → 모델 입력
+      [-1]  (마지막 1행) → 정답(실측), 모델 예측과 비교
+    """
     buf = _window_buffers.get(drone_id)
-    if buf is None or len(buf) < WIN_SIZE:
+    if buf is None or len(buf) < BUF_SIZE:
         return None
     return np.array(list(buf), dtype=np.float32)
 
