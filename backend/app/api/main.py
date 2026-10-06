@@ -15,11 +15,10 @@ api_router.include_router(items.router)
 api_router.include_router(
     checklist.router, prefix="/checklists", tags=["checklists"]
 )
-api_router.include_router(fire.router, prefix="/fire", tags=["fire"]) app.include_router(fire.router, prefix="/api/v1/fire", tags=["fire"])
+api_router.include_router(fire.router, prefix="/fire", tags=["fire"])
 
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)
 
 # 최종 등록: 모든 라우트는 /api/v1/* 로 접속 가능
 app.include_router(api_router, prefix="/api/v1")
-
