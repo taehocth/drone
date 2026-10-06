@@ -15,8 +15,8 @@ api_router.include_router(items.router)
 api_router.include_router(
     checklist.router, prefix="/checklists", tags=["checklists"]
 )
+api_router.include_router(fire.router, prefix="/fire", tags=["fire"]) app.include_router(fire.router, prefix="/api/v1/fire", tags=["fire"])
 
-  app.include_router(fire.router, prefix="/api/v1/fire", tags=["fire"])
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)
 
