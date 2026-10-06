@@ -2,9 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import api_router
-from app.api.routes import cbm, vehicles   # ✅ vehicles 추가
+from app.api.routes import cbm, vehicles, fire   # ✅ vehicles 추가
 from app.core.config import settings
 from app.mavlink.manager import start_mavlink_background  # ✅ MAVLink 백그라운드
+
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -72,6 +73,15 @@ app.include_router(
     cbm.router,
     prefix=settings.API_V1_STR,
     tags=["cbm"],
+)
+
+# ----------------------
+# 화점탐지 기체 실시간 (/api/v1/fire/*)
+# ----------------------
+app.include_router(
+    fire.router,
+    prefix=f"{settings.API_V1_STR}/fire",
+    tags=["fire"],
 )
 
 # ----------------------
