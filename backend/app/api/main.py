@@ -1,6 +1,7 @@
 from fastapi import FastAPI, APIRouter
 from app.api.routes import items, login, private, users, utils, checklist
 from app.core.config import settings
+from app.api.routes import fire
 
 app = FastAPI()
 
@@ -15,6 +16,7 @@ api_router.include_router(
     checklist.router, prefix="/checklists", tags=["checklists"]
 )
 
+  app.include_router(fire.router, prefix="/api/v1/fire", tags=["fire"])
 if settings.ENVIRONMENT == "local":
     api_router.include_router(private.router)
 

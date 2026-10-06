@@ -14,6 +14,7 @@ import SimDroneSimulation from "./SimDroneSimulation"
 import { SimCBMCard } from "./SimCBMCard"
 import { GeminiChatCard } from "@/components/Dashboard/GeminiChatCard"
 import { PreflightRiskCard, type PreflightWeather } from "@/components/Dashboard/PreflightRiskCard"
+import { FireCameraCard } from "@/components/Dashboard/FireCameraCard"
 import {
   MapPin,
   Cloud,
@@ -2869,7 +2870,7 @@ export function UavDashboard() {
             {aiCard}
           </div>
         </div>
-
+        <FireCameraCard />
         {/* ===== 지도 아래: 기체 실시간 정보(좌) + 복합 위험 점수·비행 이벤트 로그(우) ===== */}
         <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
           <div className="space-y-8">
