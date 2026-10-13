@@ -1,29 +1,19 @@
 """
 app/api/routes/cbm_ws.py
 
-변경사항:
-  1. drone_id 쿼리 파라미터 수신 → collector / inference 에 전달
-  2. update_window() 호출로 슬라이딩 윈도우 버퍼 갱신
-  3. 이상 감지 시 즉시 전송 / 정상 시 2초 주기 유지
-  4. 윈도우 충족 상태(버퍼 크기) 페이로드에 포함
-  5. Failsafe 판정 결과 페이로드에 추가
-  6. GET /cbm/status            — 현재 상태 REST 조회
-  7. POST /cbm/reset/{drone_id} — 세션 전환 시 CUSUM·버퍼·Failsafe 초기화
+변경사항 (이번 수정):
+  ★ Jev 판단 보조(advisor) 연동
+     - 1초 판정 블록에서 alerts 를 advisor.evaluate_advisor_async() 에 넘겨 결과를 payload["advisor"] 로 전송.
+     - 이상이 없으면 호출하지 않음(idle), API 키가 없으면 disabled, 실패 시 unavailable.
+       어느 경우에도 기존 알람·판정 흐름에는 영향 없음 (표시 전용, 명령 없음).
+     - POST /cbm/advisor/feedback  — 운용자 동의/비동의 기록
+     - GET  /cbm/advisor/log       — 판단 기록(JSONL) 최근 N건 조회
+  ★ 버퍼 21행 반영: 워밍업 판정 기준을 20 → BUF_SIZE(21) 로 (collector/inference 수정과 짝)
+  ★ GET /cbm/status 가 evaluate_cbm_state() 를 다시 돌려 fail_count/CUSUM 을 중복 누적하던 문제 제거:
+     WebSocket 루프가 캐시한 최근 결과를 반환(조회 전용).
 
-  ★ 샘플링 주기 / 송신 주기 분리 (시간 축 정합):
-     - 학습 데이터(1초/줄)와 동일하게 윈도우 샘플 추가·AI 판정은 SAMPLE_INTERVAL(1.0초) 고정.
-     - WebSocket 송신 주기만 상태별 가변(0.5/1/2초) — UI 반응성 유지.
-     - 이전에는 한 sleep 이 둘을 겸해, 정상 시 2초·알람 시 0.5초 간격으로 샘플이 쌓여
-       모델이 학습한 시간 폭(20줄=20초)이 40초/10초로 왜곡되고, 알람 여부가 판정 조건을
-       바꾸는 되먹임이 생겼음. 또한 0.5초 루프에서 같은 윈도우로 판정이 2회 돌아
-       fail_count/CUSUM 이 실제보다 2배 빨리 누적되는 문제도 함께 제거.
-     - GET /cbm/status 는 더 이상 윈도우에 샘플을 추가하지 않음(조회 전용).
-
-  ★ 연결 종료 처리 개선:
-     - 이미 닫힌 소켓에 전송 시 발생하던
-       "unable to perform operation ... the handler is closed" 무한 반복 제거.
-     - RuntimeError/ConnectionError 는 continue 가 아니라 break 로 루프 종료.
-     - 전송 직전에도 연결 상태를 재확인.
+이전 변경사항:
+  - 샘플링 주기(1초) / 송신 주기(0.5·1·2초) 분리, 연결 종료 처리 개선 (내용 동일)
 """
 
 from __future__ import annotations
@@ -32,8 +22,10 @@ import asyncio
 import json
 import time
 from datetime import datetime
+from typing import Dict, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from pydantic import BaseModel
 
 from app.cbm.collector import (
     get_latest_telemetry,
@@ -41,22 +33,33 @@ from app.cbm.collector import (
     get_window_size,
     list_active_drones,
     get_missing_features,
+    BUF_SIZE,
 )
 from app.cbm.evaluator import evaluate_cbm_state
 from app.cbm.inference import get_inference_engine
 from app.cbm.failsafe import reset_failsafe
+from app.cbm.advisor import (
+    evaluate_advisor_async,
+    record_feedback,
+    read_log_tail,
+    reset_advisor,
+    advisor_enabled,
+)
 
 router = APIRouter()
 
 # ── 윈도우 샘플링 · AI 판정 주기 (초) ──────────────────
 #   학습 데이터(ulg_to_csv: 약 1초/줄)와 반드시 동일해야 함. 상태에 따라 바꾸지 말 것.
-#   윈도우 20개 = 20초, fail_count 10회 = 10초 가 학습·리플레이·실시간에서 모두 같아진다.
 SAMPLE_INTERVAL = 1.0
 
 # ── WebSocket 송신 주기 (초) — UI 반응성용, 샘플링과 무관 ──
 NORMAL_INTERVAL = 2.0   # 정상 상태
 ALERT_INTERVAL  = 0.5   # 이상 감지 중 (화면 빠른 갱신)
 WARMUP_INTERVAL = 1.0   # 윈도우 미충족
+
+# ── 드론별 최근 판정 캐시 (REST /status 조회용 — 판정을 다시 돌리지 않는다) ──
+_last_results: Dict[str, dict] = {}
+_last_advisor: Dict[str, dict] = {}
 
 
 def _is_connected(websocket: WebSocket) -> bool:
@@ -80,18 +83,18 @@ async def cbm_ws(websocket: WebSocket):
     """
     drone_id = websocket.query_params.get("drone_id")
     await websocket.accept()
-    print(f"📡 CBM WebSocket 연결 시작 drone_id={drone_id or 'auto'}")
+    print(f"📡 CBM WebSocket 연결 시작 drone_id={drone_id or 'auto'} "
+          f"advisor={'on' if advisor_enabled() else 'off (no API key)'}")
 
     engine = get_inference_engine()
 
-    # 샘플링 타이머 / 최근 판정 캐시 (샘플링 사이의 송신은 캐시를 재사용)
     last_sample_t: float = 0.0
     active_id: str = drone_id or "unknown"
     results: dict | None = None
+    advisor: dict = {"status": "idle"}
 
     try:
         while True:
-            # ── 연결이 살아있는지 먼저 확인 (닫혔으면 조용히 종료) ──
             if not _is_connected(websocket):
                 print("⚠️ CBM 클라이언트 연결 끊김 감지 → 루프 종료")
                 break
@@ -99,8 +102,7 @@ async def cbm_ws(websocket: WebSocket):
             try:
                 now = time.monotonic()
 
-                # ── 1. 샘플링 주기(1초)에 도달했을 때만: 윈도우 갱신 + 판정 1회
-                #      (새 샘플 1개 = 판정 1회 — fail_count/CUSUM 누적 속도가 학습·리플레이와 일치)
+                # ── 1. 샘플링 주기(1초)에 도달했을 때만: 윈도우 갱신 + 판정 1회 + Jev 보조 판단
                 if results is None or (now - last_sample_t) >= SAMPLE_INTERVAL:
                     resolved_id = update_window(drone_id)
                     active_id   = resolved_id or drone_id or "unknown"
@@ -108,56 +110,56 @@ async def cbm_ws(websocket: WebSocket):
                     results     = evaluate_cbm_state(data, drone_id=active_id)
                     last_sample_t = now
 
+                    # Jev: alerts 가 있을 때만 실제 호출됨. 스레드풀 실행 + 0.8초 타임아웃이라
+                    # 1초 주기 안에 끝난다. 실패해도 예외를 던지지 않는다.
+                    advisor = await evaluate_advisor_async(
+                        active_id, data, results["alerts"], engine,
+                        get_missing_features(active_id),
+                    )
+
+                    _last_results[active_id] = results
+                    _last_advisor[active_id] = advisor
+
                 win_size    = get_window_size(active_id)
                 model_ready = engine.ready
 
-                # ── 2. 최근 판정 결과 (샘플링 사이에는 캐시 재사용)
                 alerts         = results["alerts"]
                 failsafe       = results["failsafe"]
                 has_alert      = len(alerts) > 0
                 failsafe_level = failsafe["level"]
 
-                # ── 3. 페이로드 구성
                 payload = {
                     "timestamp":   datetime.now().isoformat(),
                     "drone_id":    active_id,
                     "window_size": win_size,
+                    "window_full": BUF_SIZE,
                     "model_ready": model_ready,
                     "has_alert":   has_alert,
                     "systems":     alerts,
                     "failsafe":    failsafe,
-                    # 피처별 최근 예측 오차/임계 (화면 타일 막대용) — {feature: {err, threshold}}
+                    # ★ Jev 판단 보조 (표시 전용). status: disabled | idle | unavailable | ok
+                    "advisor":     advisor,
                     "feature_errors": (engine.get_last_errors(active_id) or {}) if model_ready else {},
-                    # 텔레메트리 미수신으로 판정 제외된 피처 (화면 '수신 없음' 표시)
                     "missing_features": sorted(get_missing_features(active_id)),
                 }
 
-                # ── 4. 전송 직전 재확인 후 전송
                 if not _is_connected(websocket):
                     break
-                await websocket.send_text(
-                    json.dumps(payload, ensure_ascii=False)
-                )
+                await websocket.send_text(json.dumps(payload, ensure_ascii=False))
 
                 if failsafe_level in ("rtl", "land"):
-                    print(
-                        f"🚨 FAILSAFE [{failsafe_level.upper()}] → drone={active_id} "
-                        f"score={failsafe['total_score']} "
-                        f"msg={failsafe['action_msg']}"
-                    )
+                    print(f"🚨 FAILSAFE [{failsafe_level.upper()}] → drone={active_id} "
+                          f"score={failsafe['total_score']} msg={failsafe['action_msg']}")
                 elif has_alert:
-                    print(
-                        f"⚠️  CBM 이상 감지 → drone={active_id} "
-                        f"alerts={len(alerts)}개 failsafe={failsafe_level}"
-                    )
+                    adv = (f"advisor={advisor.get('action')}({advisor.get('confidence')})"
+                           if advisor.get("status") == "ok" else f"advisor={advisor.get('status')}")
+                    print(f"⚠️  CBM 이상 감지 → drone={active_id} alerts={len(alerts)}개 "
+                          f"failsafe={failsafe_level} {adv}")
                 else:
-                    print(
-                        f"📤 CBM 정상 → drone={active_id} "
-                        f"window={win_size}/20"
-                    )
+                    print(f"📤 CBM 정상 → drone={active_id} window={win_size}/{BUF_SIZE}")
 
-                # ── 5. 송신 주기 조정 (UI 용 — 샘플링 주기와 무관)
-                if win_size < 20:
+                # ── 송신 주기 조정 (UI 용 — 샘플링 주기와 무관)
+                if win_size < BUF_SIZE:
                     await asyncio.sleep(WARMUP_INTERVAL)
                 elif failsafe_level in ("rtl", "land") or has_alert:
                     await asyncio.sleep(ALERT_INTERVAL)
@@ -168,12 +170,9 @@ async def cbm_ws(websocket: WebSocket):
                 print("❌ CBM WebSocket 연결 종료됨 (클라이언트 측)")
                 break
             except (RuntimeError, ConnectionError) as conn_err:
-                # 이미 닫힌 소켓에 쓰기 시도 등 — continue 하면 무한 반복되므로 break!
-                # ("unable to perform operation on ... the handler is closed" 방지)
                 print(f"ℹ️  CBM WS 연결 종료 감지 → 루프 종료: {conn_err}")
                 break
             except Exception as loop_err:
-                # 그 외 일시적 오류만 재시도
                 print(f"⚠️ CBM 내부 루프 오류: {loop_err}")
                 await asyncio.sleep(1)
                 continue
@@ -191,32 +190,36 @@ async def cbm_ws(websocket: WebSocket):
 
 
 # ════════════════════════════════════════════════════════
-# REST — 현재 CBM 상태 조회
+# REST — 현재 CBM 상태 조회 (조회 전용: 판정을 다시 돌리지 않음)
 # ════════════════════════════════════════════════════════
 @router.get("/status")
 async def get_cbm_status(drone_id: str | None = None):
     engine    = get_inference_engine()
-    # 조회 전용: 여기서 update_window() 를 호출하면 REST 호출마다 윈도우에 샘플이 추가되어
-    # 1초 샘플링 시간 축이 깨지므로, 활성 드론 목록으로 id 만 결정한다.
     actives   = list_active_drones()
     active_id = drone_id or (actives[-1] if actives else "unknown")
     win_size  = get_window_size(active_id)
 
-    data    = get_latest_telemetry()
-    results = evaluate_cbm_state(data, drone_id=active_id)
+    # WebSocket 루프가 캐시한 최근 판정. 루프가 아직 안 돌았으면 빈 결과.
+    results = _last_results.get(active_id) or {
+        "alerts": [],
+        "failsafe": {"level": "normal", "total_score": 0, "details": [], "action_msg": "판정 대기"},
+    }
+    advisor = _last_advisor.get(active_id) or {"status": "idle"}
 
     return {
         "timestamp":     datetime.now().isoformat(),
         "drone_id":      active_id,
         "window_size":   win_size,
+        "window_full":   BUF_SIZE,
         "model_ready":   engine.ready,
         "has_alert":     len(results["alerts"]) > 0,
         "systems":       results["alerts"],
         "failsafe":      results["failsafe"],
-        # 디버그 정보
+        "advisor":       advisor,
+        "advisor_enabled": advisor_enabled(),
         "cusum_values":  engine.get_cusum_values(active_id) if engine.ready else None,
         "fail_counts":   engine.get_fail_counts(active_id)  if engine.ready else None,
-        "active_drones": list_active_drones(),
+        "active_drones": actives,
     }
 
 
@@ -225,20 +228,39 @@ async def get_cbm_status(drone_id: str | None = None):
 # ════════════════════════════════════════════════════════
 @router.post("/reset/{drone_id}")
 async def reset_cbm_session(drone_id: str):
-    """
-    비행 세션 전환 시 특정 드론의
-    CUSUM · 버퍼 · Failsafe 상태 초기화.
-    """
     engine = get_inference_engine()
-
     if not engine.ready:
         raise HTTPException(status_code=503, detail="CNN-LSTM 모델 미준비")
 
     engine.reset(drone_id)
     reset_failsafe(drone_id)
+    reset_advisor(drone_id)
+    _last_results.pop(drone_id, None)
+    _last_advisor.pop(drone_id, None)
 
-    return {
-        "ok":       True,
-        "drone_id": drone_id,
-        "msg":      f"{drone_id} CBM + Failsafe 세션 초기화 완료",
-    }
+    return {"ok": True, "drone_id": drone_id, "msg": f"{drone_id} CBM + Failsafe + Advisor 세션 초기화 완료"}
+
+
+# ════════════════════════════════════════════════════════
+# REST — Jev 판단 보조: 운용자 피드백 / 기록 조회
+# ════════════════════════════════════════════════════════
+class AdvisorFeedback(BaseModel):
+    decision_id: str
+    drone_id: str
+    verdict: str            # "agree" | "disagree"
+    comment: Optional[str] = ""
+
+
+@router.post("/advisor/feedback")
+async def post_advisor_feedback(body: AdvisorFeedback):
+    """화면의 동의/비동의 버튼 → JSONL 기록 (향후 로컬 모델 파인튜닝 라벨)."""
+    if body.verdict not in ("agree", "disagree"):
+        raise HTTPException(status_code=400, detail="verdict must be 'agree' or 'disagree'")
+    rec = record_feedback(body.decision_id, body.drone_id, body.verdict, body.comment or "")
+    return {"ok": True, "recorded": rec}
+
+
+@router.get("/advisor/log")
+async def get_advisor_log(n: int = 200):
+    """판단 기록 최근 n건 (decision + feedback). 검증·분석용."""
+    return {"count": min(n, 1000), "items": read_log_tail(min(n, 1000))}
