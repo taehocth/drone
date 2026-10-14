@@ -324,6 +324,10 @@ def evaluate_advisor(drone_id: str, data, alerts: List[dict], engine=None,
         st.history.append((now, [], None))
         return {"status": "idle"}
 
+    # 텔레메트리 수신 전 기본값(전압 0V, 위성 0개)으로 난 규칙 알람 → 실제 상태가 아니므로 호출 안 함
+    if drone_id == "unknown" or float(getattr(data, "voltage", 0.0) or 0.0) <= 0.0:
+        return {"status": "idle", "reason": "no telemetry yet"}
+
     state = build_state(drone_id, data, alerts, engine, missing, st)
     sig = _signature(state)
 
